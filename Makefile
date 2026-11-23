@@ -1,6 +1,7 @@
 .PHONY: verify test run offline
 verify:
 	python scripts/verify_no_cloud.py
+	python scripts/validate_corpus.py
 	pytest -q
 
 test:

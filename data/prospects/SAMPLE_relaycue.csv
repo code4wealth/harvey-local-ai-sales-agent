@@ -1,0 +1,14 @@
+contact_name,contact_title,company_name,company_domain,employee_count,contact_email,page_text_path,do_not_contact
+,Head of Support,Morrowglass Software,morrowglass.example,45,,data/prospect_pages/p001.txt,false
+,Support Operations Director,Blue Finch Ledger,bluefinchledger.example,82,,data/prospect_pages/p002.txt,false
+,Founder,Cedarline Calendar,cedarlinecalendar.example,9,,data/prospect_pages/p003.txt,false
+,VP of Data,Quillwood Metrics,quillwoodmetrics.example,420,,data/prospect_pages/p004.txt,false
+,Support Lead,Rookery Forms,rookeryforms.example,36,,data/prospect_pages/p005.txt,false
+,Data Scientist,Mellor Finch Analytics,mellorfinchanalytics.example,14,,data/prospect_pages/p006.txt,false
+,HR Manager,Eastbank Patternworks,eastbankpatternworks.example,28,,data/prospect_pages/p007.txt,false
+,Customer Support Manager,Juniper Knoll HR,juniperknollhr.example,110,,data/prospect_pages/p008.txt,false
+,Customer Success Lead,Arbor Strand Booking,arborstrandbooking.example,64,,data/prospect_pages/p009.txt,false
+,Support Team Lead,Lattice and Lark Systems,latticeandlark.example,57,,data/prospect_pages/p010.txt,false
+,Chief Technology Officer,Wrenfield Ledgerworks,wrenfieldledgerworks.example,5,,data/prospect_pages/p011.txt,false
+,Support Operations Manager,Clover Wick Learning,cloverwicklearning.example,140,,data/prospect_pages/p012.txt,false
+,Office Administrator,Hollowfern Legal,hollowfernlegal.example,42,,data/prospect_pages/p013.txt,false

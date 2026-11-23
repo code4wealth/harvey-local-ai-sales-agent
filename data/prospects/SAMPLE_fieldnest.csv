@@ -1,0 +1,13 @@
+contact_name,contact_title,company_name,company_domain,employee_count,contact_email,page_text_path,do_not_contact
+,Maintenance Lead,Tallowbrook Fabrication,tallowbrookfab.example,35,,data/prospect_pages/p014.txt,false
+,Plant Manager,Lantern Mill Foods,lanternmillfoods.example,72,,data/prospect_pages/p015.txt,false
+,Maintenance Supervisor,Copperwell Stitchworks,copperwellstitchworks.example,18,,data/prospect_pages/p016.txt,false
+,Owner,Amber Quarry Studio,amberquarrystudio.example,8,,data/prospect_pages/p017.txt,false
+,Maintenance Planner,Oaktide Packaging,oaktidepackaging.example,130,,data/prospect_pages/p018.txt,false
+,Finance Director,Narrowbridge Metalworks,narrowbridgemetal.example,45,,data/prospect_pages/p019.txt,false
+,Operations Manager,Sparrowdown Textiles,sparrowdowntextiles.example,22,,data/prospect_pages/p020.txt,false
+,Facilities Manager,Grey Alder Laundry,greyalderlaundry.example,60,,data/prospect_pages/p021.txt,false
+,Plant Maintenance Lead,Sablewick Printworks,sablewickprintworks.example,30,,data/prospect_pages/p022.txt,false
+,Owner,Rootbay Composite Works,rootbaycomposite.example,10,,data/prospect_pages/p023.txt,false
+,Maintenance Coordinator,Foxhollow Bakes,foxhollowbakes.example,48,,data/prospect_pages/p024.txt,false
+,Sales Director,Cairn Slope Engineering,cairnslopeengineering.example,80,,data/prospect_pages/p025.txt,false

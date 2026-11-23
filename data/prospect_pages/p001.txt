@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Morrowglass Software
+Industry: B2B workflow software
+
+The fictional careers page lists two open support specialist roles, each assigned to a different product queue. The company overview says its help team supports business customers. No other expansion or funding event is stated.
