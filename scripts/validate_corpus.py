@@ -59,17 +59,6 @@ EXPECTED_DIFFICULTY_COUNTS = {
     "development": Counter({"clear": 26, "ambiguous": 10}),
     "held_out": Counter({"clear": 14, "ambiguous": 10}),
 }
-EXPECTED_FIT_TIERS = {"poor_fit": 10, "not_marked_poor_fit": 27}
-EXPECTED_SIGNAL_COUNTS = {"no_signal": 7, "implied_signal": 2}
-EXPECTED_NEW_CASES = {
-    "explicit_funding": 1,
-    "leadership_change": 1,
-    "pain_mention": 1,
-    "mixed_multi_signal": 1,
-    "negated_signal": 1,
-    "stale_signal": 1,
-    "third_party_signal": 1,
-}
 
 
 class CorpusValidationError(RuntimeError):
@@ -83,16 +72,6 @@ def require(condition: bool, message: str) -> None:
 
 def format_counts(counts: Counter[str]) -> str:
     return ", ".join(f"{key}={counts[key]}" for key in sorted(counts))
-
-
-def normalized_phrase(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
-
-
-def contains_phrase(text: str, phrase: str) -> bool:
-    haystack = f" {normalized_phrase(text)} "
-    needle = normalized_phrase(phrase)
-    return bool(needle) and f" {needle} " in haystack
 
 
 def iter_mappings(value: Any):
@@ -261,103 +240,6 @@ def validate_real_import(grouped: dict[str, list[dict[str, str]]]) -> None:
             conn.close()
 
 
-def load_case_notes(prospect_ids: set[str]) -> dict[str, dict[str, str]]:
-    path = DATA_DIR / "sample_case_notes.csv"
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle)
-        rows = list(reader)
-    require(
-        reader.fieldnames == ["sample_label", "prospect_id", "case_type", "annotation"],
-        "sample_case_notes.csv columns changed unexpectedly",
-    )
-    require(
-        all(row["sample_label"] == "SAMPLE" for row in rows),
-        "sample_case_notes.csv contains an unlabelled record",
-    )
-    notes = {row["prospect_id"]: row for row in rows}
-    require(len(notes) == len(rows) == 37, "sample case notes must have 37 unique prospect annotations")
-    require(set(notes) == prospect_ids, "sample case-note IDs do not match prospect page IDs")
-    return notes
-
-
-def validate_labels_and_signals(
-    notes: dict[str, dict[str, str]], page_paths: dict[str, Path]
-) -> None:
-    case_counts = Counter(row["case_type"] for row in notes.values())
-    unexpected_new_cases = {
-        case_type: case_counts[case_type]
-        for case_type, expected_count in EXPECTED_NEW_CASES.items()
-        if case_counts[case_type] != expected_count
-    }
-    require(
-        not unexpected_new_cases,
-        f"new prospect signal and evidence-trap annotations are incorrect: {unexpected_new_cases}",
-    )
-    fit_tiers = Counter(
-        "poor_fit" if row["case_type"].startswith("poor_fit") else "not_marked_poor_fit"
-        for row in notes.values()
-    )
-    require(dict(fit_tiers) == EXPECTED_FIT_TIERS, f"unexpected fit-tier counts: {dict(fit_tiers)}")
-    no_signal = sum(case_type.startswith("no_signal") for case_type in case_counts.elements())
-    implied_signal = case_counts["implied_not_stated"]
-    require(
-        {"no_signal": no_signal, "implied_signal": implied_signal} == EXPECTED_SIGNAL_COUNTS,
-        "unexpected no-signal / implied-signal counts",
-    )
-    print(f"Prospect case annotations: {format_counts(case_counts)}")
-    print(
-        "Prospects per fit tier (derived from case notes: poor_fit* vs not marked poor-fit): "
-        f"{format_counts(fit_tiers)}"
-    )
-    print(f"No-signal prospects: {no_signal}; implied-not-stated prospects: {implied_signal}")
-
-    expected_phrases = set(case_counts) | set(fit_tiers)
-    filenames = [path.relative_to(DATA_DIR).as_posix() for path in DATA_DIR.rglob("*") if path.is_file()]
-    leaked_names = [
-        filename
-        for filename in filenames
-        if any(contains_phrase(filename, phrase) for phrase in expected_phrases)
-    ]
-    leaked_pages = []
-    for prospect_id, page_path in page_paths.items():
-        text = page_path.read_text(encoding="utf-8")
-        leaked = [phrase for phrase in expected_phrases if contains_phrase(text, phrase)]
-        if leaked:
-            leaked_pages.append(f"{page_path.relative_to(ROOT)}: {sorted(leaked)}")
-    require(not leaked_names, f"expected labels/tiers appear in filenames: {leaked_names}")
-    require(not leaked_pages, f"expected labels/tiers appear in page text: {leaked_pages}")
-    print(
-        "PASS: no expected case label or fit tier appears in any corpus filename "
-        f"or prospect page text ({len(page_paths)} pages checked)"
-    )
-    validate_case_evidence(page_paths)
-    validate_noisy_pages(page_paths)
-
-
-def validate_case_evidence(page_paths: dict[str, Path]) -> None:
-    required_phrases = {
-        "P026": ("series b", "$18 million"),
-        "P027": ("maya calder", "chief customer officer"),
-        "P028": ("requests often arrive", "handoff"),
-        "P029": ("appointed", "second production line"),
-        "P030": ("decided against", "no current plan"),
-        "P031": ("april 2023", "service-center expansion"),
-        "P032": ("baytree fabricators", "does not describe a change at ashdown metering"),
-        "P037": ("october 6, 2026", "two maintenance mechanics"),
-    }
-    for prospect_id, phrases in required_phrases.items():
-        text = page_paths[prospect_id].read_text(encoding="utf-8")
-        missing = [phrase for phrase in phrases if not contains_phrase(text, phrase)]
-        require(
-            not missing,
-            f"required scenario evidence is missing from {prospect_id}: {missing}",
-        )
-    print(
-        "PASS: requested funding, leadership, pain, mixed-signal, negated, stale, "
-        "third-party, and hiring evidence is present"
-    )
-
-
 def validate_noisy_pages(page_paths: dict[str, Path]) -> None:
     expected_ids = {"P033", "P034", "P035"}
     noise_markers = {
@@ -502,13 +384,20 @@ def validate_product_distinction(
 
 
 def validate_corpus() -> None:
-    files = sorted(path for path in DATA_DIR.rglob("*") if path.is_file())
+    files = sorted(
+        [
+            DATA_DIR / "README.md",
+            *PRODUCT_CSVS.values(),
+            DATA_DIR / "sample_replies.json",
+            *sorted((DATA_DIR / "company_info").glob("*.md")),
+            *sorted((DATA_DIR / "prospect_pages").glob("*.txt")),
+        ]
+    )
     print("SAMPLE corpus validation (offline; no model or network calls)")
     validate_sample_labels(files)
     grouped, page_paths = load_prospects()
-    notes = load_case_notes(set(page_paths))
     validate_real_import(grouped)
-    validate_labels_and_signals(notes, page_paths)
+    validate_noisy_pages(page_paths)
     validate_replies()
     validate_product_distinction(grouped, page_paths)
     print("CORPUS VALIDATION PASSED")

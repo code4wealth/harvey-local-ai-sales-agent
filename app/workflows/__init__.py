@@ -1,12 +1,13 @@
 """Local-only, product-scoped AI workflows."""
 
-from . import icp, profile
+from . import icp, profile, signals
 
 
 def register_workflow_handlers() -> None:
-    """Register the profile and ICP tasks for the persistent queue worker."""
+    """Register product and prospect workflow tasks for the persistent queue worker."""
     profile.register_profile_handler()
     icp.register_icp_handler()
+    signals.register_signals_handler()
 
 
-__all__ = ["icp", "profile", "register_workflow_handlers"]
+__all__ = ["icp", "profile", "signals", "register_workflow_handlers"]

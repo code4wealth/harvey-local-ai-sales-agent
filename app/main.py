@@ -18,6 +18,7 @@ from app.workflows import icp as icp_workflow
 from app.workflows import profile as profile_workflow
 from app.workflows import register_workflow_handlers
 from app.workflows import common as workflow_common
+from app.workflows import signals as signal_workflow
 
 
 @asynccontextmanager
@@ -235,6 +236,47 @@ def api_load_prospect_page(prospect_id: int) -> PlainTextResponse:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except prospects.ProspectPageError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        conn.close()
+
+
+def _signal_run_response(run_id: int) -> dict:
+    conn = db.connect()
+    try:
+        row = db.get_signal_run(conn, run_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="signal run not found")
+        return signal_workflow.signal_run_payload(row)
+    finally:
+        conn.close()
+
+
+@app.post("/api/prospects/{prospect_id}/signals", tags=["signals"])
+def api_generate_signals(prospect_id: int, model: str | None = None) -> JSONResponse:
+    try:
+        run_id = signal_workflow.submit_signals(prospect_id, model=model)
+    except prospects.ProspectNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except llm_client.OllamaUnavailable as exc:
+        run_id = getattr(exc, "signal_run_id", None)
+        if run_id is None:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return JSONResponse(status_code=202, content=_signal_run_response(int(run_id)))
+    except signal_workflow.SignalRunError as exc:
+        return JSONResponse(status_code=502, content=_signal_run_response(exc.run_id))
+    return JSONResponse(status_code=200, content=_signal_run_response(run_id))
+
+
+@app.get("/api/prospects/{prospect_id}/signals", tags=["signals"])
+def api_get_signals(prospect_id: int) -> dict:
+    conn = db.connect()
+    try:
+        if db.get_prospect(conn, prospect_id) is None:
+            raise HTTPException(status_code=404, detail="prospect not found")
+        row = db.latest_signal_run(conn, prospect_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="no signal run is stored for this prospect")
+        return signal_workflow.signal_run_payload(row)
     finally:
         conn.close()
 

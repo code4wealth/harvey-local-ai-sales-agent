@@ -83,13 +83,31 @@ CREATE TABLE IF NOT EXISTS prospect_research (
 );
 CREATE INDEX IF NOT EXISTS idx_research_prospect ON prospect_research(prospect_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS signal_runs (
+    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    prospect_id            INTEGER NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+    product_id             INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    status                 TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
+    model_name             TEXT,
+    signals_json           TEXT,
+    drop_counts_json       TEXT,
+    removed_content_json   TEXT,
+    error                  TEXT,
+    queue_task_id          INTEGER,
+    created_at             TEXT NOT NULL,
+    updated_at             TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_signal_runs_prospect
+  ON signal_runs(prospect_id, created_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS signals (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    prospect_id INTEGER NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
-    type        TEXT NOT NULL,
-    evidence    TEXT NOT NULL,
-    confidence  REAL NOT NULL DEFAULT 0.0,
-    created_at  TEXT NOT NULL
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    prospect_id   INTEGER NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+    signal_run_id INTEGER REFERENCES signal_runs(id) ON DELETE CASCADE,
+    type          TEXT NOT NULL,
+    evidence      TEXT NOT NULL,
+    confidence    REAL NOT NULL DEFAULT 0.0,
+    created_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_signals_prospect ON signals(prospect_id);
 
@@ -234,6 +252,16 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE prospects ADD COLUMN page_embedding_model TEXT NOT NULL DEFAULT ''"
         )
+
+    signal_columns = {row[1] for row in conn.execute("PRAGMA table_info(signals)")}
+    if "signal_run_id" not in signal_columns:
+        conn.execute(
+            "ALTER TABLE signals ADD COLUMN signal_run_id INTEGER "
+            "REFERENCES signal_runs(id) ON DELETE CASCADE"
+        )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_signals_run ON signals(signal_run_id, id)"
+    )
 
     score_columns = list(conn.execute("PRAGMA table_info(scores)"))
     score_names = {row[1] for row in score_columns}
@@ -474,6 +502,140 @@ def create_prospect(
 
 def get_prospect(conn: sqlite3.Connection, prospect_id: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM prospects WHERE id = ?", (int(prospect_id),)).fetchone()
+
+
+def create_signal_run(
+    conn: sqlite3.Connection, *, prospect_id: int, model_name: str | None
+) -> int:
+    prospect = get_prospect(conn, prospect_id)
+    if prospect is None:
+        raise LookupError(f"prospect {prospect_id} not found")
+    now = utcnow()
+    cur = conn.execute(
+        "INSERT INTO signal_runs "
+        "(prospect_id, product_id, status, model_name, created_at, updated_at) "
+        "VALUES (?, ?, 'running', ?, ?, ?)",
+        (int(prospect_id), int(prospect["product_id"]), model_name, now, now),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def get_signal_run(conn: sqlite3.Connection, run_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM signal_runs WHERE id = ?", (int(run_id),)).fetchone()
+
+
+def latest_signal_run(conn: sqlite3.Connection, prospect_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM signal_runs WHERE prospect_id = ? "
+        "ORDER BY created_at DESC, id DESC LIMIT 1",
+        (int(prospect_id),),
+    ).fetchone()
+
+
+def update_signal_run(
+    conn: sqlite3.Connection,
+    run_id: int,
+    *,
+    status: str,
+    error: str | None = None,
+    model_name: str | None = None,
+    queue_task_id: int | None = None,
+) -> None:
+    if status not in {"queued", "running", "succeeded", "failed"}:
+        raise ValueError(f"invalid signal run status: {status!r}")
+    cur = conn.execute(
+        "UPDATE signal_runs SET status = ?, error = ?, "
+        "model_name = COALESCE(?, model_name), "
+        "queue_task_id = COALESCE(?, queue_task_id), updated_at = ? WHERE id = ?",
+        (status, error, model_name, queue_task_id, utcnow(), int(run_id)),
+    )
+    if cur.rowcount != 1:
+        raise ValueError(f"signal run {run_id} not found")
+    conn.commit()
+
+
+def record_signal_preprocessing(
+    conn: sqlite3.Connection, *, run_id: int, removed_content: dict[str, Any]
+) -> None:
+    removed_json = json.dumps(
+        removed_content, ensure_ascii=False, sort_keys=True, allow_nan=False
+    )
+    cur = conn.execute(
+        "UPDATE signal_runs SET removed_content_json = ?, updated_at = ? WHERE id = ?",
+        (removed_json, utcnow(), int(run_id)),
+    )
+    if cur.rowcount != 1:
+        raise ValueError(f"signal run {run_id} not found")
+    conn.commit()
+
+
+def save_signal_run(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int,
+    prospect_id: int,
+    product_id: int,
+    signals: list[dict[str, Any]],
+    drop_counts: dict[str, int],
+    removed_content: dict[str, Any],
+    model_name: str,
+) -> None:
+    result_json = json.dumps(signals, ensure_ascii=False, sort_keys=True, allow_nan=False)
+    drop_json = json.dumps(drop_counts, ensure_ascii=False, sort_keys=True, allow_nan=False)
+    removed_json = json.dumps(
+        removed_content, ensure_ascii=False, sort_keys=True, allow_nan=False
+    )
+    run = get_signal_run(conn, run_id)
+    if (
+        run is None
+        or int(run["prospect_id"]) != int(prospect_id)
+        or int(run["product_id"]) != int(product_id)
+    ):
+        raise ValueError("signal run does not match the prospect and product")
+
+    now = utcnow()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute("DELETE FROM signals WHERE signal_run_id = ?", (int(run_id),))
+        for signal in signals:
+            signal_type = signal.get("type")
+            evidence = signal.get("evidence")
+            about_company = signal.get("about_company")
+            if (
+                not isinstance(signal_type, str)
+                or not isinstance(evidence, str)
+                or about_company is not True
+            ):
+                raise ValueError("only validated company signals may be persisted")
+            conn.execute(
+                "INSERT INTO signals "
+                "(prospect_id, signal_run_id, type, evidence, confidence, created_at) "
+                "VALUES (?, ?, ?, ?, 0.0, ?)",
+                (int(prospect_id), int(run_id), signal_type, evidence, now),
+            )
+        cur = conn.execute(
+            "UPDATE signal_runs SET status = 'succeeded', signals_json = ?, "
+            "drop_counts_json = ?, removed_content_json = ?, error = NULL, "
+            "model_name = ?, queue_task_id = NULL, updated_at = ? "
+            "WHERE id = ? AND prospect_id = ? AND product_id = ?",
+            (
+                result_json,
+                drop_json,
+                removed_json,
+                model_name,
+                now,
+                int(run_id),
+                int(prospect_id),
+                int(product_id),
+            ),
+        )
+        if cur.rowcount != 1:
+            raise ValueError("signal run does not match the prospect and product")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def list_prospects(conn: sqlite3.Connection, product_id: int) -> list[sqlite3.Row]:

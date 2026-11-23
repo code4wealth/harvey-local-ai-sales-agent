@@ -15,6 +15,7 @@ def test_schema_initializes_all_phase_tables_idempotently(db_path):
             "products", "business_profiles", "icps", "prospects", "signals",
             "prospect_research", "problem_statements", "scores", "emails", "replies",
             "inference_log", "task_queue", "pipeline_runs", "pipeline_steps", "workflow_runs",
+            "signal_runs",
         } <= names
         assert "model_name" in {
             row[1] for row in conn.execute("PRAGMA table_info(business_profiles)")
@@ -22,6 +23,28 @@ def test_schema_initializes_all_phase_tables_idempotently(db_path):
         assert "model_name" in {
             row[1] for row in conn.execute("PRAGMA table_info(icps)")
         }
+        assert "signal_run_id" in {
+            row[1] for row in conn.execute("PRAGMA table_info(signals)")
+        }
+    finally:
+        conn.close()
+
+
+def test_init_db_migrates_signal_run_link_on_existing_signals_table(tmp_path):
+    conn = sqlite3.connect(tmp_path / "legacy-signals.db")
+    try:
+        conn.executescript(
+            "CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT NOT NULL);"
+            "CREATE TABLE prospects (id INTEGER PRIMARY KEY, product_id INTEGER NOT NULL, created_at TEXT NOT NULL);"
+            "CREATE TABLE signals (id INTEGER PRIMARY KEY, prospect_id INTEGER NOT NULL, "
+            "type TEXT NOT NULL, evidence TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 0.0, "
+            "created_at TEXT NOT NULL);"
+            "INSERT INTO signals VALUES (1, 1, 'hiring', 'legacy quote', 0.0, 'old');"
+        )
+        db.init_db(conn)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(signals)")}
+        assert "signal_run_id" in columns
+        assert conn.execute("SELECT signal_run_id FROM signals WHERE id = 1").fetchone()[0] is None
     finally:
         conn.close()
 
