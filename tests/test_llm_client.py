@@ -47,6 +47,14 @@ def test_generate_uses_only_local_ollama_and_logs_usage(tmp_path):
         client.close()
 
     assert result == "Hello from local Ollama."
+    assert client.last_request_metadata == {
+        "url": OLLAMA_GENERATE_URL,
+        "host": "http://127.0.0.1:11434",
+        "model": "qwen3:4b",
+        "think": False,
+        "format": None,
+    }
+    assert client.last_response_had_thinking is True
     assert requests[0].url == httpx.URL(OLLAMA_GENERATE_URL)
     payload = json.loads(requests[0].content)
     assert payload["model"] == "qwen3:4b"
@@ -58,8 +66,28 @@ def test_generate_uses_only_local_ollama_and_logs_usage(tmp_path):
     assert logs[0]["host"] == "http://127.0.0.1:11434"
     assert logs[0]["prompt_tokens"] == 12
     assert logs[0]["eval_tokens"] == 7
+    assert logs[0]["latency_seconds"] is not None
+    assert logs[0]["latency_seconds"] >= 0
     assert logs[0]["status"] == "success"
 
+
+def test_generate_detects_separate_ollama_thinking_field(tmp_path):
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"response": "visible answer", "thinking": "hidden reasoning"},
+        )
+
+    client = OllamaClient(
+        db_path=tmp_path / "harvey.db",
+        default_model="qwen3:4b",
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        assert client.generate(task="test", prompt="test") == "visible answer"
+        assert client.last_response_had_thinking is True
+    finally:
+        client.close()
 
 
 def test_ollama_up_checks_local_tags_endpoint(tmp_path):
@@ -78,6 +106,7 @@ def test_ollama_up_checks_local_tags_endpoint(tmp_path):
     finally:
         client.close()
     assert seen[0].url == httpx.URL(OLLAMA_TAGS_URL)
+    assert client.last_health_url == OLLAMA_TAGS_URL
 
 
 def test_unavailable_request_is_logged_and_queued(tmp_path):
@@ -217,3 +246,29 @@ def test_json_generation_queues_when_local_ollama_is_unavailable(tmp_path):
     queued = get_task(raised.value.task_id, db_path=db_path)
     assert queued["status"] == "queued"
     assert queued["payload"]["response_format"]["type"] == "object"
+
+
+def test_generate_accepts_ollama_json_mode_string(tmp_path):
+    requests = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"response": '{"status":"ok"}'})
+
+    client = OllamaClient(
+        db_path=tmp_path / "harvey.db",
+        default_model="qwen3:4b",
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        raw = client.generate(
+            task="smoke_json",
+            prompt="Return a JSON object.",
+            response_format="json",
+        )
+    finally:
+        client.close()
+
+    assert json.loads(raw) == {"status": "ok"}
+    assert json.loads(requests[0].content)["format"] == "json"
+    assert client.last_request_metadata["format"] == "json"

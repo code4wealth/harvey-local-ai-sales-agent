@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Copperwell Stitchworks
+Industry: Textile workshop
+
+The careers page lists one open maintenance technician position for the workshop. The equipment page describes sewing and cutting stations used in daily production. No new shift or expansion is stated.

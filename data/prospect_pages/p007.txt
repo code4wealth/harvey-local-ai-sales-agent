@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Eastbank Patternworks
+Industry: Apparel manufacturing
+
+The company page describes a small apparel workshop that produces custom garments. The contact is an HR Manager. No software support team, customer case queue, or relevant change is described.

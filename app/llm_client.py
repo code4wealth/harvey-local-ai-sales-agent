@@ -78,6 +78,9 @@ class OllamaClient:
     ) -> None:
         self.db_path = db_path
         self.default_model = default_model
+        self.last_health_url: str | None = None
+        self.last_request_metadata: dict[str, Any] | None = None
+        self.last_response_had_thinking: bool | None = None
         self._http = httpx.Client(transport=transport, timeout=timeout)
 
     def close(self) -> None:
@@ -97,10 +100,12 @@ class OllamaClient:
 
     def ollama_up(self) -> bool:
         """Return whether the local Ollama server responds to its tags endpoint."""
+        self.last_health_url = OLLAMA_TAGS_URL
         try:
             response = self._http.get(OLLAMA_TAGS_URL)
         except httpx.HTTPError:
             return False
+        self.last_health_url = str(response.request.url)
         return response.is_success
 
     def _log(
@@ -147,11 +152,20 @@ class OllamaClient:
         if response_format is not None:
             payload["format"] = response_format
 
+        self.last_request_metadata = {
+            "url": OLLAMA_GENERATE_URL,
+            "host": OLLAMA_HOST,
+            "model": selected_model,
+            "think": False,
+            "format": response_format,
+        }
+        self.last_response_had_thinking = None
         started = time.perf_counter()
         prompt_tokens: int | None = None
         eval_tokens: int | None = None
         try:
             response = self._http.post(OLLAMA_GENERATE_URL, json=payload)
+            self.last_request_metadata["url"] = str(response.request.url)
             if not response.is_success:
                 detail = _error_text(response)
                 if response.status_code == 404 and "model" in detail.lower() and "not found" in detail.lower():
@@ -170,7 +184,13 @@ class OllamaClient:
                 raise OllamaRequestError("Ollama returned a response without generated text.")
             prompt_tokens = _optional_int(data.get("prompt_eval_count"))
             eval_tokens = _optional_int(data.get("eval_count"))
-            result = _strip_thinking(data["response"])
+            raw_result = data["response"]
+            separate_thinking = data.get("thinking")
+            self.last_response_had_thinking = bool(
+                re.search(r"<think\b|</think\s*>", raw_result, flags=re.IGNORECASE)
+                or (isinstance(separate_thinking, str) and separate_thinking.strip())
+            )
+            result = _strip_thinking(raw_result)
         except OllamaUnavailable as exc:
             self._log(
                 task=task,

@@ -1,5 +1,17 @@
 # Build Plan
 
+## Phase 2 review checkpoint — 2026-11-22
+
+This checkpoint records the Phase 2 scope approved for this branch; the broader phase headings below are the original project build plan.
+
+- **Implemented:** live Ollama smoke harness and transcript; the attempt is recorded as `BLOCKED` because `127.0.0.1:11434` refused the connection. No Qwen inference was performed.
+- **Implemented:** fictional SAMPLE corpus with two products, 25 prospect pages, 20 labelled replies, and a 13/7 development/held-out split. No reply-classification accuracy is reported because the classifier/evaluator is not implemented.
+- **Verified:** official Hugging Face model card lists `all-MiniLM-L6-v2` as Apache-2.0; existing installed runtime metadata is documented in `docs/MODELS_AND_LICENCES.md`.
+- **Blocked:** do not add `sentence-transformers` or PyTorch until the installed-metadata audit covers the actual CPU-only dependency set. The PyPI Torch wheels available to this sandbox declare CUDA dependencies; the CPU wheel distribution is not accessible through the permitted package-download hosts.
+- **Not implemented:** model fetcher, local embeddings module, and network-disabled model inference test. Those require the dependency gate and an available model artifact.
+
+This is a partial review checkpoint, not a claim that all Phase 2 acceptance criteria have passed.
+
 ## Phase 0 — Reconnaissance and setup (0–4h)
 
 - [ ] Fork/clone Harvey, run it, and document its structure in `docs/HARVEY_NOTES.md`.
@@ -22,9 +34,9 @@
 
 ## Phase 3 — Sample data (14–18h)
 
-- [ ] Add two products' company information labelled `SAMPLE`.
-- [ ] Add 20–30 prospects and local page text, clearly labelled.
-- [ ] Add 15–20 labelled sample replies.
+- [x] Add two products' company information labelled `SAMPLE`.
+- [x] Add 20–30 prospects and local page text, clearly labelled.
+- [x] Add 15–20 labelled sample replies (13 development, 7 held out).
 
 ## Phase 4 — Workflows and pipeline (18–32h)
 

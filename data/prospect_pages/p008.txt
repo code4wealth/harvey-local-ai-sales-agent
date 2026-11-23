@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Juniper Knoll HR
+Industry: Human-resources software
+
+A dated operations note says the support group moved its internal case queue to a new ticketing system in October. The company page describes business software for HR teams. No funding announcement is stated.

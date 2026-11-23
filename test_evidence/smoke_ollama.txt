@@ -1,0 +1,10 @@
+Harvey Local Ollama live smoke test
+timestamp_utc: 2026-11-22T18:05:02+00:00
+endpoint: http://127.0.0.1:11434
+model: qwen3:4b
+ollama_executable: not found in sandbox PATH
+health_check_url: http://127.0.0.1:11434/api/tags
+status: BLOCKED
+live_inference: not attempted
+health_check: ConnectError: [Errno 111] Connection refused
+hint: start Ollama in this environment and run 'ollama pull qwen3:4b', then rerun this script

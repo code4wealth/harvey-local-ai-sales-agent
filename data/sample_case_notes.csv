@@ -1,0 +1,26 @@
+sample_label,prospect_id,case_type,annotation
+SAMPLE,P001,explicit_hiring,"The source text contains one explicit, checkable event."
+SAMPLE,P002,explicit_hiring,"The source text contains one explicit, checkable event."
+SAMPLE,P003,no_signal_small,No qualifying buying signal is stated in the source text.
+SAMPLE,P004,poor_fit,"Intentionally weak product, company-size, industry, or buyer-role fit."
+SAMPLE,P005,explicit_expansion,"The source text contains one explicit, checkable event."
+SAMPLE,P006,poor_fit,"Intentionally weak product, company-size, industry, or buyer-role fit."
+SAMPLE,P007,poor_fit,"Intentionally weak product, company-size, industry, or buyer-role fit."
+SAMPLE,P008,explicit_tech_change,"The source text contains one explicit, checkable event."
+SAMPLE,P009,no_signal,No qualifying buying signal is stated in the source text.
+SAMPLE,P010,implied_not_stated,Do not infer a signal: the source hints at pressure but states no qualifying event.
+SAMPLE,P011,poor_fit_small,"Intentionally weak product, company-size, industry, or buyer-role fit."
+SAMPLE,P012,explicit_expansion,"The source text contains one explicit, checkable event."
+SAMPLE,P013,poor_fit,"Intentionally weak product, company-size, industry, or buyer-role fit."
+SAMPLE,P014,explicit_expansion,"The source text contains one explicit, checkable event."
+SAMPLE,P015,no_signal,No qualifying buying signal is stated in the source text.
+SAMPLE,P016,explicit_hiring,"The source text contains one explicit, checkable event."
+SAMPLE,P017,poor_fit,"Intentionally weak product, company-size, industry, or buyer-role fit."
+SAMPLE,P018,explicit_expansion,"The source text contains one explicit, checkable event."
+SAMPLE,P019,poor_fit_title,"Intentionally weak product, company-size, industry, or buyer-role fit."
+SAMPLE,P020,implied_not_stated,Do not infer a signal: the source hints at pressure but states no qualifying event.
+SAMPLE,P021,poor_fit_industry,"Intentionally weak product, company-size, industry, or buyer-role fit."
+SAMPLE,P022,explicit_hiring,"The source text contains one explicit, checkable event."
+SAMPLE,P023,no_signal_small,No qualifying buying signal is stated in the source text.
+SAMPLE,P024,explicit_expansion,"The source text contains one explicit, checkable event."
+SAMPLE,P025,poor_fit,"Intentionally weak product, company-size, industry, or buyer-role fit."

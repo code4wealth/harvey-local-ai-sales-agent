@@ -1,0 +1,26 @@
+sample_label,prospect_id,product_id,company_name,industry,employees,buyer_title,website,page_file
+SAMPLE,P001,relaycue,Morrowglass Software,B2B workflow software,45,Head of Support,https://morrowglass.example/about,prospect_pages/p001.txt
+SAMPLE,P002,relaycue,Blue Finch Ledger,Finance software,82,Support Operations Director,https://bluefinchledger.example/about,prospect_pages/p002.txt
+SAMPLE,P003,relaycue,Cedarline Calendar,Scheduling software,9,Founder,https://cedarlinecalendar.example/about,prospect_pages/p003.txt
+SAMPLE,P004,relaycue,Quillwood Metrics,Analytics software,420,VP of Data,https://quillwoodmetrics.example/about,prospect_pages/p004.txt
+SAMPLE,P005,relaycue,Rookery Forms,Field-service software,36,Support Lead,https://rookeryforms.example/about,prospect_pages/p005.txt
+SAMPLE,P006,relaycue,Mellor Finch Analytics,Data consulting,14,Data Scientist,https://mellorfinchanalytics.example/about,prospect_pages/p006.txt
+SAMPLE,P007,relaycue,Eastbank Patternworks,Apparel manufacturing,28,HR Manager,https://eastbankpatternworks.example/about,prospect_pages/p007.txt
+SAMPLE,P008,relaycue,Juniper Knoll HR,Human-resources software,110,Customer Support Manager,https://juniperknollhr.example/about,prospect_pages/p008.txt
+SAMPLE,P009,relaycue,Arbor Strand Booking,Appointment software,64,Customer Success Lead,https://arborstrandbooking.example/about,prospect_pages/p009.txt
+SAMPLE,P010,relaycue,Lattice and Lark Systems,B2B software,57,Support Team Lead,https://latticeandlark.example/about,prospect_pages/p010.txt
+SAMPLE,P011,relaycue,Wrenfield Ledgerworks,Bookkeeping software,5,Chief Technology Officer,https://wrenfieldledgerworks.example/about,prospect_pages/p011.txt
+SAMPLE,P012,relaycue,Clover Wick Learning,Learning software,140,Support Operations Manager,https://cloverwicklearning.example/about,prospect_pages/p012.txt
+SAMPLE,P013,relaycue,Hollowfern Legal,Legal services,42,Office Administrator,https://hollowfernlegal.example/about,prospect_pages/p013.txt
+SAMPLE,P014,fieldnest,Tallowbrook Fabrication,Metal fabrication,35,Maintenance Lead,https://tallowbrookfab.example/about,prospect_pages/p014.txt
+SAMPLE,P015,fieldnest,Lantern Mill Foods,Food processing,72,Plant Manager,https://lanternmillfoods.example/about,prospect_pages/p015.txt
+SAMPLE,P016,fieldnest,Copperwell Stitchworks,Textile workshop,18,Maintenance Supervisor,https://copperwellstitchworks.example/about,prospect_pages/p016.txt
+SAMPLE,P017,fieldnest,Amber Quarry Studio,Artisan pottery,8,Owner,https://amberquarrystudio.example/about,prospect_pages/p017.txt
+SAMPLE,P018,fieldnest,Oaktide Packaging,Packaging manufacturing,130,Maintenance Planner,https://oaktidepackaging.example/about,prospect_pages/p018.txt
+SAMPLE,P019,fieldnest,Narrowbridge Metalworks,Metal fabrication,45,Finance Director,https://narrowbridgemetal.example/about,prospect_pages/p019.txt
+SAMPLE,P020,fieldnest,Sparrowdown Textiles,Textile manufacturing,22,Operations Manager,https://sparrowdowntextiles.example/about,prospect_pages/p020.txt
+SAMPLE,P021,fieldnest,Grey Alder Laundry,Commercial laundry,60,Facilities Manager,https://greyalderlaundry.example/about,prospect_pages/p021.txt
+SAMPLE,P022,fieldnest,Sablewick Printworks,Commercial printing,30,Plant Maintenance Lead,https://sablewickprintworks.example/about,prospect_pages/p022.txt
+SAMPLE,P023,fieldnest,Rootbay Composite Works,Composite fabrication,10,Owner,https://rootbaycomposite.example/about,prospect_pages/p023.txt
+SAMPLE,P024,fieldnest,Foxhollow Bakes,Commercial bakery,48,Maintenance Coordinator,https://foxhollowbakes.example/about,prospect_pages/p024.txt
+SAMPLE,P025,fieldnest,Cairn Slope Engineering,Engineering consultancy,80,Sales Director,https://cairnslopeengineering.example/about,prospect_pages/p025.txt
