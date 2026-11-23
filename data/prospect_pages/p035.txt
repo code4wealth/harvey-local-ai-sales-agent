@@ -1,0 +1,11 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Larkspur Millworks
+Industry: Custom wood products
+
+NAV: Overview / Plant / Workshop / Equipment / Safety / Contact
+
+Larkspur makes custom cabinetry for local builders. The plant runs a day shift, and the workshop team maintains saws and finishing equipment using its usual checklist. A short company profile lists its products, delivery area, and phone hours; it does not describe a new facility, management move, or open role.
+
+COOKIE SETTINGS: This demonstration page stores only a preference. Allow all | Necessary only | Manage
+
+FOOTER: SAMPLE information page · Sitemap · Terms · © 2026 Larkspur Millworks

@@ -1,148 +1,488 @@
 {
   "sample_label": "SAMPLE",
-  "description": "Fictional incoming replies with human-authored ground-truth labels. The held_out split is reserved and was not used to tune prompts or model outputs.",
-  "development_count": 13,
-  "held_out_count": 7,
+  "description": "Fictional incoming replies with human-authored ground-truth labels and clear/ambiguous difficulty annotations. The held_out split is reserved and was not used to tune prompts or model outputs.",
+  "development_count": 36,
+  "held_out_count": 24,
   "replies": [
     {
       "sample_label": "SAMPLE",
       "reply_id": "R001",
       "split": "development",
       "text": "This sounds relevant to the way our support group hands cases between shifts. Please send a short overview and I can take a look.",
-      "ground_truth_label": "interested"
+      "ground_truth_label": "interested",
+      "difficulty": "clear"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R002",
       "split": "development",
       "text": "Could we find twenty minutes next week? I would like to understand how the handoff board works.",
-      "ground_truth_label": "meeting_request"
+      "ground_truth_label": "meeting_request",
+      "difficulty": "clear"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R003",
       "split": "development",
       "text": "Thanks for reaching out. We already have a process that works for our team, so we will pass.",
-      "ground_truth_label": "not_interested"
+      "ground_truth_label": "not_interested",
+      "difficulty": "clear"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R004",
       "split": "development",
       "text": "Appreciate the note. We are not considering a change this quarter; perhaps check back later in the year.",
-      "ground_truth_label": "not_interested"
+      "ground_truth_label": "not_interested",
+      "difficulty": "ambiguous"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R005",
       "split": "development",
       "text": "I am away through December 3. For the maintenance schedule, Mira in plant operations is the right person to contact.",
-      "ground_truth_label": "out_of_office"
+      "ground_truth_label": "out_of_office",
+      "difficulty": "ambiguous"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R006",
       "split": "development",
       "text": "I do not own our support workflow. Please try Rowan, who leads customer operations.",
-      "ground_truth_label": "wrong_person"
+      "ground_truth_label": "wrong_person",
+      "difficulty": "clear"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R007",
       "split": "development",
       "text": "Please remove me from future outreach and do not contact this address again.",
-      "ground_truth_label": "unsubscribe"
+      "ground_truth_label": "unsubscribe",
+      "difficulty": "clear"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R008",
       "split": "development",
       "text": "Does the product work for a team that keeps its equipment records on a local network?",
-      "ground_truth_label": "question"
+      "ground_truth_label": "question",
+      "difficulty": "clear"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R009",
       "split": "development",
       "text": "I received your message, but I am not sure why it was sent to this shared mailbox.",
-      "ground_truth_label": "other"
+      "ground_truth_label": "other",
+      "difficulty": "clear"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R010",
       "split": "development",
       "text": "We have been reviewing our shift notes. I would be open to seeing a brief example using fictional records.",
-      "ground_truth_label": "interested"
+      "ground_truth_label": "interested",
+      "difficulty": "clear"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R011",
       "split": "development",
       "text": "We are not evaluating new systems and have no budget for this. I am curious what one small workshop would pay, though.",
-      "ground_truth_label": "not_interested"
+      "ground_truth_label": "not_interested",
+      "difficulty": "ambiguous"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R012",
       "split": "development",
       "text": "Please send two times that work for you on Thursday or Friday.",
-      "ground_truth_label": "meeting_request"
+      "ground_truth_label": "meeting_request",
+      "difficulty": "clear"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R013",
       "split": "development",
       "text": "I am out of the office until Monday and will reply after I return. For urgent maintenance questions, contact the duty supervisor.",
-      "ground_truth_label": "out_of_office"
+      "ground_truth_label": "out_of_office",
+      "difficulty": "ambiguous"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R021",
+      "split": "development",
+      "text": "The handoff notes are close to what our support group has been discussing. A short outline would be useful.",
+      "ground_truth_label": "interested",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R022",
+      "split": "development",
+      "text": "Could we set up twenty minutes next week? Tuesday afternoon is easiest for me.",
+      "ground_truth_label": "meeting_request",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R023",
+      "split": "development",
+      "text": "Thanks for thinking of us. We are not going to look at another system now; perhaps after year-end, though I would not hold a slot for us.",
+      "ground_truth_label": "not_interested",
+      "difficulty": "ambiguous"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R024",
+      "split": "development",
+      "text": "I am away until Thursday. For questions about the maintenance calendar, Nia in plant operations can help while I am out.",
+      "ground_truth_label": "out_of_office",
+      "difficulty": "ambiguous"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R025",
+      "split": "development",
+      "text": "I handle payroll rather than customer support. The support lead sits with our service team.",
+      "ground_truth_label": "wrong_person",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R026",
+      "split": "development",
+      "text": "Please take this address off your mailing list. I do not want additional product messages.",
+      "ground_truth_label": "unsubscribe",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R027",
+      "split": "development",
+      "text": "Can the board show who last changed the owner of a case?",
+      "ground_truth_label": "question",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R028",
+      "split": "development",
+      "text": "I do not recognize the name in the subject line. Was this meant for a different office?",
+      "ground_truth_label": "other",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R029",
+      "split": "development",
+      "text": "We have been trying to make shift handoffs less dependent on chat history. Please send the overview.",
+      "ground_truth_label": "interested",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R030",
+      "split": "development",
+      "text": "I can make Thursday at 11. Please include the person who handles our support tooling.",
+      "ground_truth_label": "meeting_request",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R031",
+      "split": "development",
+      "text": "We have a vendor in place and will not be evaluating alternatives this year.",
+      "ground_truth_label": "not_interested",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R032",
+      "split": "development",
+      "text": "Automatic reply: I am away from email until Monday, May 18. I will respond when I return.",
+      "ground_truth_label": "out_of_office",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R033",
+      "split": "development",
+      "text": "I look after facilities, not the plant schedule. Mateo in maintenance planning is the right contact.",
+      "ground_truth_label": "wrong_person",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R034",
+      "split": "development",
+      "text": "Thank you for the considerate note. I would prefer not to receive further messages about this or related products.",
+      "ground_truth_label": "unsubscribe",
+      "difficulty": "ambiguous"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R035",
+      "split": "development",
+      "text": "Does a checklist entry support a due date as well as an assigned owner?",
+      "ground_truth_label": "question",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R036",
+      "split": "development",
+      "text": "This mailbox is used for supplier invoices. I have forwarded your message to our general office.",
+      "ground_truth_label": "other",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R037",
+      "split": "development",
+      "text": "The idea may help our evening team. Send something brief and I will see whether it is worth raising at our next meeting.",
+      "ground_truth_label": "interested",
+      "difficulty": "ambiguous"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R038",
+      "split": "development",
+      "text": "We are satisfied with our current process and do not want a demonstration.",
+      "ground_truth_label": "not_interested",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R039",
+      "split": "development",
+      "text": "I am travelling through Friday and will be slow to reply. There is no urgent action needed.",
+      "ground_truth_label": "out_of_office",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R040",
+      "split": "development",
+      "text": "I work in sales and cannot speak for equipment maintenance. Please contact the plant office.",
+      "ground_truth_label": "wrong_person",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R041",
+      "split": "development",
+      "text": "Remove me from future outreach, please.",
+      "ground_truth_label": "unsubscribe",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R042",
+      "split": "development",
+      "text": "We are not planning a purchase, but I need to understand whether records stay on our local network. Can you clarify that?",
+      "ground_truth_label": "question",
+      "difficulty": "ambiguous"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R043",
+      "split": "development",
+      "text": "Thanks for sending this over. I will keep it with my notes and see if anyone here wants to follow up.",
+      "ground_truth_label": "other",
+      "difficulty": "ambiguous"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R014",
       "split": "held_out",
       "text": "We are not planning a purchase now. Before I close this out, is there a way to export the checklist?",
-      "ground_truth_label": "question"
+      "ground_truth_label": "question",
+      "difficulty": "ambiguous"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R015",
       "split": "held_out",
       "text": "Thanks for the follow-up. We will not be making a change, and I do not need more information.",
-      "ground_truth_label": "not_interested"
+      "ground_truth_label": "not_interested",
+      "difficulty": "clear"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R016",
       "split": "held_out",
       "text": "This belongs with our facilities coordinator, not the finance team. I have forwarded your note internally.",
-      "ground_truth_label": "wrong_person"
+      "ground_truth_label": "wrong_person",
+      "difficulty": "clear"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R017",
       "split": "held_out",
       "text": "Stop emailing me. I do not consent to further messages.",
-      "ground_truth_label": "unsubscribe"
+      "ground_truth_label": "unsubscribe",
+      "difficulty": "clear"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R018",
       "split": "held_out",
       "text": "Your message refers to a support queue, but our team does not use that term. I cannot tell what you are proposing.",
-      "ground_truth_label": "other"
+      "ground_truth_label": "other",
+      "difficulty": "ambiguous"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R019",
       "split": "held_out",
       "text": "The maintenance notes are relevant. Could you share the setup steps and any limitations for a small team?",
-      "ground_truth_label": "interested"
+      "ground_truth_label": "interested",
+      "difficulty": "clear"
     },
     {
       "sample_label": "SAMPLE",
       "reply_id": "R020",
       "split": "held_out",
       "text": "I am away until Friday. Please contact Jo in operations while I am out; she can route the request.",
-      "ground_truth_label": "out_of_office"
+      "ground_truth_label": "out_of_office",
+      "difficulty": "ambiguous"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R044",
+      "split": "held_out",
+      "text": "The handoff notes sound relevant to our support group. Please send a short outline and I will ask our team lead to review it.",
+      "ground_truth_label": "interested",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R045",
+      "split": "held_out",
+      "text": "We are comparing ways to keep shift changes visible. I would be glad to see a brief walkthrough when you have one.",
+      "ground_truth_label": "interested",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R046",
+      "split": "held_out",
+      "text": "Could we speak for fifteen minutes next Wednesday? Please send a calendar option after lunch.",
+      "ground_truth_label": "meeting_request",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R047",
+      "split": "held_out",
+      "text": "A call would be useful. I have room Friday morning or Monday after 2.",
+      "ground_truth_label": "meeting_request",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R048",
+      "split": "held_out",
+      "text": "Would you be available for a short conversation next week? I can bring our maintenance planner.",
+      "ground_truth_label": "meeting_request",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R049",
+      "split": "held_out",
+      "text": "I appreciate the follow-up. We are not looking at new tools at this stage, so please do not schedule anything; maybe revisit after our next planning cycle.",
+      "ground_truth_label": "not_interested",
+      "difficulty": "ambiguous"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R050",
+      "split": "held_out",
+      "text": "We will not be changing providers this year. Out of curiosity, what would a five-person team pay each month?",
+      "ground_truth_label": "not_interested",
+      "difficulty": "ambiguous"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R051",
+      "split": "held_out",
+      "text": "I am away from the plant until Tuesday. Jo in operations can answer scheduling questions while I am gone.",
+      "ground_truth_label": "out_of_office",
+      "difficulty": "ambiguous"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R052",
+      "split": "held_out",
+      "text": "Automatic response: I am out of the office through Monday, June 8, and will reply after I return. For urgent matters, contact the front desk.",
+      "ground_truth_label": "out_of_office",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R053",
+      "split": "held_out",
+      "text": "The maintenance board sounds useful, but I am on the finance side and do not own that process. I can pass your note to our planner if you send a concise summary.",
+      "ground_truth_label": "wrong_person",
+      "difficulty": "ambiguous"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R054",
+      "split": "held_out",
+      "text": "I am not responsible for support operations. Please direct product questions to the customer care manager.",
+      "ground_truth_label": "wrong_person",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R055",
+      "split": "held_out",
+      "text": "Thanks for reaching out politely. I am not the right audience, and I would be grateful if you removed my address from future campaigns.",
+      "ground_truth_label": "unsubscribe",
+      "difficulty": "ambiguous"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R056",
+      "split": "held_out",
+      "text": "Please unsubscribe me and do not email this address again.",
+      "ground_truth_label": "unsubscribe",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R057",
+      "split": "held_out",
+      "text": "Can a supervisor export the maintenance checklist as a spreadsheet?",
+      "ground_truth_label": "question",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R058",
+      "split": "held_out",
+      "text": "We are unlikely to change systems soon. Before I close this out, could you tell me whether the board can export a checklist for an audit?",
+      "ground_truth_label": "question",
+      "difficulty": "ambiguous"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R059",
+      "split": "held_out",
+      "text": "I think this message may have been intended for someone else. Our shared inbox receives a lot of supplier correspondence.",
+      "ground_truth_label": "other",
+      "difficulty": "clear"
+    },
+    {
+      "sample_label": "SAMPLE",
+      "reply_id": "R060",
+      "split": "held_out",
+      "text": "I saw your note between site visits. I will check with our coordinator and get back to you if there is a fit; I cannot promise a date yet.",
+      "ground_truth_label": "other",
+      "difficulty": "ambiguous"
     }
   ]
 }

@@ -1,0 +1,7 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Pineglass Support Systems
+Industry: Customer support software
+
+Pineglass builds a case-management platform used by customer support teams at regional service companies. Its queue groups incoming requests by account and preserves notes across shift handoffs. The company says the product serves about 120 support organizations.
+
+A company announcement dated September 3, 2026 says Pineglass closed an $18 million Series B led by fictional Alder Ridge Capital. The release says the proceeds will fund product development and expansion of its customer operations team.

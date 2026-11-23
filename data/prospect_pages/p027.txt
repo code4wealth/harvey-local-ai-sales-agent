@@ -1,0 +1,7 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Burlstone Service Desk
+Industry: Customer service operations
+
+Burlstone runs a customer support center that handles account cases for several regional utilities. Its service desk publishes a weekly queue summary and tracks handoffs between the daytime and evening teams.
+
+A July 2026 company update says Maya Calder joined as Chief Customer Officer, taking responsibility for support operations and service delivery. The post describes this as a new executive appointment; it does not announce a product purchase.

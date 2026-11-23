@@ -2,4 +2,4 @@ SAMPLE — fictional prospect page for offline development only.
 Company: Cedarline Calendar
 Industry: Scheduling software
 
-The fictional company page describes a small scheduling app maintained by its founder and a few developers. The support page directs users to a general contact form. No recent hiring, expansion, leadership change, funding, or technology change is stated.
+The fictional company page describes a small scheduling app maintained by its founder and a few developers. The support page directs users to a general contact form. The page does not mention new operating or staffing events.

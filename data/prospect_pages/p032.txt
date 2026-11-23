@@ -1,0 +1,7 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Ashdown Metering
+Industry: Industrial metering equipment
+
+Ashdown supplies metering units to water utilities. Its support desk manages service cases in a shared queue, and plant staff maintain assembly equipment and run workshop checks.
+
+A regional trade roundup embedded on the site reports that Baytree Fabricators, a separate business, secured new investment and plans to expand its plant. The item identifies Baytree throughout; it does not describe a change at Ashdown Metering.

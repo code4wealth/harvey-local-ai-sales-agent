@@ -11,3 +11,11 @@ contact_name,contact_title,company_name,company_domain,employee_count,contact_em
 ,Owner,Rootbay Composite Works,rootbaycomposite.example,10,,data/prospect_pages/p023.txt,false
 ,Maintenance Coordinator,Foxhollow Bakes,foxhollowbakes.example,48,,data/prospect_pages/p024.txt,false
 ,Sales Director,Cairn Slope Engineering,cairnslopeengineering.example,80,,data/prospect_pages/p025.txt,false
+,Plant Operations Director,Ironwood Controls and Fabrication,ironwoodcontrols.example,172,,data/prospect_pages/p029.txt,false
+,Plant Manager,Westvale Instrument Works,westvaleinstrument.example,96,,data/prospect_pages/p030.txt,false
+,Maintenance Supervisor,Mossbridge Pumps,mossbridgepumps.example,214,,data/prospect_pages/p031.txt,false
+,Maintenance Manager,Ashdown Metering,ashdownmetering.example,83,,data/prospect_pages/p032.txt,false
+,Maintenance Planner,Kestrel Bay Tooling,kestrelbaytooling.example,48,,data/prospect_pages/p034.txt,false
+,Workshop Supervisor,Larkspur Millworks,larkspurmillworks.example,31,,data/prospect_pages/p035.txt,false
+,Studio Owner,Plover and Pine Creative Studio,ploverpinecreative.example,11,,data/prospect_pages/p036.txt,false
+,Maintenance Team Lead,Rainline Thermal Assemblies,rainlinethermal.example,145,,data/prospect_pages/p037.txt,false

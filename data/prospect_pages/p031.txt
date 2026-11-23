@@ -1,0 +1,7 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Mossbridge Pumps
+Industry: Pump and fluid-handling equipment
+
+Mossbridge manufactures commercial pumps. Customer service staff use a shared case queue, and technicians maintain test rigs and workshop equipment at the main plant.
+
+A company newsletter from April 2023 reported the completion of a service-center expansion. It described a new test bay and additional maintenance benches at that time. The current company overview still lists the same service center and does not report a more recent operating change.

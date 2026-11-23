@@ -28,32 +28,48 @@ PRODUCT_MOTIFS = {
     "relaycue": ("support", "case", "queue"),
     "fieldnest": ("maintenance", "equipment", "workshop", "plant", "fabrication"),
 }
-EXPECTED_PRODUCT_COUNTS = {"relaycue": 13, "fieldnest": 12}
+EXPECTED_PRODUCT_COUNTS = {"relaycue": 21, "fieldnest": 20}
+EXPECTED_SHARED_IDS = {"P029", "P030", "P031", "P032"}
 EXPECTED_REPLY_LABELS = Counter(
     {
-        "interested": 3,
-        "meeting_request": 2,
-        "not_interested": 4,
-        "out_of_office": 3,
-        "wrong_person": 2,
-        "unsubscribe": 2,
-        "question": 2,
-        "other": 2,
+        "interested": 8,
+        "meeting_request": 7,
+        "not_interested": 9,
+        "out_of_office": 8,
+        "wrong_person": 7,
+        "unsubscribe": 7,
+        "question": 7,
+        "other": 7,
     }
 )
-EXPECTED_HELD_OUT_LABELS = Counter(
+EXPECTED_DEVELOPMENT_LABELS = Counter(
     {
-        "interested": 1,
-        "not_interested": 1,
-        "out_of_office": 1,
-        "wrong_person": 1,
-        "unsubscribe": 1,
-        "question": 1,
-        "other": 1,
+        "interested": 5,
+        "meeting_request": 4,
+        "not_interested": 6,
+        "out_of_office": 5,
+        "wrong_person": 4,
+        "unsubscribe": 4,
+        "question": 4,
+        "other": 4,
     }
 )
-EXPECTED_FIT_TIERS = {"poor_fit": 9, "not_marked_poor_fit": 16}
-EXPECTED_SIGNAL_COUNTS = {"no_signal": 4, "implied_signal": 2}
+EXPECTED_HELD_OUT_LABELS = Counter({label: 3 for label in EXPECTED_REPLY_LABELS})
+EXPECTED_DIFFICULTY_COUNTS = {
+    "development": Counter({"clear": 26, "ambiguous": 10}),
+    "held_out": Counter({"clear": 14, "ambiguous": 10}),
+}
+EXPECTED_FIT_TIERS = {"poor_fit": 10, "not_marked_poor_fit": 27}
+EXPECTED_SIGNAL_COUNTS = {"no_signal": 7, "implied_signal": 2}
+EXPECTED_NEW_CASES = {
+    "explicit_funding": 1,
+    "leadership_change": 1,
+    "pain_mention": 1,
+    "mixed_multi_signal": 1,
+    "negated_signal": 1,
+    "stale_signal": 1,
+    "third_party_signal": 1,
+}
 
 
 class CorpusValidationError(RuntimeError):
@@ -127,6 +143,7 @@ def load_prospects() -> tuple[dict[str, list[dict[str, str]]], dict[str, Path]]:
     expected_fields = list(prospects.CSV_FIELDS)
     grouped: dict[str, list[dict[str, str]]] = {}
     page_paths: dict[str, Path] = {}
+    ids_by_product: dict[str, set[str]] = {}
 
     for product_id, csv_path in PRODUCT_CSVS.items():
         require(csv_path.is_file(), f"missing product prospect CSV: {csv_path.relative_to(ROOT)}")
@@ -148,6 +165,7 @@ def load_prospects() -> tuple[dict[str, list[dict[str, str]]], dict[str, Path]]:
             f"{product_id} should contain {EXPECTED_PRODUCT_COUNTS[product_id]} prospects, got {len(rows)}",
         )
 
+        product_ids: set[str] = set()
         for row in rows:
             require(bool(row["company_name"].strip()), f"empty company_name in {csv_path.name}")
             require(
@@ -175,21 +193,39 @@ def load_prospects() -> tuple[dict[str, list[dict[str, str]]], dict[str, Path]]:
                 re.fullmatch(r"P\d{3}", prospect_id) is not None,
                 f"page filename does not map to a prospect ID: {relative_page}",
             )
-            require(prospect_id not in page_paths, f"duplicate prospect ID: {prospect_id}")
+            require(prospect_id not in product_ids, f"duplicate prospect ID in {product_id}: {prospect_id}")
+            product_ids.add(prospect_id)
+            previous_path = page_paths.get(prospect_id)
+            require(
+                previous_path is None or previous_path == resolved,
+                f"shared prospect ID points to different page files: {prospect_id}",
+            )
             page_paths[prospect_id] = resolved
         grouped[product_id] = rows
+        ids_by_product[product_id] = product_ids
 
     all_rows = [row for rows in grouped.values() for row in rows]
-    require(len(all_rows) == 25, f"expected 25 prospects, got {len(all_rows)}")
+    require(len(all_rows) == 41, f"expected 41 product-prospect rows, got {len(all_rows)}")
     require(
-        len({row["company_name"].casefold() for row in all_rows}) == len(all_rows),
-        "prospect company names are not unique across products",
+        len(page_paths) == 37,
+        f"expected 37 unique prospect sources, got {len(page_paths)}",
     )
+    shared_ids = ids_by_product["relaycue"] & ids_by_product["fieldnest"]
+    require(
+        shared_ids == EXPECTED_SHARED_IDS,
+        f"expected four specified prospects to be shared, got {sorted(shared_ids)}",
+    )
+    for product_id, rows in grouped.items():
+        names = [row["company_name"].casefold() for row in rows]
+        require(len(set(names)) == len(names), f"duplicate company within product {product_id}")
     print(
         "PASS: prospect CSV headers exactly match app.prospects.CSV_FIELDS "
-        f"({len(expected_fields)} fields; {sum(map(len, grouped.values()))} rows)"
+        f"({len(expected_fields)} fields; {len(all_rows)} product rows)"
     )
-    print(f"PASS: repository-root page paths resolve ({len(page_paths)}/{len(all_rows)})")
+    print(
+        "PASS: repository-root page paths resolve "
+        f"({len(page_paths)} unique sources across {len(all_rows)} product rows)"
+    )
     return grouped, page_paths
 
 
@@ -219,7 +255,7 @@ def validate_real_import(grouped: dict[str, list[dict[str, str]]]) -> None:
                 totals["inserted"] += inserted
                 totals["skipped"] += skipped
                 print(f"PASS: real importer {PRODUCT_NAMES[product_id]} inserted={inserted}, skipped={skipped}")
-            require(totals["inserted"] == 25 and totals["skipped"] == 0, "corpus import totals are incorrect")
+            require(totals["inserted"] == 41 and totals["skipped"] == 0, "corpus import totals are incorrect")
             print(f"PASS: real import total inserted={totals['inserted']}, skipped={totals['skipped']}")
         finally:
             conn.close()
@@ -239,7 +275,7 @@ def load_case_notes(prospect_ids: set[str]) -> dict[str, dict[str, str]]:
         "sample_case_notes.csv contains an unlabelled record",
     )
     notes = {row["prospect_id"]: row for row in rows}
-    require(len(notes) == len(rows) == 25, "sample case notes must have 25 unique prospect annotations")
+    require(len(notes) == len(rows) == 37, "sample case notes must have 37 unique prospect annotations")
     require(set(notes) == prospect_ids, "sample case-note IDs do not match prospect page IDs")
     return notes
 
@@ -248,6 +284,15 @@ def validate_labels_and_signals(
     notes: dict[str, dict[str, str]], page_paths: dict[str, Path]
 ) -> None:
     case_counts = Counter(row["case_type"] for row in notes.values())
+    unexpected_new_cases = {
+        case_type: case_counts[case_type]
+        for case_type, expected_count in EXPECTED_NEW_CASES.items()
+        if case_counts[case_type] != expected_count
+    }
+    require(
+        not unexpected_new_cases,
+        f"new prospect signal and evidence-trap annotations are incorrect: {unexpected_new_cases}",
+    )
     fit_tiers = Counter(
         "poor_fit" if row["case_type"].startswith("poor_fit") else "not_marked_poor_fit"
         for row in notes.values()
@@ -285,6 +330,52 @@ def validate_labels_and_signals(
         "PASS: no expected case label or fit tier appears in any corpus filename "
         f"or prospect page text ({len(page_paths)} pages checked)"
     )
+    validate_case_evidence(page_paths)
+    validate_noisy_pages(page_paths)
+
+
+def validate_case_evidence(page_paths: dict[str, Path]) -> None:
+    required_phrases = {
+        "P026": ("series b", "$18 million"),
+        "P027": ("maya calder", "chief customer officer"),
+        "P028": ("requests often arrive", "handoff"),
+        "P029": ("appointed", "second production line"),
+        "P030": ("decided against", "no current plan"),
+        "P031": ("april 2023", "service-center expansion"),
+        "P032": ("baytree fabricators", "does not describe a change at ashdown metering"),
+        "P037": ("october 6, 2026", "two maintenance mechanics"),
+    }
+    for prospect_id, phrases in required_phrases.items():
+        text = page_paths[prospect_id].read_text(encoding="utf-8")
+        missing = [phrase for phrase in phrases if not contains_phrase(text, phrase)]
+        require(
+            not missing,
+            f"required scenario evidence is missing from {prospect_id}: {missing}",
+        )
+    print(
+        "PASS: requested funding, leadership, pain, mixed-signal, negated, stale, "
+        "third-party, and hiring evidence is present"
+    )
+
+
+def validate_noisy_pages(page_paths: dict[str, Path]) -> None:
+    expected_ids = {"P033", "P034", "P035"}
+    noise_markers = {
+        "navigation": ("navigation", "nav:"),
+        "cookie banner": ("cookie",),
+        "footer": ("footer",),
+    }
+    present: set[str] = set()
+    for prospect_id in expected_ids:
+        text = page_paths[prospect_id].read_text(encoding="utf-8").casefold()
+        for marker, variants in noise_markers.items():
+            if any(variant in text for variant in variants):
+                present.add(marker)
+    require(
+        present == set(noise_markers),
+        f"three noisy page samples must include navigation, cookie banner, and footer; found {sorted(present)}",
+    )
+    print("PASS: three prospect pages include navigation, cookie-banner, and footer noise")
 
 
 def validate_replies() -> None:
@@ -293,20 +384,57 @@ def validate_replies() -> None:
     replies = payload.get("replies", [])
     require(payload.get("sample_label") == "SAMPLE", "sample_replies.json root is not labelled SAMPLE")
     require(
-        len(replies) == 20 and all(reply.get("sample_label") == "SAMPLE" for reply in replies),
-        "sample_replies.json must contain 20 SAMPLE-labelled replies",
+        len(replies) == 60 and all(reply.get("sample_label") == "SAMPLE" for reply in replies),
+        "sample_replies.json must contain 60 SAMPLE-labelled replies",
     )
-    require(len({reply.get("reply_id") for reply in replies}) == 20, "reply IDs are not unique")
+    require(len({reply.get("reply_id") for reply in replies}) == 60, "reply IDs are not unique")
+    require(
+        all(reply.get("split") in {"development", "held_out"} for reply in replies),
+        "reply split must be development or held_out",
+    )
+    require(
+        all(reply.get("difficulty") in {"clear", "ambiguous"} for reply in replies),
+        "every reply must have difficulty clear or ambiguous",
+    )
     all_labels = Counter(reply.get("ground_truth_label", "") for reply in replies)
     held_out = [reply for reply in replies if reply.get("split") == "held_out"]
     development = [reply for reply in replies if reply.get("split") == "development"]
     held_out_labels = Counter(reply.get("ground_truth_label", "") for reply in held_out)
-    require(len(development) == 13 and len(held_out) == 7, "reply split must be 13 development / 7 held_out")
+    development_labels = Counter(reply.get("ground_truth_label", "") for reply in development)
+    require(
+        len(development) == 36 and len(held_out) == 24,
+        "reply split must be 36 development / 24 held_out",
+    )
     require(all_labels == EXPECTED_REPLY_LABELS, f"unexpected all-reply labels: {dict(all_labels)}")
-    require(held_out_labels == EXPECTED_HELD_OUT_LABELS, f"unexpected held-out labels: {dict(held_out_labels)}")
+    require(
+        development_labels == EXPECTED_DEVELOPMENT_LABELS,
+        f"unexpected development labels: {dict(development_labels)}",
+    )
+    require(
+        held_out_labels == EXPECTED_HELD_OUT_LABELS,
+        f"held-out labels must include at least three examples of every label: {dict(held_out_labels)}",
+    )
+    difficulty_counts = {
+        split: Counter(reply["difficulty"] for reply in split_replies)
+        for split, split_replies in (("development", development), ("held_out", held_out))
+    }
+    require(
+        difficulty_counts == EXPECTED_DIFFICULTY_COUNTS,
+        f"unexpected reply difficulty counts: { {split: dict(counts) for split, counts in difficulty_counts.items()} }",
+    )
+    require(
+        difficulty_counts["held_out"]["ambiguous"] * 3 >= len(held_out),
+        "at least one third of held-out replies must be ambiguous",
+    )
     print(f"Reply label counts (all {len(replies)}): {format_counts(all_labels)}")
+    print(f"Reply label counts (development {len(development)}): {format_counts(development_labels)}")
     print(f"Reply label counts (held_out {len(held_out)}): {format_counts(held_out_labels)}")
-    print("PASS: reply IDs, SAMPLE labels, and 13/7 development/held_out split")
+    for split, split_replies in (("development", development), ("held_out", held_out)):
+        print(
+            f"Reply difficulty counts ({split} {len(split_replies)}): "
+            f"{format_counts(difficulty_counts[split])}"
+        )
+    print("PASS: reply IDs, SAMPLE labels, difficulty annotations, and 36/24 development/held_out split")
 
 
 def validate_product_distinction(
@@ -316,9 +444,30 @@ def validate_product_distinction(
         product_id: {row["company_name"].casefold() for row in rows}
         for product_id, rows in grouped.items()
     }
+    rows_by_product_and_id = {
+        product_id: {
+            Path(row["page_text_path"]).stem.upper(): row
+            for row in rows
+        }
+        for product_id, rows in grouped.items()
+    }
+    shared_ids = set(rows_by_product_and_id["relaycue"]) & set(rows_by_product_and_id["fieldnest"])
+    require(shared_ids == EXPECTED_SHARED_IDS, "the expected four shared prospects are missing")
+    for prospect_id in shared_ids:
+        relaycue_row = rows_by_product_and_id["relaycue"][prospect_id]
+        fieldnest_row = rows_by_product_and_id["fieldnest"][prospect_id]
+        require(
+            relaycue_row["company_name"].casefold() == fieldnest_row["company_name"].casefold()
+            and relaycue_row["company_domain"].casefold() == fieldnest_row["company_domain"].casefold(),
+            f"shared prospect {prospect_id} does not have matching company records",
+        )
+    expected_shared_names = {
+        rows_by_product_and_id["relaycue"][prospect_id]["company_name"].casefold()
+        for prospect_id in shared_ids
+    }
     require(
-        company_sets["relaycue"].isdisjoint(company_sets["fieldnest"]),
-        "the two product prospect sets share company names",
+        company_sets["relaycue"] & company_sets["fieldnest"] == expected_shared_names,
+        "only the four specified prospects may be shared by the products",
     )
     motif_counts: dict[str, int] = {}
     for product_id, rows in grouped.items():
@@ -347,7 +496,8 @@ def validate_product_distinction(
         "PASS: product prospect sets are distinguishable; "
         f"RelayCue support/case/queue motif={motif_counts['relaycue']}/{len(grouped['relaycue'])}, "
         f"FieldNest maintenance/equipment/workshop/plant/fabrication motif="
-        f"{motif_counts['fieldnest']}/{len(grouped['fieldnest'])}; company names are disjoint"
+        f"{motif_counts['fieldnest']}/{len(grouped['fieldnest'])}; "
+        f"{len(shared_ids)} company sources are deliberately shared"
     )
 
 

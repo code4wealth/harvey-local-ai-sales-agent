@@ -1,0 +1,7 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Ironwood Controls and Fabrication
+Industry: Industrial controls manufacturing
+
+Ironwood builds control panels and fabricated components for food-processing plants. The customer support team tracks service cases in a shared queue, while plant technicians maintain assembly equipment and record workshop inspections.
+
+Two dated company updates describe recent changes. In May 2026, Ironwood appointed a new Chief Operating Officer. In September 2026, it opened a second production line at its northern plant and added an evening shift. The notices describe both company-wide leadership and operating changes.

@@ -24,3 +24,15 @@ SAMPLE,P022,explicit_hiring,"The source text contains one explicit, checkable ev
 SAMPLE,P023,no_signal_small,No qualifying buying signal is stated in the source text.
 SAMPLE,P024,explicit_expansion,"The source text contains one explicit, checkable event."
 SAMPLE,P025,poor_fit,"Intentionally weak product, company-size, industry, or buyer-role fit."
+SAMPLE,P026,explicit_funding,A dated company announcement describes a new financing round for this prospect.
+SAMPLE,P027,leadership_change,The company names a new customer operations executive in a dated update.
+SAMPLE,P028,pain_mention,The source describes recurring case handoff and queue-ownership problems.
+SAMPLE,P029,mixed_multi_signal,Two recent company events are stated: an executive appointment and a production-line opening.
+SAMPLE,P030,negated_signal,The page says the proposed shift was declined and states there is no current facility or capital plan.
+SAMPLE,P031,stale_signal,The only expansion reference dates to 2023 and is not presented as a current change.
+SAMPLE,P032,third_party_signal,The investment and expansion item belongs to a separate business named in a trade roundup.
+SAMPLE,P033,no_signal,The general company description gives no current qualifying operational event.
+SAMPLE,P034,no_signal,The source describes routine workshop activity without a recent change.
+SAMPLE,P035,no_signal,The page lists ordinary operations and products without a current event.
+SAMPLE,P036,poor_fit_industry,A small creative agency with no production plant is an intentional industry-fit mismatch.
+SAMPLE,P037,explicit_hiring,A current dated recruitment notice seeks two maintenance mechanics.
