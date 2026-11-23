@@ -253,6 +253,7 @@ def _chat(
     system: str | None,
     timeout: float,
     num_ctx: int,
+    on_raw: Callable[[str], None] | None = None,
 ) -> _ChatResult:
     if num_ctx <= 0:
         raise ValueError("num_ctx must be a positive integer")
@@ -356,7 +357,10 @@ def _chat(
         raise OllamaResponseError("Ollama /api/chat response must be a JSON object")
     message = body.get("message")
     content = message.get("content", "") if isinstance(message, dict) else ""
-    content = clean_reply(str(content))
+    raw_reply = str(content)
+    if on_raw is not None:
+        on_raw(raw_reply)
+    content = clean_reply(raw_reply)
 
     initial_status = "ok"
     if format is not None:
@@ -467,13 +471,14 @@ def generate_json(
     timeout: float = DEFAULT_TIMEOUT,
     num_ctx: int = DEFAULT_NUM_CTX,
     post_validate: Callable[[BaseModel], None] | None = None,
+    on_raw: Callable[[str], None] | None = None,
 ) -> BaseModel:
     """Generate structured output and validate it with Pydantic.
 
     ``retries=2`` means up to three total inference calls. Each retry includes
     the previous schema or ``post_validate`` error. Transport/response failures
     propagate immediately so callers can queue or report the task instead of
-    hot-looping.
+    hot-looping. If supplied, ``on_raw`` receives each reply before cleanup.
     """
     last_error: Exception | None = None
     retry_prompt = prompt
@@ -486,6 +491,7 @@ def generate_json(
             system=system,
             timeout=timeout,
             num_ctx=num_ctx,
+            on_raw=on_raw,
         )
         try:
             value = schema.model_validate(_extract_json(result.content))
@@ -498,17 +504,18 @@ def generate_json(
                 result.log_id, task=task, status="error:invalid_json"
             )
             logger.warning(
-                "generate_json task=%s attempt %d/%d returned invalid output: %s",
+                "generate_json task=%s attempt %d/%d returned invalid output (%s)",
                 task,
                 attempt + 1,
                 retries + 1,
-                exc,
+                type(exc).__name__,
             )
             retry_prompt = (
                 prompt
                 + f"\n\nYour previous answer was invalid: {last_error}. "
                 "Return only valid JSON matching the schema."
             )
+    reason = type(last_error).__name__ if last_error is not None else "unknown validation error"
     raise InvalidJsonResponse(
-        f"Model did not return valid {schema.__name__} after {retries + 1} attempts: {last_error}"
+        f"Model did not return valid {schema.__name__} after {retries + 1} attempts ({reason})"
     )

@@ -75,7 +75,8 @@ are dropped; a quote is never repaired by inventing source text.
 same normalized matching, but returns retained signal objects without changing
 their original evidence strings. Its return value is
 `(kept_signals, quote_drops, type_drops)`. Types outside `SIGNAL_WEIGHTS`,
-including `none`, are dropped and counted separately from evidence failures.
+including legacy `none` items in older stored runs, are dropped and counted
+separately from evidence failures.
 
 ## Scoring — deterministic
 
@@ -171,8 +172,16 @@ and full pipeline orchestration are not implemented in this workflow batch.
 Signal evaluation is separate from runtime: only offline `scripts/eval_*.py`
 and `scripts/validate_corpus.py` may read files under `data/eval/`. Target a
 small development subset with `python scripts/eval_signals.py --model qwen3:4b
---only P012,P028 --verbose`; run the reserved set with
+--only P012,P028 --verbose`; held-out evaluation is selected explicitly with
 `python scripts/eval_signals.py --model qwen3:4b --held-out --verbose`.
-`--freeze-prompt` checks (and, if absent, initializes) the prompt baseline;
-held-out always enforces it. Local reports and the isolated evaluator DB are
-saved under `test_evidence/real_run/`.
+
+`--freeze-prompt` is a standalone operator action: it writes the current prompt
+SHA-256 to `data/eval/frozen_signal_prompt.sha256` and exits without evaluating.
+If a different hash is already present, the operator must explicitly use
+`--freeze-prompt --refreeze`. Development runs never read or write this file.
+Held-out runs require a matching frozen hash and never initialize or modify it.
+Development reports record raw replies and evidence for diagnostics, and
+`--verbose --only` also prints preprocessing, parsing, and drop details. Held-out
+output and reports retain run configuration plus IDs and counts only; they do
+not include raw replies, evidence, or page text. Local reports and the isolated
+evaluator DB are saved under `test_evidence/real_run/`.

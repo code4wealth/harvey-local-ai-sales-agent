@@ -4,6 +4,7 @@ import asyncio
 import json
 
 import httpx
+import pytest
 
 from app import db, llm_client, prospects
 from app.main import app
@@ -78,6 +79,52 @@ def _model_output(items: list[dict]) -> str:
     return json.dumps({"signals": items}, ensure_ascii=False)
 
 
+def test_empty_signal_list_is_valid_and_schema_fields_are_ordered():
+    assert signal_workflow.SignalExtraction.model_validate({"signals": []}).signals == []
+    assert list(signal_workflow.ProspectSignal.model_fields) == [
+        "evidence",
+        "type",
+        "about_company",
+    ]
+    schema = signal_workflow.SignalExtraction.model_json_schema()
+    assert "none" not in schema["$defs"]["ProspectSignal"]["properties"]["type"]["enum"]
+    with pytest.raises(ValueError):
+        signal_workflow.ProspectSignal.model_validate(
+            {"evidence": "", "type": "none", "about_company": False}
+        )
+
+
+def test_legacy_stored_none_signal_still_loads(db_path):
+    conn = db.connect()
+    try:
+        product_id = db.create_product(conn, name="legacy product")
+        prospect_id = db.create_prospect(
+            conn, product_id=product_id, company_name="Legacy Library"
+        )
+        run_id = db.create_signal_run(conn, prospect_id=prospect_id, model_name="old-model")
+        legacy = [{"type": "none", "evidence": "", "about_company": False}]
+        conn.execute(
+            "UPDATE signal_runs SET status = 'succeeded', signals_json = ? WHERE id = ?",
+            (json.dumps(legacy), run_id),
+        )
+        conn.commit()
+        payload = signal_workflow.signal_run_payload(db.get_signal_run(conn, run_id))
+    finally:
+        conn.close()
+    assert payload["signals"] == legacy
+
+
+def test_page_text_delimiters_avoid_existing_marker_strings():
+    page_text = (
+        "Intro <<<PROSPECT_PAGE_TEXT_START_0>>> and "
+        "<<<PROSPECT_PAGE_TEXT_END_0>>> footer"
+    )
+    prompt = signal_workflow.build_signal_prompt(page_text)
+    assert "<<<PROSPECT_PAGE_TEXT_START_1>>>" in prompt
+    assert "<<<PROSPECT_PAGE_TEXT_END_1>>>" in prompt
+    assert page_text in prompt
+
+
 def test_signal_api_validates_schema_uses_only_clean_page_and_persists_exact_removals(
     db_path, monkeypatch, tmp_path
 ):
@@ -149,8 +196,11 @@ def test_signal_api_validates_schema_uses_only_clean_page_and_persists_exact_rem
     assert "Footer:" not in prompt
     assert "Private product metadata" not in prompt
     assert "Private company metadata" not in prompt
-    assert "verbatim substring" in prompt
-    assert "older than one year" in prompt
+    assert "complete sentence copied exactly" in prompt
+    assert "more than one year" in prompt
+    assert "<<<PROSPECT_PAGE_TEXT_START_0>>>" in prompt
+    assert prompt.index("<<<PROSPECT_PAGE_TEXT_START_0>>>") < prompt.index("Rules:")
+    assert prompt.rstrip().endswith("and about_company.")
 
     assert _get(f"/api/prospects/{prospect_id}/signals").json() == body
     conn = db.connect()
@@ -390,9 +440,7 @@ def test_ollama_outage_queues_and_replays_signal_run(db_path, monkeypatch, tmp_p
         conn.close()
 
     def healthy(request):
-        return _chat_response(
-            _model_output([{"type": "none", "evidence": "", "about_company": False}])
-        )
+        return _chat_response(_model_output([]))
 
     _use_mock_transport(monkeypatch, healthy)
     import app.queue_worker as queue_worker
@@ -411,7 +459,7 @@ def test_ollama_outage_queues_and_replays_signal_run(db_path, monkeypatch, tmp_p
     completed = _get(f"/api/prospects/{prospect_id}/signals").json()
     assert completed["status"] == "succeeded"
     assert completed["signals"] == []
-    assert completed["drop_counts"]["type"] == 1
+    assert completed["drop_counts"]["type"] == 0
     conn = db.connect()
     try:
         assert db.get_task(conn, queued["queue_task_id"])["status"] == "done"

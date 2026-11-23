@@ -92,6 +92,35 @@ def test_options_schema_think_stripping_and_inference_log(db_path, monkeypatch):
     assert rows[0]["status"] == "ok"
 
 
+def test_generate_json_raw_callback_receives_each_reply_before_cleaning(db_path, monkeypatch):
+    replies = [
+        "<think>private first-attempt reasoning</think>not JSON",
+        '<think>private second-attempt reasoning</think>{"answer":"hello"}',
+    ]
+    sent = iter(replies)
+    raw_replies = []
+
+    def handler(request):
+        return httpx.Response(200, json={"message": {"content": next(sent)}})
+
+    use_mock_transport(monkeypatch, handler)
+    result = llm_client.generate_json(
+        "Return an answer.",
+        TinyAnswer,
+        model="qwen3:4b",
+        task="raw-callback-test",
+        retries=1,
+        on_raw=raw_replies.append,
+    )
+
+    assert result.answer == "hello"
+    assert raw_replies == replies
+    rows_as_text = json.dumps([dict(row) for row in inference_rows()])
+    assert all(reply not in rows_as_text for reply in replies)
+    assert "private first-attempt reasoning" not in rows_as_text
+    assert "private second-attempt reasoning" not in rows_as_text
+
+
 def test_prompt_near_context_limit_warns_and_format_is_optional(db_path, monkeypatch, caplog):
     seen = {}
 

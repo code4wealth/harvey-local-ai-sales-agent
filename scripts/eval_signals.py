@@ -50,7 +50,7 @@ TRAP_GROUPS: dict[str, set[str]] = {
     "no-signal/implied": {"no_signal", "implied"},
     "negated": {"negated"},
     "stale": {"stale"},
-    "third-party": {"other_company"},
+    "other-company": {"other_company"},
 }
 
 
@@ -243,28 +243,43 @@ def signal_prompt_hash() -> str:
     return hashlib.sha256(template.encode("utf-8")).hexdigest()
 
 
-def _check_frozen_prompt(current_hash: str, *, allow_initialize: bool = False) -> str:
+def _read_frozen_prompt() -> str:
     if not FROZEN_PROMPT_PATH.is_file():
-        if not allow_initialize:
-            raise ValueError(
-                "frozen signal-prompt hash is missing; freeze the development prompt before a held-out run"
-            )
-        FROZEN_PROMPT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        FROZEN_PROMPT_PATH.write_text(current_hash + "\n", encoding="utf-8")
-        print(f"Created frozen signal-prompt hash at {FROZEN_PROMPT_PATH.relative_to(ROOT)}")
-        return current_hash
+        raise ValueError(
+            "frozen signal-prompt hash is missing; run --freeze-prompt before a held-out evaluation"
+        )
     entries = FROZEN_PROMPT_PATH.read_text(encoding="utf-8").strip().split()
-    if not entries:
-        raise ValueError(f"frozen signal-prompt hash is empty: {FROZEN_PROMPT_PATH}")
-    frozen_hash = entries[0]
-    if not re.fullmatch(r"[0-9a-f]{64}", frozen_hash):
-        raise ValueError(f"invalid frozen signal-prompt hash in {FROZEN_PROMPT_PATH.relative_to(ROOT)}")
+    if len(entries) != 1 or not re.fullmatch(r"[0-9a-f]{64}", entries[0]):
+        raise ValueError("invalid frozen signal-prompt hash; use --refreeze to replace it")
+    return entries[0]
+
+
+def _check_frozen_prompt(current_hash: str) -> str:
+    frozen_hash = _read_frozen_prompt()
     if current_hash != frozen_hash:
         raise ValueError(
             "signal prompt hash differs from the frozen held-out baseline "
             f"(current={current_hash}, frozen={frozen_hash})"
         )
     return frozen_hash
+
+
+def _freeze_prompt(current_hash: str, *, refreeze: bool = False) -> str:
+    if FROZEN_PROMPT_PATH.exists():
+        try:
+            frozen_hash = _read_frozen_prompt()
+        except ValueError as exc:
+            if not refreeze:
+                raise ValueError(f"{exc}; use --refreeze to replace it") from exc
+        else:
+            if frozen_hash != current_hash and not refreeze:
+                raise ValueError(
+                    "signal prompt hash differs from the existing frozen hash "
+                    f"(current={current_hash}, frozen={frozen_hash}); use --refreeze to replace it"
+                )
+    FROZEN_PROMPT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    FROZEN_PROMPT_PATH.write_text(current_hash + "\n", encoding="utf-8")
+    return current_hash
 
 
 def _evaluate_one(annotation: dict[str, Any], payload: dict[str, Any] | None) -> bool:
@@ -306,9 +321,19 @@ def _read_inference_diagnostics(run_id: int | None) -> list[dict[str, Any]]:
         conn.close()
 
 
-def _run_one(prospect_db_id: int, model: str | None) -> tuple[dict[str, Any] | None, str | None]:
+def _run_one(
+    prospect_db_id: int,
+    model: str | None,
+    diagnostics: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
+    diagnostics.setdefault("raw_replies", [])
     try:
-        signal_workflow.submit_signals(prospect_db_id, model=model)
+        signal_workflow.submit_signals(
+            prospect_db_id,
+            model=model,
+            diagnostics=diagnostics,
+            on_raw=diagnostics["raw_replies"].append,
+        )
         return _read_run(prospect_db_id), None
     except llm_client.OllamaUnavailable as exc:
         run_id = getattr(exc, "signal_run_id", None)
@@ -333,25 +358,31 @@ def _run_one(prospect_db_id: int, model: str | None) -> tuple[dict[str, Any] | N
         return _read_run(prospect_db_id), f"{type(exc).__name__}: {exc}"
 
 
-def _model_none_count(payload: dict[str, Any] | None) -> int:
+def _model_none_count(
+    payload: dict[str, Any] | None, diagnostics: dict[str, Any] | None
+) -> int:
+    """Count only a successful run whose parsed model result had no signals."""
     if payload is None or payload.get("status") != "succeeded":
         return 0
-    drop_counts = payload.get("drop_counts") or {}
-    # SignalExtraction accepts only known types; the sole code-dropped type is "none".
-    return max(0, int(drop_counts.get("type", 0) or 0))
+    if diagnostics is None or "parsed_signals" not in diagnostics:
+        return 0
+    parsed = diagnostics["parsed_signals"]
+    return int(isinstance(parsed, list) and not parsed)
 
 
-def _trap_outcome(payload: dict[str, Any] | None) -> str:
+def _trap_outcome(
+    payload: dict[str, Any] | None, diagnostics: dict[str, Any] | None = None
+) -> str:
     if payload is None or payload.get("status") != "succeeded":
         return "unresolved"
     drop_counts = payload.get("drop_counts") or {}
     if payload.get("signals") or any(
         int(drop_counts.get(key, 0) or 0) > 0
-        for key in ("quote", "other_company", "negated", "stale")
+        for key in DROP_KEYS
     ):
         return "exercised"
-    if _model_none_count(payload) > 0:
-        return "none"
+    if _model_none_count(payload, diagnostics) > 0:
+        return "empty-list"
     return "unclassified"
 
 
@@ -360,13 +391,53 @@ def _case_result(
     annotation: dict[str, Any],
     payload: dict[str, Any] | None,
     error: str | None,
+    diagnostics: dict[str, Any],
     *,
     verbose: bool,
+    held_out: bool,
+    detailed: bool,
 ) -> tuple[bool, dict[str, Any]]:
     passed = _evaluate_one(annotation, payload)
-    kept = payload.get("signals") if payload is not None else None
-    drops = payload.get("drop_counts") if payload is not None else None
-    model_none = _model_none_count(payload)
+    kept = payload.get("signals") or [] if payload is not None else []
+    raw_drops = payload.get("drop_counts") or {} if payload is not None else {}
+    drops = {key: int(raw_drops.get(key, 0) or 0) for key in DROP_KEYS}
+    parsed = diagnostics.get("parsed_signals")
+    parsed_count = len(parsed) if isinstance(parsed, list) else 0
+    filtered_count = diagnostics.get("signals_returned_then_filtered")
+    if filtered_count is None and isinstance(parsed, list):
+        filtered_count = max(0, parsed_count - len(kept))
+    filtered_count = int(filtered_count or 0)
+    model_none = _model_none_count(payload, diagnostics)
+    inference = _read_inference_diagnostics(int(payload["id"])) if payload else []
+    removed_lines = diagnostics.get("removed_lines") or []
+    raw_replies = diagnostics.get("raw_replies") or []
+
+    if held_out:
+        # Reserved reports are restricted to IDs and counts: no model text,
+        # evidence, page content, annotation labels, or exception messages.
+        result = {
+            "passed_count": int(passed),
+            "failed_count": int(not payload or payload.get("status") != "succeeded"),
+            "kept_signal_count": len(kept),
+            "parsed_signal_count": parsed_count,
+            "parsed_output_count": int(isinstance(parsed, list)),
+            "signals_returned_then_filtered": filtered_count,
+            "model_none_count": model_none,
+            "drop_counts": drops,
+            "removed_line_count": len(removed_lines),
+            "cleaned_text_length": int(diagnostics.get("cleaned_text_length", 0) or 0),
+            "truncated_count": int(bool(diagnostics.get("truncated", False))),
+            "raw_reply_count": len(raw_replies),
+            "inference_attempt_count": len(inference),
+        }
+        print(
+            f"{prospect_id} passed_count={int(passed)} kept_signal_count={len(kept)} "
+            f"model_none_count={model_none} filtered_signal_count={filtered_count} "
+            f"drop_counts={json.dumps(drops, sort_keys=True)} "
+            f"failed_count={int(not payload or payload.get('status') != 'succeeded')}"
+        )
+        return passed, result
+
     result = {
         "case_type": annotation["case_type"],
         "expected_types": list(annotation["expected_types"]),
@@ -376,11 +447,22 @@ def _case_result(
         "signals": kept,
         "drop_counts": drops,
         "model_none_count": model_none,
-        "trap_outcome": _trap_outcome(payload) if annotation["trap_types"] else None,
+        "signals_returned": parsed_count if isinstance(parsed, list) else None,
+        "signals_returned_then_filtered": filtered_count,
+        "trap_outcome": _trap_outcome(payload, diagnostics) if annotation["trap_types"] else None,
         "error": error,
-        "inference": _read_inference_diagnostics(int(payload["id"])) if payload else [],
+        "inference": inference,
+        "diagnostics": {
+            "removed_lines": removed_lines,
+            "cleaned_text_length": int(diagnostics.get("cleaned_text_length", 0) or 0),
+            "truncated": bool(diagnostics.get("truncated", False)),
+            "truncated_characters": int(diagnostics.get("truncated_characters", 0) or 0),
+            "raw_replies": raw_replies,
+            "parsed_signals": parsed,
+            "drop_details": diagnostics.get("drop_details", []),
+        },
     }
-    kept_types = [item["type"] for item in kept or []]
+    kept_types = [item["type"] for item in kept]
     expected = ",".join(annotation["expected_types"]) or ("none" if annotation["trap_types"] else "fit-only")
     print(
         f"{prospect_id} case_type={annotation['case_type']} expected={expected} "
@@ -388,7 +470,23 @@ def _case_result(
         f"{'PASS' if passed else 'FAIL'}"
         + (f" error={error}" if error else "")
     )
-    if verbose:
+    if verbose and detailed:
+        print(f"  removed_lines={json.dumps(removed_lines, ensure_ascii=False)}")
+        print(
+            "  cleaned_text="
+            + json.dumps(
+                {
+                    "length": result["diagnostics"]["cleaned_text_length"],
+                    "truncated": result["diagnostics"]["truncated"],
+                    "truncated_characters": result["diagnostics"]["truncated_characters"],
+                },
+                sort_keys=True,
+            )
+        )
+        print(f"  raw_replies={json.dumps(raw_replies, ensure_ascii=False)}")
+        print(f"  parsed_signals={json.dumps(parsed, ensure_ascii=False)}")
+        print(f"  drops={json.dumps(result['diagnostics']['drop_details'], ensure_ascii=False)}")
+    elif verbose:
         print(f"  diagnostics={json.dumps(result, ensure_ascii=False, sort_keys=True)}")
     return passed, result
 
@@ -415,8 +513,23 @@ def run_evaluation(
     only: str | None = None,
     verbose: bool = False,
     freeze_prompt: bool = False,
+    refreeze: bool = False,
     output_path: str | None = None,
 ) -> int:
+    current_prompt_hash = signal_prompt_hash()
+    if freeze_prompt:
+        if held_out:
+            raise ValueError("--freeze-prompt is a standalone action and cannot be combined with --held-out")
+        _freeze_prompt(current_prompt_hash, refreeze=refreeze)
+        print(
+            "Frozen signal-prompt hash written: "
+            f"{current_prompt_hash} ({FROZEN_PROMPT_PATH})"
+        )
+        return 0
+    if refreeze:
+        raise ValueError("--refreeze requires --freeze-prompt")
+
+    frozen_hash = _check_frozen_prompt(current_prompt_hash) if held_out else None
     if held_out:
         annotations, rows_by_id = _load_held_out_cases()
     else:
@@ -436,19 +549,12 @@ def run_evaluation(
         annotations = {key: annotations[key] for key in sorted(selected_ids)}
         rows_by_id = {key: rows_by_id[key] for key in sorted(selected_ids)}
 
-    current_prompt_hash = signal_prompt_hash()
-    frozen_hash = None
-    if held_out or freeze_prompt:
-        frozen_hash = _check_frozen_prompt(
-            current_prompt_hash,
-            allow_initialize=freeze_prompt and not held_out,
-        )
-
     model_name = llm_client.resolve_model_name(model)
     db_path = str(Path(db_path).expanduser().resolve())
     os.environ["DB_PATH"] = db_path
     prospect_db_ids = _prepare_eval_prospects(db_path, rows_by_id)
     results: dict[str, dict[str, Any] | None] = {}
+    diagnostics_by_id: dict[str, dict[str, Any]] = {}
     details: dict[str, dict[str, Any]] = {}
     passes = 0
 
@@ -459,10 +565,19 @@ def run_evaluation(
         + (f" frozen_sha256={frozen_hash}" if frozen_hash else "")
     )
     for prospect_id in rows_by_id:
-        payload, error = _run_one(prospect_db_ids[prospect_id], model_name)
+        diagnostics: dict[str, Any] = {}
+        payload, error = _run_one(prospect_db_ids[prospect_id], model_name, diagnostics)
         results[prospect_id] = payload
+        diagnostics_by_id[prospect_id] = diagnostics
         passed, case_details = _case_result(
-            prospect_id, annotations[prospect_id], payload, error, verbose=verbose
+            prospect_id,
+            annotations[prospect_id],
+            payload,
+            error,
+            diagnostics,
+            verbose=verbose,
+            held_out=held_out,
+            detailed=verbose and selected_ids is not None and not held_out,
         )
         details[prospect_id] = case_details
         passes += int(passed)
@@ -493,7 +608,7 @@ def run_evaluation(
         if not trap_types:
             continue
         payload = results[prospect_id]
-        outcome = _trap_outcome(payload)
+        outcome = _trap_outcome(payload, diagnostics_by_id[prospect_id])
         for group, matching_traps in TRAP_GROUPS.items():
             if not trap_types & matching_traps:
                 continue
@@ -502,10 +617,10 @@ def run_evaluation(
             if payload is not None and payload.get("status") == "succeeded" and payload.get("signals"):
                 false_positives[group] += 1
     print(
-        "Trap outcomes (exercised vs \"none\"): "
+        "Trap outcomes (exercised vs empty-list pass): "
         + "; ".join(
             f"{group}=exercised:{trap_outcomes[group]['exercised']}/"
-            f"{trap_totals[group]}, \"none\":{trap_outcomes[group]['none']}, "
+            f"{trap_totals[group]}, empty-list:{trap_outcomes[group]['empty-list']}, "
             f"unresolved:{trap_outcomes[group]['unresolved']}, "
             f"persisted_false_positives:{false_positives[group]}"
             for group in TRAP_GROUPS
@@ -516,18 +631,28 @@ def run_evaluation(
     successful_runs = sum(
         1 for payload in results.values() if payload is not None and payload.get("status") == "succeeded"
     )
-    model_none_runs = sum(
-        1 for payload in results.values() if _model_none_count(payload) > 0
+    model_none_counts = {
+        prospect_id: _model_none_count(results[prospect_id], diagnostics_by_id[prospect_id])
+        for prospect_id in results
+    }
+    model_none_runs = sum(model_none_counts.values())
+    signals_returned = sum(
+        int(diagnostics.get("signals_returned", 0) or 0)
+        for diagnostics in diagnostics_by_id.values()
     )
-    model_none_items = sum(_model_none_count(payload) for payload in results.values())
-    aggregate_drops: Counter[str] = Counter()
+    signals_filtered = sum(
+        int(diagnostics.get("signals_returned_then_filtered", 0) or 0)
+        for diagnostics in diagnostics_by_id.values()
+    )
+    aggregate_drops: Counter[str] = Counter({key: 0 for key in DROP_KEYS})
     for payload in results.values():
         for key, count in (payload.get("drop_counts") or {}).items() if payload else ():
-            aggregate_drops[key] += int(count or 0)
+            if key in DROP_KEYS:
+                aggregate_drops[key] += int(count or 0)
     print(
-        f"Model-none outputs: {model_none_runs}/{successful_runs} successful runs; "
-        f"none items inferred from drop_counts.type={model_none_items}"
+        f"Model empty-list outputs: {model_none_runs}/{successful_runs} successful runs"
     )
+    print(f"Signals returned then filtered: {signals_filtered} (returned={signals_returned})")
     print(
         "Aggregate verification drops: "
         + ", ".join(f"{key}={aggregate_drops[key]}" for key in DROP_KEYS)
@@ -550,24 +675,29 @@ def run_evaluation(
             f"Noisy page {prospect_id}: removed_lines={removed_lines} "
             f"no_kept_signals={str(no_kept_signals).lower()} {'PASS' if passed else 'FAIL'}"
         )
-    if not noisy_ids:
+    if not noisy_ids and not held_out:
         print("Noisy-page diagnostic: skipped (no noisy page selected)")
 
     report = {
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "mode": "held-out" if held_out else "development",
-        "model": model_name,
-        "think": False,
-        "num_ctx": signal_workflow.NUM_CTX,
-        "signal_prompt_sha256": current_prompt_hash,
-        "frozen_signal_prompt_sha256": frozen_hash,
+        "run_config": {
+            "model": model_name,
+            "think": False,
+            "num_ctx": signal_workflow.NUM_CTX,
+            "signal_prompt_sha256": current_prompt_hash,
+            "frozen_signal_prompt_sha256": frozen_hash,
+        },
         "selected_ids": list(rows_by_id),
-        "passed": passes,
-        "total": len(rows_by_id),
-        "successful_runs": successful_runs,
-        "model_none_runs": model_none_runs,
-        "model_none_items": model_none_items,
-        "aggregate_drop_counts": dict(aggregate_drops),
+        "counts": {
+            "passed": passes,
+            "total": len(rows_by_id),
+            "successful_runs": successful_runs,
+            "model_none_runs": model_none_runs,
+            "signals_returned": signals_returned,
+            "signals_returned_then_filtered": signals_filtered,
+            "aggregate_drop_counts": dict(aggregate_drops),
+        },
         "trap_outcomes": {
             group: dict(trap_outcomes[group]) for group in TRAP_GROUPS if trap_totals[group]
         },
@@ -579,7 +709,7 @@ def run_evaluation(
             "required": required,
             "rate": (matched / required) if required else None,
         },
-        "noisy_page_diagnostic": {"selected": noisy_ids, "passed": noisy_passes},
+        "noisy_page_diagnostic": {"selected_ids": noisy_ids, "passed_count": noisy_passes},
         "results": details,
     }
     destination = _report_path(
@@ -594,7 +724,8 @@ def run_evaluation(
     )
     print(f"Per-prospect evaluation: {passes}/{len(rows_by_id)} passed")
     print(f"Run diagnostics saved: {destination}")
-    print("Fit-only annotations are not treated as signal truth; successful persistence is their pass criterion.")
+    if not held_out:
+        print("Fit-only annotations are not treated as signal truth; successful persistence is their pass criterion.")
     return 0 if passes == len(rows_by_id) and noisy_passes == len(noisy_ids) else 1
 
 
@@ -609,7 +740,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--freeze-prompt",
         action="store_true",
-        help="check the prompt against the frozen SHA-256 before this run",
+        help="standalone action: write the current prompt SHA-256 and exit without evaluation",
+    )
+    parser.add_argument(
+        "--refreeze",
+        action="store_true",
+        help="allow --freeze-prompt to replace a different existing prompt hash",
     )
     parser.add_argument(
         "--held-out",
@@ -619,7 +755,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help="print per-run evidence, filter counts, preprocessing, and inference-log diagnostics",
+        help="print per-run diagnostics; with --only in development, include raw replies, parsed signals, removals, and drops",
     )
     parser.add_argument(
         "--only",
@@ -641,6 +777,7 @@ def main(argv: list[str] | None = None) -> int:
             only=args.only,
             verbose=args.verbose,
             freeze_prompt=args.freeze_prompt,
+            refreeze=args.refreeze,
             output_path=args.output,
         )
     except (OSError, ValueError, json.JSONDecodeError) as exc:

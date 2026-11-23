@@ -53,14 +53,19 @@ rewriting the original stored JSON.
 
 ## Signal evaluation and reply labels
 
-The signal evaluator freezes a normalized prompt-template SHA-256 for held-out
-runs (the dynamic UTC date is normalized out of the hash). This detects prompt
-text drift, not changes to the evaluator, local model weights, or Ollama
-implementation. `think=false` and `num_ctx=4096` are reported per run. Model
-`none` counts are inferred from the persisted `type` drop counter; rejected
-positive candidates are summarized as exercised traps. Detailed results are
-saved locally under `test_evidence/real_run/` and are not model-independent
-benchmarks.
+The signal evaluator uses a normalized prompt-template SHA-256 for held-out
+runs (the dynamic UTC date is normalized out of the hash). The operator freezes
+it explicitly with standalone `--freeze-prompt`; replacing a different hash
+requires `--refreeze`. Development runs do not read or write the hash file, and
+held-out runs only read and enforce it. This detects prompt-text drift, not
+changes to the evaluator, local model weights, or Ollama implementation.
+`think=false` and `num_ctx=4096` are reported per run. Model-empty-list counts
+come only from successfully parsed empty `signals` arrays; returned signals
+that are later filtered are counted separately with per-reason drops. Held-out
+reports retain run configuration plus IDs and counts, with no raw replies,
+evidence, or page text. Development diagnostics, including raw model replies,
+are saved locally under `test_evidence/real_run/` and are not
+model-independent benchmarks.
 
 Reply texts are intentionally separate from operator-authored labels. The
 optional `data/sample/reply_labels.csv` is not included by default; no reply
