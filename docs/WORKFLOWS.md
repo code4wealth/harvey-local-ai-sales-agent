@@ -138,33 +138,41 @@ weights without re-normalization. If all components are missing, the score is
 `0` and `partial` is true. Never substitute guessed inputs or claim a partial
 total is complete.
 
-## LLM workflow contract — deferred; no prompts implemented here
+## LLM workflow status
 
-When these workflows are started, every schema-constrained LLM output must be
-flat: scalar fields at the root, with lists of scalars or lists of flat
-objects at most. Do not use nested objects. Validate structured output and
-keep the existing local-only `app/llm_client.py` path; no workflow may call a
-model or service directly.
+All inference uses the local `app/llm_client.py` path. Structured outputs are
+Pydantic-validated and retried at most twice; workflow-specific grounding
+validators participate in those same three total attempts. No workflow calls
+a model or service directly.
 
-Planned inputs/outputs (contract only; all marked **not started**):
+Implemented:
 
-1. **Business profile — not started:** local product documents; flat summary,
-   value proposition, and lists of features, pain points, and differentiators.
-2. **ICP — not started:** business profile; flat industry/title/event lists
-   and `company_size_min` / `company_size_max` fields.
-3. **Prospect research — not started:** explicitly stored local page text; flat
-   summary/size fields and lists for technology and news. Embeddings remain a
-   separate local deterministic operation.
-4. **Buying signals — not started:** local page text; `{signals: [...]}` where
-   each signal is a flat `{type, evidence, confidence}` object. Apply the
-   deterministic quote verification above before storing evidence.
-5. **Problem statement — not started:** profile, research, and verified
-   signals; 2–3 factual sentences, with no invented inputs.
-6. **Scoring — deterministic implementation exists:** use the formula and
+1. **Business profile:** local company-info document; summary, value
+   proposition, key features, pain points solved, differentiators,
+   `typical_buyer`, `typical_team_size`, `working_situation`, and `not_for`.
+   General claims need 60% normalized content-word overlap with the source;
+   each pain-point item needs 80%. Missing fields on previously saved profiles
+   are supplied as `not stated` for ICP generation without rewriting the
+   stored profile.
+2. **ICP:** uses the stored profile's buyer, team-size, working-situation,
+   pain-point, and `not_for` fields. Every list item is grounded in its
+   field-specific profile support; unsupported lists may be empty or contain
+   `not stated`; numeric size bounds require explicit numeric support. A
+   trigger must describe a concrete external event, not a product feature.
+3. **Buying signals:** local prospect page; `{signals: [...]}` where each
+   item is `{type, evidence, about_company}`. Evidence is checked against the
+   source and filtered for unrelated-company, negated, and stale events before
+   persistence.
+4. **Scoring — deterministic implementation exists:** use the formula and
    component rules above; it does not need an LLM rationale.
-7. **Email — not started:** flat `{subject, body}` output; later enforce the
-   existing length, one-call-to-action, and no-fabricated-claims rules.
-8. **Reply classification — not started:** flat `{label, confidence,
-   next_action}` output and honour unsubscribe/do-not-contact.
-9. **Pipeline orchestration — not started:** workflow sequencing and resumable
-   LLM stages are intentionally deferred.
+
+Prospect research, problem statements, email generation, reply classification,
+and full pipeline orchestration are not implemented in this workflow batch.
+Signal evaluation is separate from runtime: only offline `scripts/eval_*.py`
+and `scripts/validate_corpus.py` may read files under `data/eval/`. Target a
+small development subset with `python scripts/eval_signals.py --model qwen3:4b
+--only P012,P028 --verbose`; run the reserved set with
+`python scripts/eval_signals.py --model qwen3:4b --held-out --verbose`.
+`--freeze-prompt` checks (and, if absent, initializes) the prompt baseline;
+held-out always enforces it. Local reports and the isolated evaluator DB are
+saved under `test_evidence/real_run/`.

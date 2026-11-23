@@ -31,7 +31,7 @@ app/
   scoring.py         deterministic hybrid scoring
   workflows/         profile.py icp.py research.py signals.py problem.py email.py reply.py
   research/          web scraping (internet, non-AI)
-data/                SAMPLE data (labelled as sample): company_info/, prospects.csv, prospect_pages/, sample_replies.json
+data/                SAMPLE data: company_info/, product-scoped prospects/, prospect_pages/, sample/replies.csv (text-only), eval/ (offline ground truth)
 frontend/            dashboard
 scripts/             verify_no_cloud.py, offline_test.py, eval_replies.py
 tests/

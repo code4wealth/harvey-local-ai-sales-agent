@@ -4,8 +4,8 @@ Shared hard rules: see CLAUDE.md ("THE ONE RULE"). All agents obey them.
 
 Runtime agents (inside the app) — each is a function in app/workflows/
 Agent	File	Input	Output (JSON schema)	LLM?
-Business Profiler	profile.py	company docs	summary, value_proposition, key_features[], pain_points_solved[], differentiators[]	yes
-ICP Generator	icp.py	profile	industries[], company_size, buyer_titles[], pain_points[], trigger_events[], disqualifiers[]	yes
+Business Profiler	profile.py	company docs	summary, value_proposition, key_features[], pain_points_solved[], differentiators[], typical_buyer, typical_team_size, working_situation, not_for[]	yes
+ICP Generator	icp.py	stored profile	target fields grounded in profile: industries[], company_size, buyer_titles[], pain_points[], trigger_events[], disqualifiers[]	yes
 Prospect Researcher	research.py	prospect page text	summary, what_they_do, size_hint, tech, recent_news[]	yes + embeddings
 Signal Classifier	signals.py	page text + ICP	signals[{type, evidence, confidence}]	yes + code verification
 Problem Writer	problem.py	profile, research, signals	2–3 sentence problem statement	yes

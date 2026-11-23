@@ -17,7 +17,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -466,12 +466,14 @@ def generate_json(
     retries: int = 2,
     timeout: float = DEFAULT_TIMEOUT,
     num_ctx: int = DEFAULT_NUM_CTX,
+    post_validate: Callable[[BaseModel], None] | None = None,
 ) -> BaseModel:
     """Generate structured output and validate it with Pydantic.
 
     ``retries=2`` means up to three total inference calls. Each retry includes
-    the previous validation error. Transport/response failures propagate
-    immediately so callers can queue or report the task instead of hot-looping.
+    the previous schema or ``post_validate`` error. Transport/response failures
+    propagate immediately so callers can queue or report the task instead of
+    hot-looping.
     """
     last_error: Exception | None = None
     retry_prompt = prompt
@@ -486,7 +488,10 @@ def generate_json(
             num_ctx=num_ctx,
         )
         try:
-            return schema.model_validate(_extract_json(result.content))
+            value = schema.model_validate(_extract_json(result.content))
+            if post_validate is not None:
+                post_validate(value)
+            return value
         except (ValueError, ValidationError) as exc:
             last_error = exc
             _mark_error_log_best_effort(

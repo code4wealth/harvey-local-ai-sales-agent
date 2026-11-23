@@ -1,4 +1,4 @@
-"""Keep offline labels out of runtime code and unrelated scripts."""
+"""Keep offline labels and evaluation paths out of runtime code."""
 
 from __future__ import annotations
 
@@ -8,18 +8,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 SCRIPTS_DIR = ROOT / "scripts"
-ALLOWED_CASE_NOTE_SCRIPTS = {"eval_signals.py", "eval_replies.py"}
-CASE_NOTE_REFERENCE = re.compile(
-    r"sample[_\s-]*case[_\s-]*notes|case[_\s-]*notes", re.IGNORECASE
+
+GROUND_TRUTH_REFERENCE = re.compile(
+    r"data[/\\](?:eval|evaluation)(?:[/\\]|\b)|"
+    r"sample[_-]case[_-]notes|case[_ -]?notes|"
+    r"\bexpected(?:[_-][a-z]+)*\.(?:csv|json)\b|signal[_-]holdout|"
+    r"reply[_-]labels|sample[/\\]replies\.csv|sample_replies\s*\.\s*json|"
+    r"ground[_ -]?truth|\bheld[_-]out\b|\bdifficulty\b|\bcase[_ -]type\b",
+    re.IGNORECASE,
 )
-FORBIDDEN_APP_REFERENCES = {
-    "case-note ground truth": CASE_NOTE_REFERENCE,
-    "reply ground-truth corpus": re.compile(r"sample_replies\s*\.\s*json", re.IGNORECASE),
-    "held-out split": re.compile(r"\bheld[_-]out\b", re.IGNORECASE),
-}
-SIGNAL_EVAL_FORBIDDEN = re.compile(
-    r"sample_replies\s*\.\s*json|\bheld[_-]out\b", re.IGNORECASE
+REPLY_ONLY_REFERENCE = re.compile(
+    r"reply[_-]labels|sample[/\\]replies\.csv|sample_replies\s*\.\s*json|"
+    r"\bdifficulty\b|\breply[_-]split\b",
+    re.IGNORECASE,
 )
+ALLOWED_EVALUATOR_FILE = re.compile(r"eval_[^/]+\.py\Z")
 
 
 def _text_sources(directory: Path):
@@ -32,36 +35,36 @@ def _text_sources(directory: Path):
             continue
 
 
-def test_runtime_app_does_not_reference_offline_ground_truth() -> None:
-    violations: list[str] = []
-    for path, source in _text_sources(APP_DIR):
-        for description, pattern in FORBIDDEN_APP_REFERENCES.items():
-            if pattern.search(source):
-                violations.append(f"{path.relative_to(APP_DIR)} references {description}")
-
+def test_runtime_app_does_not_reference_evaluation_or_ground_truth() -> None:
+    violations = [
+        f"{path.relative_to(APP_DIR)} references evaluation/ground-truth data"
+        for path, source in _text_sources(APP_DIR)
+        if GROUND_TRUTH_REFERENCE.search(source)
+    ]
     assert not violations, (
-        "Runtime app code must not access offline case labels, reply truth, or the held-out split.\n"
+        "Runtime app code must not know evaluation paths, labels, splits, or case annotations.\n"
         + "\n".join(violations)
     )
 
 
-def test_only_signal_and_reply_evaluators_may_reference_case_notes() -> None:
+def test_only_offline_evaluators_and_validator_may_read_ground_truth() -> None:
     violations: list[str] = []
     for path, source in _text_sources(SCRIPTS_DIR):
-        if not CASE_NOTE_REFERENCE.search(source):
+        if not GROUND_TRUTH_REFERENCE.search(source):
             continue
-        if path.relative_to(SCRIPTS_DIR).as_posix() not in ALLOWED_CASE_NOTE_SCRIPTS:
-            violations.append(f"{path.relative_to(SCRIPTS_DIR)} references case-note data")
-
-    assert not violations, "Only the offline signal and reply evaluators may read case notes.\n" + "\n".join(
-        violations
+        relative = path.relative_to(SCRIPTS_DIR).as_posix()
+        if relative != "validate_corpus.py" and not ALLOWED_EVALUATOR_FILE.fullmatch(relative):
+            violations.append(f"{relative} references ground-truth data")
+    assert not violations, (
+        "Only scripts/eval_*.py and scripts/validate_corpus.py may read ground truth.\n"
+        + "\n".join(violations)
     )
 
 
-def test_signal_evaluator_does_not_reference_reply_or_split_data() -> None:
+def test_signal_evaluator_does_not_reference_reply_data_or_labels() -> None:
     path = SCRIPTS_DIR / "eval_signals.py"
     assert path.is_file(), "the offline signal evaluator must exist"
     source = path.read_text(encoding="utf-8")
-    assert not SIGNAL_EVAL_FORBIDDEN.search(source), (
-        "Signal evaluation must not read the reply corpus or split labels."
+    assert not REPLY_ONLY_REFERENCE.search(source), (
+        "Signal evaluation must not read reply texts, reply labels, or reply annotations."
     )

@@ -30,35 +30,29 @@ PRODUCT_MOTIFS = {
 }
 EXPECTED_PRODUCT_COUNTS = {"relaycue": 21, "fieldnest": 20}
 EXPECTED_SHARED_IDS = {"P029", "P030", "P031", "P032"}
-EXPECTED_REPLY_LABELS = Counter(
-    {
-        "interested": 8,
-        "meeting_request": 7,
-        "not_interested": 9,
-        "out_of_office": 8,
-        "wrong_person": 7,
-        "unsubscribe": 7,
-        "question": 7,
-        "other": 7,
-    }
-)
-EXPECTED_DEVELOPMENT_LABELS = Counter(
-    {
-        "interested": 5,
-        "meeting_request": 4,
-        "not_interested": 6,
-        "out_of_office": 5,
-        "wrong_person": 4,
-        "unsubscribe": 4,
-        "question": 4,
-        "other": 4,
-    }
-)
-EXPECTED_HELD_OUT_LABELS = Counter({label: 3 for label in EXPECTED_REPLY_LABELS})
-EXPECTED_DIFFICULTY_COUNTS = {
-    "development": Counter({"clear": 26, "ambiguous": 10}),
-    "held_out": Counter({"clear": 14, "ambiguous": 10}),
+EXPECTED_REPLY_IDS = {f"R{number:03d}" for number in range(1, 61)}
+REPLY_LABELS = {
+    "interested",
+    "meeting_request",
+    "not_interested",
+    "out_of_office",
+    "wrong_person",
+    "unsubscribe",
+    "question",
+    "other",
 }
+CASE_NOTES_PATH = DATA_DIR / "eval" / "sample_case_notes.csv"
+EXPECTED_SIGNALS_PATH = DATA_DIR / "eval" / "expected_signals.csv"
+SIGNAL_HOLDOUT_EXPECTED_PATH = DATA_DIR / "eval" / "signal_holdout" / "expected.csv"
+SIGNAL_TYPES = {
+    "funding",
+    "hiring",
+    "expansion",
+    "leadership_change",
+    "tech_change",
+    "pain_mention",
+}
+SIGNAL_TRAPS = {"no_signal", "implied", "negated", "stale", "other_company"}
 
 
 class CorpusValidationError(RuntimeError):
@@ -68,10 +62,6 @@ class CorpusValidationError(RuntimeError):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise CorpusValidationError(message)
-
-
-def format_counts(counts: Counter[str]) -> str:
-    return ", ".join(f"{key}={counts[key]}" for key in sorted(counts))
 
 
 def iter_mappings(value: Any):
@@ -98,9 +88,10 @@ def validate_sample_labels(files: list[Path]) -> None:
                     f"CSV records are not all labelled SAMPLE: {path.relative_to(ROOT)}",
                 )
             else:
+                relative_parts = path.relative_to(DATA_DIR).parts
                 require(
-                    path.name.casefold().startswith("sample_"),
-                    f"CSV file has no SAMPLE record label or SAMPLE filename: {path.relative_to(ROOT)}",
+                    path.name.casefold().startswith("sample_") or relative_parts[:1] == ("sample",),
+                    f"CSV file has no SAMPLE record label or SAMPLE directory/name: {path.relative_to(ROOT)}",
                 )
         elif path.suffix.casefold() == ".json":
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -260,64 +251,151 @@ def validate_noisy_pages(page_paths: dict[str, Path]) -> None:
     print("PASS: three prospect pages include navigation, cookie-banner, and footer noise")
 
 
-def validate_replies() -> None:
-    path = DATA_DIR / "sample_replies.json"
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    replies = payload.get("replies", [])
-    require(payload.get("sample_label") == "SAMPLE", "sample_replies.json root is not labelled SAMPLE")
-    require(
-        len(replies) == 60 and all(reply.get("sample_label") == "SAMPLE" for reply in replies),
-        "sample_replies.json must contain 60 SAMPLE-labelled replies",
-    )
-    require(len({reply.get("reply_id") for reply in replies}) == 60, "reply IDs are not unique")
-    require(
-        all(reply.get("split") in {"development", "held_out"} for reply in replies),
-        "reply split must be development or held_out",
-    )
-    require(
-        all(reply.get("difficulty") in {"clear", "ambiguous"} for reply in replies),
-        "every reply must have difficulty clear or ambiguous",
-    )
-    all_labels = Counter(reply.get("ground_truth_label", "") for reply in replies)
-    held_out = [reply for reply in replies if reply.get("split") == "held_out"]
-    development = [reply for reply in replies if reply.get("split") == "development"]
-    held_out_labels = Counter(reply.get("ground_truth_label", "") for reply in held_out)
-    development_labels = Counter(reply.get("ground_truth_label", "") for reply in development)
-    require(
-        len(development) == 36 and len(held_out) == 24,
-        "reply split must be 36 development / 24 held_out",
-    )
-    require(all_labels == EXPECTED_REPLY_LABELS, f"unexpected all-reply labels: {dict(all_labels)}")
-    require(
-        development_labels == EXPECTED_DEVELOPMENT_LABELS,
-        f"unexpected development labels: {dict(development_labels)}",
-    )
-    require(
-        held_out_labels == EXPECTED_HELD_OUT_LABELS,
-        f"held-out labels must include at least three examples of every label: {dict(held_out_labels)}",
-    )
-    difficulty_counts = {
-        split: Counter(reply["difficulty"] for reply in split_replies)
-        for split, split_replies in (("development", development), ("held_out", held_out))
-    }
-    require(
-        difficulty_counts == EXPECTED_DIFFICULTY_COUNTS,
-        f"unexpected reply difficulty counts: { {split: dict(counts) for split, counts in difficulty_counts.items()} }",
-    )
-    require(
-        difficulty_counts["held_out"]["ambiguous"] * 3 >= len(held_out),
-        "at least one third of held-out replies must be ambiguous",
-    )
-    print(f"Reply label counts (all {len(replies)}): {format_counts(all_labels)}")
-    print(f"Reply label counts (development {len(development)}): {format_counts(development_labels)}")
-    print(f"Reply label counts (held_out {len(held_out)}): {format_counts(held_out_labels)}")
-    for split, split_replies in (("development", development), ("held_out", held_out)):
-        print(
-            f"Reply difficulty counts ({split} {len(split_replies)}): "
-            f"{format_counts(difficulty_counts[split])}"
-        )
-    print("PASS: reply IDs, SAMPLE labels, difficulty annotations, and 36/24 development/held_out split")
+def validate_replies() -> set[str]:
+    path = DATA_DIR / "sample" / "replies.csv"
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        fields = reader.fieldnames or []
+        rows = list(reader)
+    require(fields == ["reply_id", "text"], "replies.csv columns must be exactly reply_id,text")
+    reply_ids = [row.get("reply_id", "").strip() for row in rows]
+    require(len(rows) == 60, f"replies.csv must contain 60 rows, got {len(rows)}")
+    require(set(reply_ids) == EXPECTED_REPLY_IDS, "replies.csv must retain the same 60 reply IDs")
+    require(len(set(reply_ids)) == len(reply_ids), "reply IDs are not unique")
+    require(all(row.get("text", "").strip() for row in rows), "reply text must not be empty")
+    print("PASS: 60 reply IDs; reply data contains exactly reply_id,text")
+    return set(reply_ids)
 
+
+def validate_optional_reply_labels(reply_ids: set[str]) -> None:
+    path = DATA_DIR / "sample" / "reply_labels.csv"
+    if not path.is_file():
+        print("reply_labels.csv not present yet")
+        return
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        fields = reader.fieldnames or []
+        rows = list(reader)
+    require(len(fields) == len(set(fields)), "reply_labels.csv contains duplicate columns")
+    label_fields = {"label", "ground_truth_label"} & set(fields)
+    allowed_fields = (
+        {"reply_id", "label"},
+        {"reply_id", "ground_truth_label"},
+        {"sample_label", "reply_id", "label"},
+        {"sample_label", "reply_id", "ground_truth_label"},
+    )
+    require(set(fields) in allowed_fields, "reply_labels.csv must contain reply_id and one label column")
+    require(len(label_fields) == 1, "reply_labels.csv must contain exactly one label column")
+    if "sample_label" in fields:
+        require(
+            all(row.get("sample_label", "").strip() == "SAMPLE" for row in rows),
+            "reply_labels.csv rows must be marked SAMPLE",
+        )
+    labelled_ids = [row.get("reply_id", "").strip() for row in rows]
+    label_field = next(iter(label_fields))
+    require(len(rows) == 60, f"reply_labels.csv must contain 60 rows, got {len(rows)}")
+    require(set(labelled_ids) == reply_ids, "reply_labels.csv IDs must match replies.csv exactly")
+    require(len(set(labelled_ids)) == 60, "reply_labels.csv contains duplicate reply IDs")
+    require(
+        all(row.get(label_field, "").strip() in REPLY_LABELS for row in rows),
+        "reply_labels.csv contains an empty or unsupported label",
+    )
+    print("PASS: optional reply_labels.csv has 60 matching IDs and valid labels")
+
+
+def _read_eval_csv(path: Path, expected_fields: list[str]) -> list[dict[str, str]]:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        fields = reader.fieldnames or []
+        rows = list(reader)
+    require(fields == expected_fields, f"{path.relative_to(ROOT)} columns must be {expected_fields}")
+    require(bool(rows), f"{path.relative_to(ROOT)} must not be empty")
+    require(
+        all(row.get("sample_label", "").strip() == "SAMPLE" for row in rows),
+        f"{path.relative_to(ROOT)} contains an unlabelled row",
+    )
+    return rows
+
+
+def _split_pipe(value: str) -> set[str]:
+    return {item.strip() for item in value.split("|") if item.strip()}
+
+
+def validate_signal_annotations(page_ids: set[str]) -> None:
+    case_rows = _read_eval_csv(
+        CASE_NOTES_PATH, ["sample_label", "prospect_id", "case_type", "annotation"]
+    )
+    case_ids = [row["prospect_id"].strip().upper() for row in case_rows]
+    require(len(case_rows) == 37, "signal case notes must contain 37 rows")
+    require(len(set(case_ids)) == 37 and set(case_ids) == page_ids, "signal case-note IDs do not match prospect pages")
+
+    expected_rows = _read_eval_csv(
+        EXPECTED_SIGNALS_PATH,
+        ["sample_label", "prospect_id", "case_type", "expected_types", "trap_types", "scored"],
+    )
+    expected_ids = [row["prospect_id"].strip().upper() for row in expected_rows]
+    require(len(expected_rows) == 37, "expected_signals.csv must contain 37 rows")
+    require(len(set(expected_ids)) == 37 and set(expected_ids) == page_ids, "expected signal IDs do not match prospect pages")
+    cases_by_id = {row["prospect_id"].strip().upper(): row for row in case_rows}
+    for row in expected_rows:
+        prospect_id = row["prospect_id"].strip().upper()
+        require(
+            row["case_type"] == cases_by_id[prospect_id]["case_type"],
+            f"expected signal case type differs from case notes for {prospect_id}",
+        )
+        types = _split_pipe(row["expected_types"])
+        traps = _split_pipe(row["trap_types"])
+        require(types <= SIGNAL_TYPES | {"none"}, f"unsupported expected signal type for {prospect_id}")
+        require(traps <= SIGNAL_TRAPS, f"unsupported signal trap type for {prospect_id}")
+        require(row["scored"] in {"true", "false"}, f"scored must be true/false for {prospect_id}")
+        require(not ("none" in types and len(types) > 1), f"none cannot be mixed with signals for {prospect_id}")
+        if traps:
+            require(types == {"none"}, f"trap case {prospect_id} must expect none")
+            require(row["scored"] == "true", f"trap case {prospect_id} must be scored")
+        if row["scored"] == "false":
+            require(not types and not traps, f"unscored fit-only case {prospect_id} has signal truth")
+    print("PASS: signal case notes and expected signal annotations are isolated in data/eval")
+
+
+def validate_signal_holdout() -> None:
+    rows = _read_eval_csv(
+        SIGNAL_HOLDOUT_EXPECTED_PATH,
+        ["sample_label", "prospect_id", "page_path", "case_type", "expected_types", "trap_type"],
+    )
+    ids = [row["prospect_id"].strip().upper() for row in rows]
+    expected_ids = {f"P{number:03d}" for number in range(38, 50)}
+    require(len(rows) == 12 and set(ids) == expected_ids and len(set(ids)) == 12,
+            "signal holdout must contain exactly P038-P049")
+    covered_types: set[str] = set()
+    covered_traps: set[str] = set()
+    for row in rows:
+        prospect_id = row["prospect_id"].strip().upper()
+        page_path = row["page_path"].replace("\\", "/")
+        require(
+            page_path.startswith("data/prospect_pages/"),
+            f"signal holdout page must use the runtime local page directory: {page_path}",
+        )
+        resolved = prospects.resolve_page_path(page_path)
+        require(resolved.is_file(), f"signal holdout page is missing for {prospect_id}")
+        require(Path(page_path).stem.upper() == prospect_id, f"page path does not match {prospect_id}")
+        require(
+            re.search(r"\bSAMPLE\b", resolved.read_text(encoding="utf-8"), re.IGNORECASE) is not None,
+            f"signal holdout page is not marked SAMPLE: {page_path}",
+        )
+        expected_types = _split_pipe(row["expected_types"])
+        trap = row["trap_type"].strip()
+        if trap:
+            require(trap in SIGNAL_TRAPS, f"unsupported signal trap {trap!r} for {prospect_id}")
+            require(expected_types == {"none"}, f"trap page {prospect_id} must expect none")
+            covered_traps.add(trap)
+        else:
+            require(bool(expected_types) and "none" not in expected_types,
+                    f"positive holdout {prospect_id} must list signal types")
+            require(expected_types <= SIGNAL_TYPES, f"unsupported expected signal for {prospect_id}")
+            covered_types.update(expected_types)
+    require(covered_types == SIGNAL_TYPES, f"holdout signal coverage is incomplete: {sorted(covered_types)}")
+    require(covered_traps == SIGNAL_TRAPS, f"holdout trap coverage is incomplete: {sorted(covered_traps)}")
+    print("PASS: 12 held-out signal pages cover all signal types and no-signal/trap cases")
 
 def validate_product_distinction(
     grouped: dict[str, list[dict[str, str]]], page_paths: dict[str, Path]
@@ -388,7 +466,10 @@ def validate_corpus() -> None:
         [
             DATA_DIR / "README.md",
             *PRODUCT_CSVS.values(),
-            DATA_DIR / "sample_replies.json",
+            DATA_DIR / "sample" / "replies.csv",
+            CASE_NOTES_PATH,
+            EXPECTED_SIGNALS_PATH,
+            SIGNAL_HOLDOUT_EXPECTED_PATH,
             *sorted((DATA_DIR / "company_info").glob("*.md")),
             *sorted((DATA_DIR / "prospect_pages").glob("*.txt")),
         ]
@@ -398,7 +479,10 @@ def validate_corpus() -> None:
     grouped, page_paths = load_prospects()
     validate_real_import(grouped)
     validate_noisy_pages(page_paths)
-    validate_replies()
+    reply_ids = validate_replies()
+    validate_optional_reply_labels(reply_ids)
+    validate_signal_annotations(set(page_paths))
+    validate_signal_holdout()
     validate_product_distinction(grouped, page_paths)
     print("CORPUS VALIDATION PASSED")
 

@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Run signal extraction against all unique sample prospect pages."""
+"""Run offline signal diagnostics against development or held-out SAMPLE pages."""
 
 from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
+import re
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -20,45 +23,90 @@ from app import db, llm_client  # noqa: E402
 from app.workflows import signals as signal_workflow  # noqa: E402
 
 DATA_DIR = ROOT / "data"
-CASE_NOTES_PATH = DATA_DIR / "sample_case_notes.csv"
+EVAL_DIR = DATA_DIR / "eval"
+EXPECTED_SIGNALS_PATH = EVAL_DIR / "expected_signals.csv"
+HOLDOUT_EXPECTED_PATH = EVAL_DIR / "signal_holdout" / "expected.csv"
+FROZEN_PROMPT_PATH = EVAL_DIR / "frozen_signal_prompt.sha256"
 PRODUCT_CSVS = (
     DATA_DIR / "prospects" / "SAMPLE_relaycue.csv",
     DATA_DIR / "prospects" / "SAMPLE_fieldnest.csv",
 )
-DEFAULT_EVAL_DB = DATA_DIR / "signals-evaluation.db"
+RUN_DIR = ROOT / "test_evidence" / "real_run"
+DEFAULT_EVAL_DB = RUN_DIR / "signals-evaluation.db"
 EXPECTED_PROSPECTS = 37
+EXPECTED_HOLDOUT = 12
 NOISY_PROSPECTS = ("P033", "P034", "P035")
-
-EXPECTED_SIGNAL_TYPES: dict[str, tuple[str, ...]] = {
-    "explicit_funding": ("funding",),
-    "explicit_hiring": ("hiring",),
-    "explicit_expansion": ("expansion",),
-    "explicit_tech_change": ("tech_change",),
-    "leadership_change": ("leadership_change",),
-    "pain_mention": ("pain_mention",),
-    "mixed_multi_signal": ("leadership_change", "expansion"),
+DROP_KEYS = ("quote", "type", "other_company", "negated", "stale")
+SIGNAL_TYPES = {
+    "funding",
+    "hiring",
+    "expansion",
+    "leadership_change",
+    "tech_change",
+    "pain_mention",
 }
-TRAP_GROUPS = {
-    "no-signal/implied": lambda value: value.startswith("no_signal")
-    or value == "implied_not_stated",
-    "negated": lambda value: value == "negated_signal",
-    "stale": lambda value: value == "stale_signal",
-    "third-party": lambda value: value == "third_party_signal",
+TRAP_TYPES = {"no_signal", "implied", "negated", "stale", "other_company"}
+TRAP_GROUPS: dict[str, set[str]] = {
+    "no-signal/implied": {"no_signal", "implied"},
+    "negated": {"negated"},
+    "stale": {"stale"},
+    "third-party": {"other_company"},
 }
 
 
-def _load_case_annotations() -> dict[str, dict[str, str]]:
-    with CASE_NOTES_PATH.open("r", encoding="utf-8-sig", newline="") as handle:
+def _read_csv(path: Path, expected_fields: list[str]) -> list[dict[str, str]]:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
-        rows = list(reader)
         fields = reader.fieldnames or []
-    if fields != ["sample_label", "prospect_id", "case_type", "annotation"]:
-        raise ValueError("signal annotation file has unexpected columns")
-    if any(row.get("sample_label") != "SAMPLE" for row in rows):
-        raise ValueError("signal annotation file contains an unlabelled row")
-    annotations = {row["prospect_id"].upper(): row for row in rows}
-    if len(rows) != EXPECTED_PROSPECTS or len(annotations) != EXPECTED_PROSPECTS:
-        raise ValueError(f"expected {EXPECTED_PROSPECTS} unique prospect annotations")
+        rows = list(reader)
+    if fields != expected_fields:
+        raise ValueError(f"{path.relative_to(ROOT)} columns must be {expected_fields}, got {fields}")
+    if not rows:
+        raise ValueError(f"{path.relative_to(ROOT)} is empty")
+    if any(row.get("sample_label", "").strip() != "SAMPLE" for row in rows):
+        raise ValueError(f"{path.relative_to(ROOT)} contains an unlabelled row")
+    return rows
+
+
+def _pipe_values(value: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in value.split("|") if item.strip())
+
+
+def _annotation_from_row(row: dict[str, str]) -> dict[str, Any]:
+    expected = _pipe_values(row.get("expected_types", ""))
+    if expected == ("none",):
+        expected = ()
+    return {
+        "case_type": row["case_type"],
+        "expected_types": expected,
+        "trap_types": _pipe_values(row.get("trap_types", "")),
+        "scored": row.get("scored", "true").casefold() == "true",
+    }
+
+
+def _load_expected_annotations() -> dict[str, dict[str, Any]]:
+    rows = _read_csv(
+        EXPECTED_SIGNALS_PATH,
+        ["sample_label", "prospect_id", "case_type", "expected_types", "trap_types", "scored"],
+    )
+    annotations = {row["prospect_id"].strip().upper(): _annotation_from_row(row) for row in rows}
+    if len(annotations) != EXPECTED_PROSPECTS or len(rows) != EXPECTED_PROSPECTS:
+        raise ValueError(f"expected {EXPECTED_PROSPECTS} unique prospect signal annotations")
+    for row in rows:
+        prospect_id = row["prospect_id"].strip().upper()
+        if row["scored"].casefold() not in {"true", "false"}:
+            raise ValueError(f"scored must be true/false for {prospect_id}")
+    for prospect_id, annotation in annotations.items():
+        expected = set(annotation["expected_types"])
+        traps = set(annotation["trap_types"])
+        if not expected <= SIGNAL_TYPES or not traps <= TRAP_TYPES:
+            raise ValueError(f"unsupported expected signal or trap for {prospect_id}")
+        if annotation["scored"] and not expected and not traps:
+            raise ValueError(f"scored case has no expected outcome for {prospect_id}")
+        if traps and expected:
+            raise ValueError(f"trap case cannot expect positive signals for {prospect_id}")
+        if not annotation["scored"] and (expected or traps):
+            raise ValueError(f"unscored case cannot have signal truth for {prospect_id}")
     return annotations
 
 
@@ -75,6 +123,64 @@ def _load_unique_prospect_rows() -> dict[str, dict[str, str]]:
     if len(rows_by_id) != EXPECTED_PROSPECTS:
         raise ValueError(f"expected {EXPECTED_PROSPECTS} unique prospect pages, got {len(rows_by_id)}")
     return dict(sorted(rows_by_id.items()))
+
+
+def _load_held_out_cases() -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, str]]]:
+    rows = _read_csv(
+        HOLDOUT_EXPECTED_PATH,
+        ["sample_label", "prospect_id", "page_path", "case_type", "expected_types", "trap_type"],
+    )
+    if len(rows) != EXPECTED_HOLDOUT:
+        raise ValueError(f"expected {EXPECTED_HOLDOUT} held-out signal pages, got {len(rows)}")
+
+    annotations: dict[str, dict[str, Any]] = {}
+    page_rows: dict[str, dict[str, str]] = {}
+    covered_signals: set[str] = set()
+    covered_traps: set[str] = set()
+    for row in rows:
+        prospect_id = row["prospect_id"].strip().upper()
+        relative_page = row["page_path"].replace("\\", "/")
+        if Path(relative_page).stem.upper() != prospect_id:
+            raise ValueError(f"held-out page path does not match {prospect_id}")
+        page_path = (ROOT / relative_page).resolve()
+        allowed_root = (DATA_DIR / "prospect_pages").resolve()
+        if not page_path.is_relative_to(allowed_root) or not page_path.is_file():
+            raise ValueError(f"held-out page is missing or outside prospect_pages: {relative_page}")
+        page_text = page_path.read_text(encoding="utf-8")
+        company_match = re.search(r"^Company:\s*(.+?)\s*$", page_text, re.MULTILINE)
+        if company_match is None:
+            raise ValueError(f"held-out page has no Company heading: {relative_page}")
+        expected = _pipe_values(row["expected_types"])
+        trap = row["trap_type"].strip()
+        if trap:
+            if trap not in TRAP_TYPES or expected != ("none",):
+                raise ValueError(f"invalid held-out trap expectation for {prospect_id}")
+            trap_types = (trap,)
+            expected = ()
+            covered_traps.add(trap)
+        else:
+            if not expected or "none" in expected or not set(expected) <= SIGNAL_TYPES:
+                raise ValueError(f"held-out positive {prospect_id} must list supported signal types")
+            trap_types = ()
+            covered_signals.update(expected)
+        annotations[prospect_id] = {
+            "case_type": row["case_type"],
+            "expected_types": expected,
+            "trap_types": trap_types,
+            "scored": True,
+        }
+        page_rows[prospect_id] = {
+            "company_name": company_match.group(1),
+            "company_domain": f"{prospect_id.casefold()}.example",
+            "page_text_path": relative_page,
+        }
+
+    expected_ids = {f"P{number:03d}" for number in range(38, 50)}
+    if set(annotations) != expected_ids:
+        raise ValueError("held-out signal IDs must be exactly P038-P049")
+    if covered_signals != SIGNAL_TYPES or covered_traps != TRAP_TYPES:
+        raise ValueError("held-out signal pages must cover all signal types and required trap cases")
+    return dict(sorted(annotations.items())), dict(sorted(page_rows.items()))
 
 
 def _prepare_eval_prospects(db_path: str, rows_by_id: dict[str, dict[str, str]]) -> dict[str, int]:
@@ -116,29 +222,63 @@ def _prepare_eval_prospects(db_path: str, rows_by_id: dict[str, dict[str, str]])
         conn.close()
 
 
-def _expected_types(case_type: str) -> tuple[str, ...] | None:
-    return EXPECTED_SIGNAL_TYPES.get(case_type)
+def _parse_only(value: str | None) -> set[str] | None:
+    if value is None:
+        return None
+    selected = {item.strip().upper() for item in value.split(",") if item.strip()}
+    if not selected or any(re.fullmatch(r"P\d{3}", item) is None for item in selected):
+        raise ValueError("--only must be a comma-separated list such as P012,P028")
+    return selected
 
 
-def _trap_group(case_type: str) -> str | None:
-    for name, predicate in TRAP_GROUPS.items():
-        if predicate(case_type):
-            return name
-    return None
+def signal_prompt_hash() -> str:
+    """Hash the prompt template, replacing its intentionally dynamic date."""
+    template = signal_workflow.build_signal_prompt("__SIGNAL_PAGE_TEXT__")
+    template = re.sub(
+        r"today's UTC date, \d{4}-\d{2}-\d{2}",
+        "today's UTC date, <UTC_DATE>",
+        template,
+        count=1,
+    )
+    return hashlib.sha256(template.encode("utf-8")).hexdigest()
 
 
-def _evaluate_one(case_type: str, payload: dict[str, Any] | None) -> bool:
-    if payload is None or payload["status"] != "succeeded":
+def _check_frozen_prompt(current_hash: str, *, allow_initialize: bool = False) -> str:
+    if not FROZEN_PROMPT_PATH.is_file():
+        if not allow_initialize:
+            raise ValueError(
+                "frozen signal-prompt hash is missing; freeze the development prompt before a held-out run"
+            )
+        FROZEN_PROMPT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        FROZEN_PROMPT_PATH.write_text(current_hash + "\n", encoding="utf-8")
+        print(f"Created frozen signal-prompt hash at {FROZEN_PROMPT_PATH.relative_to(ROOT)}")
+        return current_hash
+    entries = FROZEN_PROMPT_PATH.read_text(encoding="utf-8").strip().split()
+    if not entries:
+        raise ValueError(f"frozen signal-prompt hash is empty: {FROZEN_PROMPT_PATH}")
+    frozen_hash = entries[0]
+    if not re.fullmatch(r"[0-9a-f]{64}", frozen_hash):
+        raise ValueError(f"invalid frozen signal-prompt hash in {FROZEN_PROMPT_PATH.relative_to(ROOT)}")
+    if current_hash != frozen_hash:
+        raise ValueError(
+            "signal prompt hash differs from the frozen held-out baseline "
+            f"(current={current_hash}, frozen={frozen_hash})"
+        )
+    return frozen_hash
+
+
+def _evaluate_one(annotation: dict[str, Any], payload: dict[str, Any] | None) -> bool:
+    if payload is None or payload.get("status") != "succeeded":
         return False
-    kept = payload["signals"] or []
+    kept = payload.get("signals") or []
     kept_types = {item["type"] for item in kept}
-    expected = _expected_types(case_type)
-    if expected is not None:
-        return set(expected) <= kept_types
-    if _trap_group(case_type) is not None:
+    if not annotation["scored"]:
+        return True
+    expected = set(annotation["expected_types"])
+    if expected:
+        return expected <= kept_types
+    if annotation["trap_types"]:
         return not kept_types
-    # Fit-only annotations do not assert signal ground truth; a successful
-    # persisted extraction is the only pass criterion for those rows.
     return True
 
 
@@ -147,6 +287,21 @@ def _read_run(prospect_db_id: int) -> dict[str, Any] | None:
     try:
         row = db.latest_signal_run(conn, prospect_db_id)
         return signal_workflow.signal_run_payload(row) if row is not None else None
+    finally:
+        conn.close()
+
+
+def _read_inference_diagnostics(run_id: int | None) -> list[dict[str, Any]]:
+    if run_id is None:
+        return []
+    conn = db.connect()
+    try:
+        rows = conn.execute(
+            "SELECT model, prompt_tokens, eval_tokens, seconds, load_seconds, status, created_at "
+            "FROM inference_log WHERE task = ? ORDER BY id",
+            (f"signals:{int(run_id)}",),
+        ).fetchall()
+        return [dict(row) for row in rows]
     finally:
         conn.close()
 
@@ -178,84 +333,216 @@ def _run_one(prospect_db_id: int, model: str | None) -> tuple[dict[str, Any] | N
         return _read_run(prospect_db_id), f"{type(exc).__name__}: {exc}"
 
 
-def _print_signal_result(
-    prospect_id: str, case_type: str, payload: dict[str, Any] | None, error: str | None
-) -> bool:
-    passed = _evaluate_one(case_type, payload)
-    kept = payload["signals"] if payload is not None else None
-    drops = payload["drop_counts"] if payload is not None else None
+def _model_none_count(payload: dict[str, Any] | None) -> int:
+    if payload is None or payload.get("status") != "succeeded":
+        return 0
+    drop_counts = payload.get("drop_counts") or {}
+    # SignalExtraction accepts only known types; the sole code-dropped type is "none".
+    return max(0, int(drop_counts.get("type", 0) or 0))
+
+
+def _trap_outcome(payload: dict[str, Any] | None) -> str:
+    if payload is None or payload.get("status") != "succeeded":
+        return "unresolved"
+    drop_counts = payload.get("drop_counts") or {}
+    if payload.get("signals") or any(
+        int(drop_counts.get(key, 0) or 0) > 0
+        for key in ("quote", "other_company", "negated", "stale")
+    ):
+        return "exercised"
+    if _model_none_count(payload) > 0:
+        return "none"
+    return "unclassified"
+
+
+def _case_result(
+    prospect_id: str,
+    annotation: dict[str, Any],
+    payload: dict[str, Any] | None,
+    error: str | None,
+    *,
+    verbose: bool,
+) -> tuple[bool, dict[str, Any]]:
+    passed = _evaluate_one(annotation, payload)
+    kept = payload.get("signals") if payload is not None else None
+    drops = payload.get("drop_counts") if payload is not None else None
+    model_none = _model_none_count(payload)
+    result = {
+        "case_type": annotation["case_type"],
+        "expected_types": list(annotation["expected_types"]),
+        "trap_types": list(annotation["trap_types"]),
+        "scored": bool(annotation["scored"]),
+        "status": payload.get("status") if payload else None,
+        "signals": kept,
+        "drop_counts": drops,
+        "model_none_count": model_none,
+        "trap_outcome": _trap_outcome(payload) if annotation["trap_types"] else None,
+        "error": error,
+        "inference": _read_inference_diagnostics(int(payload["id"])) if payload else [],
+    }
+    kept_types = [item["type"] for item in kept or []]
+    expected = ",".join(annotation["expected_types"]) or ("none" if annotation["trap_types"] else "fit-only")
     print(
-        f"{prospect_id} case_type={case_type} "
-        f"kept={json.dumps(kept, ensure_ascii=False, sort_keys=True)} "
-        f"drop_counts={json.dumps(drops, ensure_ascii=False, sort_keys=True)} "
+        f"{prospect_id} case_type={annotation['case_type']} expected={expected} "
+        f"kept={','.join(kept_types) or 'none'} model_none={model_none} "
         f"{'PASS' if passed else 'FAIL'}"
         + (f" error={error}" if error else "")
     )
-    return passed
+    if verbose:
+        print(f"  diagnostics={json.dumps(result, ensure_ascii=False, sort_keys=True)}")
+    return passed, result
 
 
-def run_evaluation(*, model: str | None, db_path: str) -> int:
-    annotations = _load_case_annotations()
-    rows_by_id = _load_unique_prospect_rows()
-    if set(annotations) != set(rows_by_id):
-        raise ValueError("signal annotation IDs do not match the 37 prospect pages")
+def _report_path(output_path: str | None, mode: str, model_name: str) -> Path:
+    if output_path is None:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        safe_model = re.sub(r"[^a-zA-Z0-9._-]+", "_", model_name)
+        return RUN_DIR / f"signals-{mode}-{safe_model}-{stamp}.json"
+    candidate = Path(output_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = RUN_DIR / candidate
+    resolved = candidate.resolve()
+    if not resolved.is_relative_to(RUN_DIR.resolve()):
+        raise ValueError("--output must be inside test_evidence/real_run/")
+    return resolved
 
+
+def run_evaluation(
+    *,
+    model: str | None,
+    db_path: str,
+    held_out: bool = False,
+    only: str | None = None,
+    verbose: bool = False,
+    freeze_prompt: bool = False,
+    output_path: str | None = None,
+) -> int:
+    if held_out:
+        annotations, rows_by_id = _load_held_out_cases()
+    else:
+        annotations = _load_expected_annotations()
+        rows_by_id = _load_unique_prospect_rows()
+        if set(annotations) != set(rows_by_id):
+            raise ValueError("expected signal IDs do not match the 37 prospect pages")
+
+    selected_ids = _parse_only(only)
+    if selected_ids is not None:
+        missing = selected_ids - set(rows_by_id)
+        if missing:
+            raise ValueError(
+                f"--only IDs are not in the {'held-out' if held_out else 'development'} set: "
+                + ",".join(sorted(missing))
+            )
+        annotations = {key: annotations[key] for key in sorted(selected_ids)}
+        rows_by_id = {key: rows_by_id[key] for key in sorted(selected_ids)}
+
+    current_prompt_hash = signal_prompt_hash()
+    frozen_hash = None
+    if held_out or freeze_prompt:
+        frozen_hash = _check_frozen_prompt(
+            current_prompt_hash,
+            allow_initialize=freeze_prompt and not held_out,
+        )
+
+    model_name = llm_client.resolve_model_name(model)
     db_path = str(Path(db_path).expanduser().resolve())
     os.environ["DB_PATH"] = db_path
     prospect_db_ids = _prepare_eval_prospects(db_path, rows_by_id)
     results: dict[str, dict[str, Any] | None] = {}
+    details: dict[str, dict[str, Any]] = {}
     passes = 0
 
+    print(
+        f"Run config: mode={'held-out' if held_out else 'development'} model={model_name} "
+        f"think=false num_ctx={signal_workflow.NUM_CTX} "
+        f"prompt_sha256={current_prompt_hash}"
+        + (f" frozen_sha256={frozen_hash}" if frozen_hash else "")
+    )
     for prospect_id in rows_by_id:
-        payload, error = _run_one(prospect_db_ids[prospect_id], model)
+        payload, error = _run_one(prospect_db_ids[prospect_id], model_name)
         results[prospect_id] = payload
-        case_type = annotations[prospect_id]["case_type"]
-        passes += int(_print_signal_result(prospect_id, case_type, payload, error))
+        passed, case_details = _case_result(
+            prospect_id, annotations[prospect_id], payload, error, verbose=verbose
+        )
+        details[prospect_id] = case_details
+        passes += int(passed)
 
     required = 0
     matched = 0
     for prospect_id, annotation in annotations.items():
-        expected = _expected_types(annotation["case_type"])
-        if expected is None:
+        expected = annotation["expected_types"]
+        if not expected:
             continue
         required += len(expected)
         payload = results[prospect_id]
         present = {
-            item["type"] for item in (payload["signals"] or [])
-        } if payload is not None and payload["status"] == "succeeded" else set()
+            item["type"] for item in (payload.get("signals") or [])
+        } if payload is not None and payload.get("status") == "succeeded" else set()
         matched += sum(signal_type in present for signal_type in expected)
     print(
-        f"Explicit-signal recall: {matched}/{required} "
-        f"({matched / required:.1%})" if required else "Explicit-signal recall: n/a"
+        f"Expected-signal recall: {matched}/{required} ({matched / required:.1%})"
+        if required
+        else "Expected-signal recall: n/a"
     )
 
     false_positives: Counter[str] = Counter()
     trap_totals: Counter[str] = Counter()
+    trap_outcomes: dict[str, Counter[str]] = {group: Counter() for group in TRAP_GROUPS}
     for prospect_id, annotation in annotations.items():
-        group = _trap_group(annotation["case_type"])
-        if group is None:
+        trap_types = set(annotation["trap_types"])
+        if not trap_types:
             continue
-        trap_totals[group] += 1
         payload = results[prospect_id]
-        if payload is not None and payload["status"] == "succeeded" and payload["signals"]:
-            false_positives[group] += 1
+        outcome = _trap_outcome(payload)
+        for group, matching_traps in TRAP_GROUPS.items():
+            if not trap_types & matching_traps:
+                continue
+            trap_totals[group] += 1
+            trap_outcomes[group][outcome] += 1
+            if payload is not None and payload.get("status") == "succeeded" and payload.get("signals"):
+                false_positives[group] += 1
     print(
-        "False positives on traps: "
+        "Trap outcomes (exercised vs \"none\"): "
         + "; ".join(
-            f"{group}={false_positives[group]}/{trap_totals[group]}"
+            f"{group}=exercised:{trap_outcomes[group]['exercised']}/"
+            f"{trap_totals[group]}, \"none\":{trap_outcomes[group]['none']}, "
+            f"unresolved:{trap_outcomes[group]['unresolved']}, "
+            f"persisted_false_positives:{false_positives[group]}"
             for group in TRAP_GROUPS
+            if trap_totals[group]
         )
     )
 
+    successful_runs = sum(
+        1 for payload in results.values() if payload is not None and payload.get("status") == "succeeded"
+    )
+    model_none_runs = sum(
+        1 for payload in results.values() if _model_none_count(payload) > 0
+    )
+    model_none_items = sum(_model_none_count(payload) for payload in results.values())
+    aggregate_drops: Counter[str] = Counter()
+    for payload in results.values():
+        for key, count in (payload.get("drop_counts") or {}).items() if payload else ():
+            aggregate_drops[key] += int(count or 0)
+    print(
+        f"Model-none outputs: {model_none_runs}/{successful_runs} successful runs; "
+        f"none items inferred from drop_counts.type={model_none_items}"
+    )
+    print(
+        "Aggregate verification drops: "
+        + ", ".join(f"{key}={aggregate_drops[key]}" for key in DROP_KEYS)
+    )
+
+    noisy_ids = [prospect_id for prospect_id in NOISY_PROSPECTS if prospect_id in results]
     noisy_passes = 0
-    for prospect_id in NOISY_PROSPECTS:
+    for prospect_id in noisy_ids:
         payload = results[prospect_id]
-        removed = payload["removed_content"] if payload is not None else None
-        removed_lines = len(removed["lines"]) if removed is not None else 0
+        removed = payload.get("removed_content") if payload else None
+        removed_lines = len(removed.get("lines", [])) if removed else 0
         no_kept_signals = (
             payload is not None
-            and payload["status"] == "succeeded"
-            and not payload["signals"]
+            and payload.get("status") == "succeeded"
+            and not payload.get("signals")
         )
         passed = no_kept_signals and removed_lines > 0
         noisy_passes += int(passed)
@@ -263,10 +550,52 @@ def run_evaluation(*, model: str | None, db_path: str) -> int:
             f"Noisy page {prospect_id}: removed_lines={removed_lines} "
             f"no_kept_signals={str(no_kept_signals).lower()} {'PASS' if passed else 'FAIL'}"
         )
+    if not noisy_ids:
+        print("Noisy-page diagnostic: skipped (no noisy page selected)")
 
-    print(f"Per-prospect evaluation: {passes}/{EXPECTED_PROSPECTS} passed")
-    print("Fit-only annotations are not treated as signal truth; their pass status means the run persisted.")
-    return 0 if passes == EXPECTED_PROSPECTS and noisy_passes == len(NOISY_PROSPECTS) else 1
+    report = {
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "mode": "held-out" if held_out else "development",
+        "model": model_name,
+        "think": False,
+        "num_ctx": signal_workflow.NUM_CTX,
+        "signal_prompt_sha256": current_prompt_hash,
+        "frozen_signal_prompt_sha256": frozen_hash,
+        "selected_ids": list(rows_by_id),
+        "passed": passes,
+        "total": len(rows_by_id),
+        "successful_runs": successful_runs,
+        "model_none_runs": model_none_runs,
+        "model_none_items": model_none_items,
+        "aggregate_drop_counts": dict(aggregate_drops),
+        "trap_outcomes": {
+            group: dict(trap_outcomes[group]) for group in TRAP_GROUPS if trap_totals[group]
+        },
+        "persisted_false_positives_on_traps": {
+            group: false_positives[group] for group in TRAP_GROUPS if trap_totals[group]
+        },
+        "expected_signal_recall": {
+            "matched": matched,
+            "required": required,
+            "rate": (matched / required) if required else None,
+        },
+        "noisy_page_diagnostic": {"selected": noisy_ids, "passed": noisy_passes},
+        "results": details,
+    }
+    destination = _report_path(
+        output_path,
+        "held-out" if held_out else "development",
+        model_name,
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(f"Per-prospect evaluation: {passes}/{len(rows_by_id)} passed")
+    print(f"Run diagnostics saved: {destination}")
+    print("Fit-only annotations are not treated as signal truth; successful persistence is their pass criterion.")
+    return 0 if passes == len(rows_by_id) and noisy_passes == len(noisy_ids) else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -277,10 +606,44 @@ def main(argv: list[str] | None = None) -> int:
         default=str(DEFAULT_EVAL_DB),
         help="persistent isolated database for signal-evaluation runs",
     )
+    parser.add_argument(
+        "--freeze-prompt",
+        action="store_true",
+        help="check the prompt against the frozen SHA-256 before this run",
+    )
+    parser.add_argument(
+        "--held-out",
+        action="store_true",
+        help="evaluate only the 12 reserved signal holdout pages; always checks the frozen prompt hash",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="print per-run evidence, filter counts, preprocessing, and inference-log diagnostics",
+    )
+    parser.add_argument(
+        "--only",
+        default=None,
+        metavar="P012,P028",
+        help="evaluate only these prospect IDs within the selected set",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="JSON report filename under test_evidence/real_run/ (defaults to a timestamped file)",
+    )
     args = parser.parse_args(argv)
     try:
-        return run_evaluation(model=args.model, db_path=args.db_path)
-    except (OSError, ValueError) as exc:
+        return run_evaluation(
+            model=args.model,
+            db_path=args.db_path,
+            held_out=args.held_out,
+            only=args.only,
+            verbose=args.verbose,
+            freeze_prompt=args.freeze_prompt,
+            output_path=args.output,
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"signal evaluation could not start: {exc}", file=sys.stderr)
         return 2
 

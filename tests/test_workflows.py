@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 
 from app import db, llm_client
 from app.main import app
@@ -16,22 +17,44 @@ PROFILE_BAKERY = {
     "summary": "A neighborhood bakery sells seasonal pastries.",
     "value_proposition": "Offers made-to-order cakes for local events.",
     "key_features": ["seasonal menu", "pre-order pickup"],
-    "pain_points_solved": ["not stated"],
+    "pain_points_solved": ["seasonal menu planning"],
     "differentiators": ["not stated"],
+    "typical_buyer": "bakery owner",
+    "typical_team_size": "not stated",
+    "working_situation": "Owners plan seasonal menus and may open a second retail storefront as the bakery grows.",
+    "not_for": ["businesses without a retail shop"],
 }
 PROFILE_PLANETARIUM = {
-    "summary": "A planetarium runs public astronomy programs.",
+    "summary": "A planetarium runs public astronomy and science education programs.",
     "value_proposition": "Provides scheduled educational shows.",
     "key_features": ["show calendar", "visitor programs"],
-    "pain_points_solved": ["not stated"],
+    "pain_points_solved": ["coordinating public show schedules"],
     "differentiators": ["not stated"],
+    "typical_buyer": "program director",
+    "typical_team_size": "not stated",
+    "working_situation": "Staff coordinate public astronomy programs and may replace the projector system before the winter season.",
+    "not_for": ["organizations without public programming"],
 }
+BAKERY_DOC = (
+    "SAMPLE profile facts for an unrelated bakery. A neighborhood bakery sells seasonal pastries "
+    "and offers made-to-order cakes for local events. Its seasonal menu includes pre-order pickup. "
+    "One stated pain point is seasonal menu planning. The typical buyer is a bakery owner. Owners "
+    "plan seasonal menus and may open a second retail storefront as the bakery grows. It is not for "
+    "businesses without a retail shop."
+)
+PLANETARIUM_DOC = (
+    "SAMPLE PLANETARIUM-DOC-ONLY source. A planetarium runs public astronomy and science education "
+    "programs and provides scheduled educational shows. Its features include a show calendar and "
+    "visitor programs. One stated pain point is coordinating public show schedules. The typical buyer "
+    "is a program director. Staff coordinate public astronomy programs and may replace the "
+    "projector system before the winter season. It is not for organizations without public programming."
+)
 ICP_BAKERY = {
-    "industries": ["independent bakeries"],
+    "industries": ["neighborhood bakery"],
     "company_size": {"min": None, "max": None},
     "buyer_titles": ["bakery owner"],
     "pain_points": ["seasonal menu planning"],
-    "trigger_events": ["opening a storefront"],
+    "trigger_events": ["opening a second retail storefront"],
     "disqualifiers": ["businesses without a retail shop"],
 }
 ICP_PLANETARIUM = {
@@ -39,7 +62,7 @@ ICP_PLANETARIUM = {
     "company_size": {"min": None, "max": None},
     "buyer_titles": ["program director"],
     "pain_points": ["coordinating public show schedules"],
-    "trigger_events": ["adding a new public program"],
+    "trigger_events": ["replacing the projector system before the winter season"],
     "disqualifiers": ["organizations without public programming"],
 }
 
@@ -113,7 +136,7 @@ def test_prompt_inputs_are_trimmed_to_3000_characters():
 def test_profile_api_uses_json_schema_cleans_reply_and_persists_model(db_path, monkeypatch, tmp_path):
     monkeypatch.setenv("DEFAULT_MODEL", "sample-test-model")
     company_info = tmp_path / "profile.md"
-    company_info.write_text("SAMPLE profile facts for an unrelated bakery.", encoding="utf-8")
+    company_info.write_text(BAKERY_DOC, encoding="utf-8")
     product_id = _create_product("Product name must not enter the prompt", company_info)
     seen = []
 
@@ -158,10 +181,42 @@ def test_profile_api_uses_json_schema_cleans_reply_and_persists_model(db_path, m
     assert get_response.json() == body
 
 
+def test_profile_grounding_failure_retries_with_feedback_before_persisting(db_path, monkeypatch, tmp_path):
+    monkeypatch.setenv("DEFAULT_MODEL", "profile-grounding-model")
+    company_info = tmp_path / "grounded.md"
+    company_info.write_text(BAKERY_DOC, encoding="utf-8")
+    product_id = _create_product("Grounding product", company_info)
+    hallucinated = dict(PROFILE_BAKERY)
+    hallucinated["summary"] = "A nationwide cloud accounting platform guarantees savings."
+    replies = iter([_profile_json(hallucinated), _profile_json(PROFILE_BAKERY)])
+    prompts = []
+
+    def handler(request):
+        prompts.append(json.loads(request.content)["messages"][-1]["content"])
+        return _chat_response(next(replies))
+
+    _use_mock_transport(monkeypatch, handler)
+    response = _post(f"/api/products/{product_id}/profile")
+
+    assert response.status_code == 200
+    assert response.json()["result"] == PROFILE_BAKERY
+    assert len(prompts) == 2
+    assert "Your previous answer was invalid:" in prompts[1]
+    assert "profile grounding failed" in prompts[1]
+    conn = db.connect()
+    try:
+        saved = conn.execute("SELECT profile_json FROM business_profiles").fetchone()
+        assert json.loads(saved["profile_json"]) == PROFILE_BAKERY
+        statuses = [row["status"] for row in conn.execute("SELECT status FROM inference_log ORDER BY id")]
+        assert statuses == ["error:invalid_json", "ok"]
+    finally:
+        conn.close()
+
+
 def test_workflow_retries_invalid_json_and_validates_before_saving(db_path, monkeypatch, tmp_path):
     monkeypatch.setenv("DEFAULT_MODEL", "retry-test-model")
     company_info = tmp_path / "retry.md"
-    company_info.write_text("SAMPLE company information.", encoding="utf-8")
+    company_info.write_text(BAKERY_DOC, encoding="utf-8")
     product_id = _create_product("Retry product", company_info)
     prompts = []
     replies = iter(
@@ -198,7 +253,7 @@ def test_unavailable_ollama_queues_and_worker_replays_profile(
 ):
     monkeypatch.setenv("DEFAULT_MODEL", "queued-test-model")
     company_info = tmp_path / "queued.md"
-    company_info.write_text("SAMPLE queued-workflow source.", encoding="utf-8")
+    company_info.write_text(BAKERY_DOC, encoding="utf-8")
     product_id = _create_product("Queued product", company_info)
 
     def unavailable(request):
@@ -266,8 +321,11 @@ def test_profile_and_icp_are_separated_by_product_and_icp_reads_stored_profile_o
     monkeypatch.setenv("DEFAULT_MODEL", "separation-test-model")
     bakery_doc = tmp_path / "bakery.md"
     planetarium_doc = tmp_path / "planetarium.md"
-    bakery_doc.write_text("SAMPLE BAKERY-DOC-ONLY source.", encoding="utf-8")
-    planetarium_doc.write_text("SAMPLE PLANETARIUM-DOC-ONLY source.", encoding="utf-8")
+    bakery_doc.write_text(
+        BAKERY_DOC.replace("SAMPLE profile facts for an unrelated bakery.", "SAMPLE BAKERY-DOC-ONLY source."),
+        encoding="utf-8",
+    )
+    planetarium_doc.write_text(PLANETARIUM_DOC, encoding="utf-8")
     bakery_id = _create_product("Bakery", bakery_doc)
     planetarium_id = _create_product("Planetarium", planetarium_doc)
 
@@ -283,7 +341,7 @@ def test_profile_and_icp_are_separated_by_product_and_icp_reads_stored_profile_o
             assert "PLANETARIUM-DOC-ONLY" not in prompt
             if "neighborhood bakery" in prompt:
                 return _chat_response(json.dumps(ICP_BAKERY))
-            assert "planetarium runs public astronomy programs" in prompt
+            assert "planetarium runs public astronomy and science education programs" in prompt
             return _chat_response(json.dumps(ICP_PLANETARIUM))
         raise AssertionError("unexpected workflow prompt")
 
@@ -315,6 +373,45 @@ def test_profile_and_icp_are_separated_by_product_and_icp_reads_stored_profile_o
         assert all(row["model_name"] == "separation-test-model" for row in stored)
     finally:
         conn.close()
+
+
+def test_icp_grounding_failure_retries_once_and_uses_profile_fields(db_path, monkeypatch, tmp_path):
+    monkeypatch.setenv("DEFAULT_MODEL", "icp-grounding-model")
+    company_info = tmp_path / "icp.md"
+    company_info.write_text(BAKERY_DOC, encoding="utf-8")
+    product_id = _create_product("ICP grounding", company_info)
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO business_profiles (product_id, profile_json, model_name, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (product_id, json.dumps(PROFILE_BAKERY), "profile-model", db.utcnow()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    hallucinated = dict(ICP_BAKERY)
+    hallucinated["trigger_events"] = ["seasonal menu"]
+    prompts = []
+    replies = iter([json.dumps(hallucinated), json.dumps(ICP_BAKERY)])
+
+    def handler(request):
+        prompts.append(json.loads(request.content)["messages"][-1]["content"])
+        return _chat_response(next(replies))
+
+    _use_mock_transport(monkeypatch, handler)
+    response = _post(f"/api/products/{product_id}/icp")
+
+    assert response.status_code == 200
+    assert response.json()["result"] == ICP_BAKERY
+    assert len(prompts) == 2
+    assert "typical_buyer" in prompts[0]
+    assert "typical_team_size" in prompts[0]
+    assert "working_situation" in prompts[0]
+    assert "not_for" in prompts[0]
+    assert "Your previous answer was invalid:" in prompts[1]
+    assert "restates the product or its features" in prompts[1]
 
 
 def test_invalid_generation_is_stored_and_returned_without_default_output(
@@ -385,3 +482,78 @@ def test_icp_without_a_stored_profile_persists_failure_without_generating_output
         assert "no stored business profile" in row["error"]
     finally:
         conn.close()
+
+
+def test_legacy_profile_remains_readable_and_is_not_rewritten(db_path, tmp_path):
+    legacy = {
+        "summary": "A neighborhood bakery sells seasonal pastries.",
+        "value_proposition": "Offers made-to-order cakes for local events.",
+        "key_features": [],
+        "pain_points_solved": [],
+        "differentiators": ["not stated"],
+    }
+    product_id = _create_product("Legacy profile", tmp_path / "unused.md")
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO business_profiles (product_id, profile_json, model_name, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (product_id, json.dumps(legacy), "old-model", db.utcnow()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    stored = icp._stored_profile(product_id)
+    assert stored.typical_buyer == "not stated"
+    assert stored.typical_team_size == "not stated"
+    assert stored.working_situation == "not stated"
+    assert stored.not_for == ["not stated"]
+    assert stored.key_features == ["not stated"]
+    conn = db.connect()
+    try:
+        persisted = json.loads(db.latest_business_profile(conn, product_id)["profile_json"])
+        assert persisted == legacy
+    finally:
+        conn.close()
+
+
+def test_icp_grounding_allows_unsupported_fields_but_rejects_product_restatement():
+    stored_profile = profile.BusinessProfile.model_validate(PROFILE_BAKERY)
+    valid_icp = icp.IdealCustomerProfile.model_validate(ICP_BAKERY)
+    icp.validate_icp_grounding(valid_icp, stored_profile)
+
+    unsupported_profile = stored_profile.model_copy(
+        update={
+            "typical_buyer": "not stated",
+            "typical_team_size": "not stated",
+            "pain_points_solved": ["not stated"],
+            "working_situation": "not stated",
+            "not_for": ["not stated"],
+        }
+    )
+    sparse_icp = icp.IdealCustomerProfile.model_validate(
+        {
+            "industries": ["not stated"],
+            "company_size": {"min": None, "max": None},
+            "buyer_titles": [],
+            "pain_points": [],
+            "trigger_events": [],
+            "disqualifiers": [],
+        }
+    )
+    icp.validate_icp_grounding(sparse_icp, unsupported_profile)
+
+    product_restatement = dict(ICP_BAKERY)
+    product_restatement["trigger_events"] = ["seasonal menu"]
+    with pytest.raises(ValueError, match="trigger_events"):
+        icp.validate_icp_grounding(
+            icp.IdealCustomerProfile.model_validate(product_restatement), stored_profile
+        )
+
+    product_disqualifier = dict(ICP_BAKERY)
+    product_disqualifier["disqualifiers"] = ["teams that use seasonal menu pickup"]
+    with pytest.raises(ValueError, match="disqualifiers"):
+        icp.validate_icp_grounding(
+            icp.IdealCustomerProfile.model_validate(product_disqualifier), stored_profile
+        )

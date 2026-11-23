@@ -44,7 +44,7 @@ standard-laptop	RAM ≥8 GB	qwen3:4b
 low-resource	else	qwen3:1.7b
 7. Data (SAMPLE, clearly labelled)
 
-data/company_info/*.md (2 products), data/prospects.csv (20–30), data/prospect_pages/*.txt, data/sample_replies.json (~15–20 labelled).
+data/company_info/*.md (2 products), product-scoped prospect CSVs, data/prospect_pages/*.txt, and a 60-row `data/sample/replies.csv` containing only reply IDs and text. Optional reply labels are operator-authored separately under `data/sample/reply_labels.csv`; signal-evaluation labels live under `data/eval/`.
 
 8. Scoring formula
 
