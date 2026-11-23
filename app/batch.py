@@ -125,10 +125,14 @@ def score_and_store_prospect(conn, prospect_id: int) -> dict[str, Any]:
             similarity = research["icp_similarity"]
 
     raw_signals = [dict(row) for row in signals] if signals else None
-    size_range = {
-        "min": icp_data.get("company_size_min"),
-        "max": icp_data.get("company_size_max"),
-    }
+    company_size = icp_data.get("company_size")
+    if isinstance(company_size, Mapping):
+        size_range = {"min": company_size.get("min"), "max": company_size.get("max")}
+    else:
+        size_range = {
+            "min": icp_data.get("company_size_min"),
+            "max": icp_data.get("company_size_max"),
+        }
     buyer_titles = icp_data.get("buyer_titles")
     result = scoring.score_prospect(
         icp_similarity=similarity,

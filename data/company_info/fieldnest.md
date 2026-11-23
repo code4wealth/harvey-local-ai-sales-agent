@@ -8,6 +8,12 @@ FieldNest is a fictional maintenance-planning board for small fabrication and fo
 ## Intended value
 A maintenance coordinator can keep a visible list of upcoming checks and the notes left by the previous shift. The product is intended for teams that currently coordinate these tasks with paper lists or separate spreadsheets.
 
+## Intended buyers and context
+- Typical buyer: a maintenance coordinator, planner, or supervisor responsible for routine checks and shift notes.
+- Typical team or company size: a small fabrication or food-processing workshop with a local maintenance team; no numeric size is stated.
+- Relevant working situation: routine equipment checks, maintenance tasks, and shift handoffs are coordinated with paper lists or separate spreadsheets.
+- Not for: teams seeking sensor-based monitoring, predictive failure alerts, automatic parts ordering, or general-purpose enterprise asset management.
+
 ## Features
 - Equipment list with locally entered identifiers.
 - Recurring maintenance checklist entries.

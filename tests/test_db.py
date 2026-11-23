@@ -14,8 +14,14 @@ def test_schema_initializes_all_phase_tables_idempotently(db_path):
         assert {
             "products", "business_profiles", "icps", "prospects", "signals",
             "prospect_research", "problem_statements", "scores", "emails", "replies",
-            "inference_log", "task_queue", "pipeline_runs", "pipeline_steps",
+            "inference_log", "task_queue", "pipeline_runs", "pipeline_steps", "workflow_runs",
         } <= names
+        assert "model_name" in {
+            row[1] for row in conn.execute("PRAGMA table_info(business_profiles)")
+        }
+        assert "model_name" in {
+            row[1] for row in conn.execute("PRAGMA table_info(icps)")
+        }
     finally:
         conn.close()
 
@@ -38,6 +44,30 @@ def test_init_db_migrates_existing_inference_log_status_and_load_seconds(tmp_pat
         assert "load_seconds" in columns
         row = conn.execute("SELECT status, load_seconds FROM inference_log").fetchone()
         assert row == ("ok", None)
+    finally:
+        conn.close()
+
+
+def test_init_db_adds_model_names_to_legacy_profile_tables(tmp_path):
+    conn = sqlite3.connect(tmp_path / "legacy-workflows.db")
+    try:
+        conn.executescript(
+            "CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT NOT NULL, "
+            "description TEXT NOT NULL DEFAULT '', docs_path TEXT NOT NULL DEFAULT '', "
+            "created_at TEXT NOT NULL, updated_at TEXT NOT NULL);"
+            "CREATE TABLE business_profiles (id INTEGER PRIMARY KEY, product_id INTEGER NOT NULL, "
+            "profile_json TEXT NOT NULL, created_at TEXT NOT NULL);"
+            "CREATE TABLE icps (id INTEGER PRIMARY KEY, product_id INTEGER NOT NULL, "
+            "icp_json TEXT NOT NULL, embedding BLOB, embedding_model TEXT NOT NULL DEFAULT '', "
+            "created_at TEXT NOT NULL);"
+            "INSERT INTO business_profiles VALUES (1, 1, '{}', 'old');"
+            "INSERT INTO icps VALUES (1, 1, '{}', NULL, '', 'old');"
+        )
+        db.init_db(conn)
+        for table in ("business_profiles", "icps"):
+            columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            assert "model_name" in columns
+            assert conn.execute(f"SELECT model_name FROM {table} WHERE id = 1").fetchone()[0] == ""
     finally:
         conn.close()
 

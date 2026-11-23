@@ -8,6 +8,7 @@ idempotently by init_db() at app startup and in tests.
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS business_profiles (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     profile_json TEXT NOT NULL,
+    model_name  TEXT NOT NULL DEFAULT '',
     created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_profiles_product ON business_profiles(product_id, created_at DESC);
@@ -47,6 +49,7 @@ CREATE TABLE IF NOT EXISTS icps (
     icp_json       TEXT NOT NULL,
     embedding      BLOB,
     embedding_model TEXT NOT NULL DEFAULT '',
+    model_name     TEXT NOT NULL DEFAULT '',
     created_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_icps_product ON icps(product_id, created_at DESC);
@@ -176,6 +179,21 @@ CREATE TABLE IF NOT EXISTS task_queue (
     updated_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_queue_status ON task_queue(status, created_at);
+
+CREATE TABLE IF NOT EXISTS workflow_runs (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id     INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    workflow       TEXT NOT NULL CHECK (workflow IN ('profile', 'icp')),
+    status         TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
+    model_name     TEXT,
+    result_json    TEXT,
+    error          TEXT,
+    queue_task_id  INTEGER,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_product
+  ON workflow_runs(product_id, workflow, created_at DESC, id DESC);
 """
 
 
@@ -201,6 +219,12 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    for table in ("business_profiles", "icps"):
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if "model_name" not in columns:
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN model_name TEXT NOT NULL DEFAULT ''"
+            )
     prospect_columns = {row[1] for row in conn.execute("PRAGMA table_info(prospects)")}
     if "employee_count" not in prospect_columns:
         conn.execute("ALTER TABLE prospects ADD COLUMN employee_count INTEGER")
@@ -313,6 +337,105 @@ def get_product(conn: sqlite3.Connection, product_id: int) -> sqlite3.Row | None
 
 def list_products(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return list(conn.execute("SELECT * FROM products ORDER BY id").fetchall())
+
+
+def create_workflow_run(
+    conn: sqlite3.Connection,
+    *,
+    product_id: int,
+    workflow: str,
+    model_name: str | None,
+) -> int:
+    if workflow not in {"profile", "icp"}:
+        raise ValueError(f"invalid workflow: {workflow!r}")
+    now = utcnow()
+    cur = conn.execute(
+        "INSERT INTO workflow_runs "
+        "(product_id, workflow, status, model_name, created_at, updated_at) "
+        "VALUES (?, ?, 'running', ?, ?, ?)",
+        (int(product_id), workflow, model_name, now, now),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def update_workflow_run(
+    conn: sqlite3.Connection,
+    run_id: int,
+    *,
+    status: str,
+    error: str | None = None,
+    model_name: str | None = None,
+    queue_task_id: int | None = None,
+) -> None:
+    if status not in {"queued", "running", "succeeded", "failed"}:
+        raise ValueError(f"invalid workflow run status: {status!r}")
+    cur = conn.execute(
+        "UPDATE workflow_runs SET status = ?, result_json = NULL, error = ?, "
+        "model_name = COALESCE(?, model_name), queue_task_id = COALESCE(?, queue_task_id), "
+        "updated_at = ? WHERE id = ?",
+        (status, error, model_name, queue_task_id, utcnow(), int(run_id)),
+    )
+    if cur.rowcount != 1:
+        raise ValueError(f"workflow run {run_id} not found")
+    conn.commit()
+
+
+def get_workflow_run(conn: sqlite3.Connection, run_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM workflow_runs WHERE id = ?", (int(run_id),)).fetchone()
+
+
+def latest_workflow_run(
+    conn: sqlite3.Connection, *, product_id: int, workflow: str
+) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM workflow_runs WHERE product_id = ? AND workflow = ? "
+        "ORDER BY created_at DESC, id DESC LIMIT 1",
+        (int(product_id), workflow),
+    ).fetchone()
+
+
+def latest_business_profile(conn: sqlite3.Connection, product_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM business_profiles WHERE product_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+        (int(product_id),),
+    ).fetchone()
+
+
+def save_workflow_output(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int,
+    product_id: int,
+    workflow: str,
+    result: dict[str, Any],
+    model_name: str,
+) -> None:
+    if workflow not in {"profile", "icp"}:
+        raise ValueError(f"invalid workflow: {workflow!r}")
+    result_json = json.dumps(result, ensure_ascii=False, sort_keys=True, allow_nan=False)
+    now = utcnow()
+    if workflow == "profile":
+        conn.execute(
+            "INSERT INTO business_profiles (product_id, profile_json, model_name, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (int(product_id), result_json, model_name, now),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO icps (product_id, icp_json, embedding, embedding_model, model_name, created_at) "
+            "VALUES (?, ?, NULL, '', ?, ?)",
+            (int(product_id), result_json, model_name, now),
+        )
+    cur = conn.execute(
+        "UPDATE workflow_runs SET status = 'succeeded', result_json = ?, error = NULL, "
+        "model_name = ?, queue_task_id = NULL, updated_at = ? "
+        "WHERE id = ? AND product_id = ? AND workflow = ?",
+        (result_json, model_name, now, int(run_id), int(product_id), workflow),
+    )
+    if cur.rowcount != 1:
+        raise ValueError(f"workflow run {run_id} does not match product/workflow")
+    conn.commit()
 
 
 def create_prospect(

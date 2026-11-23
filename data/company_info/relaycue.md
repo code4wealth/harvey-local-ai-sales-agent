@@ -8,6 +8,12 @@ RelayCue is a fictional browser-based workspace for B2B software support teams. 
 ## Intended value
 A support lead can see the next owner and the current internal context when a case moves between teammates. RelayCue is meant for teams that coordinate support work across shifts or specialist groups.
 
+## Intended buyers and context
+- Typical buyer: a support lead or manager responsible for case handoffs across teammates.
+- Typical team or company size: a small B2B software support team; no numeric size is stated.
+- Relevant working situation: cases move between shifts or specialist groups, and the team needs current ownership, internal context, and links to its own procedures in one queue view.
+- Not for: email sending, autonomous decisions for agents, sales-pipeline management, or teams that do not hand cases between support staff.
+
 ## Features
 - Case handoff queue with owner and status fields.
 - Internal notes attached to a case.

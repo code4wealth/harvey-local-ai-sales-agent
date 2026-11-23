@@ -106,7 +106,7 @@ def test_deterministic_score_handler_uses_only_persisted_inputs(db_path, monkeyp
             "VALUES (?, ?, ?, ?, ?)",
             (
                 product_id,
-                json.dumps({"company_size_min": 50, "company_size_max": 500, "buyer_titles": ["VP of Sales"]}),
+                json.dumps({"company_size": {"min": 50, "max": 500}, "buyer_titles": ["VP of Sales"]}),
                 vector,
                 embeddings.DEFAULT_MODEL,
                 now,

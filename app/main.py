@@ -9,11 +9,15 @@ from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app import batch, db, hardware, llm_client, prospects
 from app.queue_worker import QueueWorker
+from app.workflows import icp as icp_workflow
+from app.workflows import profile as profile_workflow
+from app.workflows import register_workflow_handlers
+from app.workflows import common as workflow_common
 
 
 @asynccontextmanager
@@ -25,6 +29,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         conn.close()
 
     batch.register_batch_handlers()
+    register_workflow_handlers()
     worker = QueueWorker()
     application.state.queue_worker = worker
     worker.start()
@@ -90,6 +95,69 @@ def api_list_products() -> list[dict]:
         return [dict(product) for product in db.list_products(conn)]
     finally:
         conn.close()
+
+
+def _workflow_run_response(run_id: int) -> dict:
+    conn = db.connect()
+    try:
+        row = db.get_workflow_run(conn, run_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="workflow run not found")
+        return workflow_common.workflow_run_payload(row)
+    finally:
+        conn.close()
+
+
+def _post_workflow(product_id: int, *, submit) -> JSONResponse:
+    try:
+        run_id = submit(product_id)
+    except workflow_common.ProductNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except llm_client.OllamaUnavailable as exc:
+        run_id = getattr(exc, "workflow_run_id", None)
+        if run_id is None:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return JSONResponse(status_code=202, content=_workflow_run_response(int(run_id)))
+    except workflow_common.WorkflowRunError as exc:
+        payload = _workflow_run_response(exc.run_id)
+        return JSONResponse(status_code=502, content=payload)
+    return JSONResponse(status_code=200, content=_workflow_run_response(run_id))
+
+
+def _get_workflow(product_id: int, workflow: str) -> dict:
+    conn = db.connect()
+    try:
+        if db.get_product(conn, product_id) is None:
+            raise HTTPException(status_code=404, detail="product not found")
+        row = db.latest_workflow_run(conn, product_id=product_id, workflow=workflow)
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"no {workflow} workflow run is stored for this product",
+            )
+        return workflow_common.workflow_run_payload(row)
+    finally:
+        conn.close()
+
+
+@app.post("/api/products/{product_id}/profile", tags=["workflows"])
+def api_generate_profile(product_id: int) -> JSONResponse:
+    return _post_workflow(product_id, submit=profile_workflow.submit_profile)
+
+
+@app.get("/api/products/{product_id}/profile", tags=["workflows"])
+def api_get_profile(product_id: int) -> dict:
+    return _get_workflow(product_id, "profile")
+
+
+@app.post("/api/products/{product_id}/icp", tags=["workflows"])
+def api_generate_icp(product_id: int) -> JSONResponse:
+    return _post_workflow(product_id, submit=icp_workflow.submit_icp)
+
+
+@app.get("/api/products/{product_id}/icp", tags=["workflows"])
+def api_get_icp(product_id: int) -> dict:
+    return _get_workflow(product_id, "icp")
 
 
 @app.get("/api/products/{product_id}/prospects", tags=["prospects"])

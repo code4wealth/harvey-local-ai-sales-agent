@@ -72,6 +72,13 @@ def strip_think(text: str) -> str:
     return _THINK_RE.sub("", text).strip()
 
 
+def clean_reply(text: str) -> str:
+    """Remove reasoning and an optional enclosing Markdown code fence."""
+    cleaned = strip_think(str(text)).strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    return fenced.group(1).strip() if fenced else cleaned
+
+
 def _client(timeout: float) -> httpx.Client:
     """Create a client fixed to the local Ollama endpoint."""
     return httpx.Client(base_url=OLLAMA_URL, timeout=timeout, trust_env=False)
@@ -140,6 +147,11 @@ def _resolve_model(model: str | None) -> str:
     from app.hardware import detect
 
     return detect().recommended_model
+
+
+def resolve_model_name(model: str | None = None) -> str:
+    """Resolve the local model name used for an inference and its audit record."""
+    return _resolve_model(model)
 
 
 def _write_inference_log(
@@ -344,7 +356,7 @@ def _chat(
         raise OllamaResponseError("Ollama /api/chat response must be a JSON object")
     message = body.get("message")
     content = message.get("content", "") if isinstance(message, dict) else ""
-    content = strip_think(str(content))
+    content = clean_reply(str(content))
 
     initial_status = "ok"
     if format is not None:
@@ -428,7 +440,7 @@ def generate(
 
 def _extract_json(text: str) -> Any:
     """Parse JSON directly, then try the outermost JSON object/array."""
-    cleaned = strip_think(text)
+    cleaned = clean_reply(text)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
