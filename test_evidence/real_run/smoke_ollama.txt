@@ -1,0 +1,36 @@
+﻿REAL OLLAMA RUN - Windows, Ollama 0.40.17, qwen3:4b, Python 3.12.16 (2nd run, model warm)
+Ollama endpoint (fixed): http://127.0.0.1:11434
+$ ollama list
+NAME        ID              SIZE      MODIFIED           
+qwen3:4b    359d7dd4bcda    2.5 GB    About a minute ago
+GET /api/version
+{
+  "version": "0.40.17"
+}
+Using hardware-tier num_ctx: 4096
+chat() content (after <think> stripping):
+{
+  "status": "ok",
+  "details": {
+    "message": "Local generation is working."
+  }
+}
+validated nested response:
+{
+  "details": {
+    "message": "Local generation is working."
+  },
+  "status": "ok"
+}
+smoke inference_log row:
+{
+  "created_at": "2026-11-23T14:23:21.029348Z",
+  "eval_tokens": 27,
+  "host": "http://127.0.0.1:11434",
+  "id": 2,
+  "model": "qwen3:4b",
+  "prompt_tokens": 49,
+  "seconds": 1.7107742,
+  "status": "ok",
+  "task": "phase2_smoke_test"
+}
