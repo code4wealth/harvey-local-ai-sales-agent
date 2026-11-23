@@ -8,11 +8,14 @@ Phase 1 - Purge cloud AI (4-6h)
 [x] Remove/replace all cloud SDKs, keys, calls; update requirements/package.json
 [x] make verify passes
 Phase 2 - Core backend (6-14h)
-[ ] db.py schema (all tables) + helpers
-[ ] llm_client.py (generate, generate_json, ollama_up, OllamaUnavailable, inference logging, think:false, <think> stripping)
-[ ] hardware.py + GET /api/hardware, GET /api/status
-[ ] queue_worker.py (background retry)
-[ ] Tests: client with mocked httpx (down/up/invalid JSON), hardware tiers, queue
+[x] db.py schema (all tables, including pipeline status) + logging/queue helpers
+[x] llm_client.py (generate, generate_json, ollama_up, OllamaUnavailable, inference logging, think:false, <think> stripping) (mocked)
+[x] hardware.py + GET /api/hardware, GET /api/status (mocked Ollama transport; hardware tiering uses fake RAM/VRAM values)
+[x] queue_worker.py (lifespan background thread, crash recovery, retry/max-attempt handling) (mocked)
+[x] Tests: HTTPX MockTransport client/queue/API tests and pure hardware tiers (mocked)
+[x] Unmocked localhost-down OllamaUnavailable regression test (skips if a local Ollama server is running)
+[x] scripts/smoke_ollama.py: local Ollama smoke script created; run on target machine at Phase 2 gate
+[ ] Run `ollama pull qwen3:4b && python scripts/smoke_ollama.py` on target machine and review output
 Phase 3 - Sample data (14-18h)
 [ ] 2 products' company_info (labelled SAMPLE)
 [ ] 20-30 prospects + page texts (from public pages while online, or labelled samples)

@@ -1,4 +1,4 @@
-"""Phase 1 placeholder so `pytest -q` is green before the real suite lands (Phase 2)."""
+"""Repository baseline checks that do not require Ollama or model downloads."""
 
 import sys
 from pathlib import Path

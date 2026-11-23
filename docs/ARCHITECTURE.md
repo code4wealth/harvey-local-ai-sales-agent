@@ -7,7 +7,8 @@ FastAPI (app/main.py) --> Orchestrator (pipeline.py)
         |                      +- scoring.py (deterministic)
         |                      +- research/ (Scrapy/BS4/Playwright)  [internet, NOT AI]
         +--> SQLite: products, business_profiles, icps, prospects, signals, problem_statements,
-                     scores, emails, replies, inference_log, task_queue
+                     prospect_research, scores, emails, replies, inference_log,
+                     pipeline_runs, pipeline_steps, task_queue
 Queue worker: polls task_queue; when Ollama is up, replays tasks.
 Separation principle
 app/research/ may touch the internet and must never import llm_client. llm_client may only touch localhost and must never import research.

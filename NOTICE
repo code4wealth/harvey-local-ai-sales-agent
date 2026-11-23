@@ -1,14 +1,24 @@
-Sellbird (formerly Harvey)
-Copyright (C) 2026 Ethan Rogers and the Sellbird contributors
+Harvey — Local Multi-Product AI Sales Agent
+(fork of ethanplusai/harvey)
 
-Starting with version 0.4.0, Sellbird is licensed under the GNU Affero
-General Public License, version 3 only (AGPL-3.0-only). The full text is in
-the LICENSE file.
+This project is a derivative work of "Harvey" (now "Sellbird") by Ethan
+Rogers and the Sellbird contributors:
+
+    Upstream: https://github.com/ethanplusai/harvey
+              (formerly https://github.com/ethanplusai/sellbird)
+
+Starting with version 0.4.0, the upstream project is licensed under the
+GNU Affero General Public License, version 3 only (AGPL-3.0-only). The full
+text is in the LICENSE file, which this fork keeps unchanged.
 
 Versions up to and including 0.3.x were released as Harvey under the MIT
 License. Those releases, and the code and contributions they contain, remain
-available under the MIT License. As that license requires, its notice is kept
-below and applies to that earlier code.
+available under the MIT License. As that license requires, its notice is
+kept below and applies to that earlier code.
+
+Changes made in this fork are described in docs/HARVEY_NOTES.md and
+CHANGELOG.md. The snapshot tag `upstream-harvey-snapshot` marks the exact
+upstream commit this fork was branched from (b212385259da92246a56311d790d936e75dd70dd).
 
 --------------------------------------------------------------------------------
 
