@@ -1,33 +1,144 @@
-Workflows: prompts, schemas, rules
-General: keep the system prompt short; pass the Pydantic JSON schema in Ollama's `format`; validate with Pydantic; retry invalid JSON ×2; log every call.
-Qwen3: think:false, temperature 0.2. Keep source text to roughly <=2500 tokens per call; pass the hardware tier's recommended `num_ctx` (default 4096).
-1. Business profile
-Input: concatenated data/company_info/<product>/*.md.
-Schema: {summary, value_proposition, key_features[], pain_points_solved[], differentiators[]}.
-Rule: use only facts present in the documents; if unknown, say "not stated".
-2. ICP
-Input: profile JSON. Schema: {industries[], company_size{min,max}, buyer_titles[], pain_points[], trigger_events[], disqualifiers[]}.
-Rule: must be product-specific; avoid generic output.
-3. Prospect research
-Input: prospect page text (about/careers/news). Schema: {what_they_do, size_hint, tech_stack[], recent_news[], summary}.
-Plus: icp_similarity = cos_sim(embed(ICP text), embed(prospect text)).
-4. Buying signals
-Types: hiring | funding | expansion | tech_change | leadership_change | pain_mention | none.
-Schema: {signals:[{type, evidence, confidence 0-1}]}.
-Code check: evidence must be a substring (case/whitespace-normalised) of the source; otherwise drop. Signal score = sum weight[type]*confidence, capped at 100.
-Weights (tunable): funding 30, hiring 25, expansion 20, pain_mention 25, leadership_change 15, tech_change 15.
-5. Problem statement
-Input: profile, research summary, verified signals. Output: 2-3 sentences, no invented facts, mentions the signal.
-6. Scoring (no LLM)
-0.35*sim*100 + 0.35*signal_score + 0.15*size_fit + 0.15*title_fit. size_fit: 100 in ICP range, linear decay outside. title_fit: fuzzy match to ICP buyer_titles.
-Store breakdown JSON. Optional LLM one-line rationale (skipped if Ollama down).
-7. Email
-Input: profile, research, signals, problem, contact name/title. Output {subject, body}.
-Rules: <120 words, one CTA, no fake claims/stats/customers, reference one real signal, plain tone, no "I hope this finds you well".
-Post-check in code: word count; regenerate once if over.
-8. Reply classification
-Labels: interested | meeting_request | not_interested | out_of_office | wrong_person | unsubscribe | question | other.
-Schema: {label, confidence, next_action}. Run over data/sample_replies.json; scripts/eval_replies.py outputs accuracy + confusion table to test_evidence/.
-unsubscribe must be honoured: prospect flagged do-not-contact.
-9. Pipeline
-POST /api/pipeline/run/{product_id}: profile -> ICP -> for each prospect (research -> signals -> problem -> score -> email). Per-step status, resumable, safe to re-run.
+# Workflows and scoring contracts
+
+This document separates implemented deterministic behavior from LLM workflows
+that have **not** been started. No workflow prompts are being tuned in this
+patch; the operator will tune them against real local-model output later.
+
+## Implemented deterministic batch
+
+### Products and prospects
+
+- Products are stored locally in SQLite with a name, description, and local
+  documentation path. A product owns its prospects.
+- CSV import is product-scoped. Headers are case-insensitive; spaces and
+  hyphens normalize to underscores. `company_name` is required. Supported
+  optional headers are `contact_name`, `contact_title`, `company_domain`,
+  `employee_count`, `contact_email`, `page_text_path`, and `do_not_contact`.
+  Imports validate before writing and are atomic.
+- `page_text_path` is a filename or path inside `data/prospect_pages/`. Page
+  text is explicitly stored/read as local UTF-8 text. Replacing it clears the
+  cached page embedding. The API does not fetch a URL or perform online research.
+- Queue handlers `prospects.import_csv` and `prospects.score` are
+  **deterministic** and do not require an Ollama health probe. A slow or
+  unavailable probe must not block these local tasks. LLM-dependent handlers
+  still wait for Ollama. The score handler embeds persisted flat ICP JSON and
+  local page text when their vectors are absent, stores local vectors, then
+  scores. If a required vector cannot be computed or loaded, similarity stays
+  null and the result is partial.
+
+### Local embeddings
+
+- `app/embeddings.py` uses the real
+  `sentence-transformers/all-MiniLM-L6-v2` model and returns normalized local
+  vectors. The model is lazy-loaded and cached in-process. Test doubles exist
+  only in `tests/`.
+- First run `python scripts/smoke_embeddings.py` while the model can be
+  downloaded. After the model is cached, run with `HF_HUB_OFFLINE=1` to check
+  offline load and inference. On Windows PowerShell use
+  `$env:HF_HUB_OFFLINE='1'; python scripts/smoke_embeddings.py`; in Command
+  Prompt use `set HF_HUB_OFFLINE=1 && python scripts/smoke_embeddings.py`.
+  No embedding output is fabricated when the model is absent.
+
+## Quote verification — deterministic
+
+Before checking evidence quotes, normalize both source and candidate quote in
+this order:
+
+1. Unicode NFKC normalization.
+2. Straighten curly single/double quotes and common Unicode dashes to straight
+   ASCII quote characters and hyphens.
+3. Collapse every whitespace run to one space and trim.
+4. Lowercase.
+
+Retain a quote only if its **normalized** text is a substring of the
+**normalized** source. Return the retained normalized quotes and the count
+that were dropped. Non-string, empty, and unmatched quotes are dropped; a
+quote is never repaired by inventing source text.
+
+## Scoring — deterministic
+
+### ICP similarity
+
+Compute cosine similarity between the local ICP and prospect embeddings, then
+map it linearly from cosine `0.15 → 0` to `0.65 → 1`; clamp below and above
+that interval to `0` and `1`. Missing, mismatched, or zero-length vectors make
+the component `null`.
+
+### Signal score
+
+Each signal type contributes at most once, using the highest valid confidence
+for that type. The contribution is `weight × confidence`; the total is capped
+at 100. The existing baseline weights are:
+
+| Signal type | Weight |
+|---|---:|
+| funding | 30 |
+| hiring | 25 |
+| expansion | 20 |
+| pain_mention | 25 |
+| leadership_change | 15 |
+| tech_change | 15 |
+
+An explicit `none` signal contributes zero. An absent signal record or an
+unknown/unweighted type is uncomputable (`null`), not an invented zero.
+
+### Size fit
+
+Use the ICP's flat `company_size_min` and `company_size_max` fields and the
+prospect's recorded `employee_count`. Fit is 100 inside the inclusive range.
+Outside it, let `r` be the ratio to the nearest boundary (`employees / max`
+above the range, `min / employees` below it). Fit decays logarithmically as
+`100 × (1 − ln(r) / ln(3))`, reaching zero at a 3× ratio. Missing or invalid
+inputs make the component `null`.
+
+### Title fit
+
+Use only the ICP's `buyer_titles` keywords. A buyer-title phrase appearing
+contiguously in the contact title scores 100 (decision-maker); any remaining
+non-connector keyword overlap scores 60 (influencer); no overlap scores 20
+(other). If the contact title or buyer-title list is missing, the component
+is `null`. No external title dictionary or synonym list is inferred.
+
+### Overall score and missing inputs
+
+The complete formula is:
+
+`0.35 × icp_similarity × 100 + 0.35 × signal_score + 0.15 × size_fit + 0.15 × title_fit`
+
+`icp_similarity` is on 0–1; the other components are on 0–100. An
+uncomputable component is stored as JSON `null`, and `partial` is true. The
+partial total sums only known weighted contributions using the original
+weights (no re-normalization); it is not presented as a complete score. If
+all components are missing, `score` is `null`. Never substitute guessed
+inputs, zero-fill missing metrics, or claim a partial total is complete.
+
+## LLM workflow contract — deferred; no prompts implemented here
+
+When these workflows are started, every schema-constrained LLM output must be
+flat: scalar fields at the root, with lists of scalars or lists of flat
+objects at most. Do not use nested objects. Validate structured output and
+keep the existing local-only `app/llm_client.py` path; no workflow may call a
+model or service directly.
+
+Planned inputs/outputs (contract only; all marked **not started**):
+
+1. **Business profile — not started:** local product documents; flat summary,
+   value proposition, and lists of features, pain points, and differentiators.
+2. **ICP — not started:** business profile; flat industry/title/event lists
+   and `company_size_min` / `company_size_max` fields.
+3. **Prospect research — not started:** explicitly stored local page text; flat
+   summary/size fields and lists for technology and news. Embeddings remain a
+   separate local deterministic operation.
+4. **Buying signals — not started:** local page text; `{signals: [...]}` where
+   each signal is a flat `{type, evidence, confidence}` object. Apply the
+   deterministic quote verification above before storing evidence.
+5. **Problem statement — not started:** profile, research, and verified
+   signals; 2–3 factual sentences, with no invented inputs.
+6. **Scoring — deterministic implementation exists:** use the formula and
+   component rules above; it does not need an LLM rationale.
+7. **Email — not started:** flat `{subject, body}` output; later enforce the
+   existing length, one-call-to-action, and no-fabricated-claims rules.
+8. **Reply classification — not started:** flat `{label, confidence,
+   next_action}` output and honour unsubscribe/do-not-contact.
+9. **Pipeline orchestration — not started:** workflow sequencing and resumable
+   LLM stages are intentionally deferred.

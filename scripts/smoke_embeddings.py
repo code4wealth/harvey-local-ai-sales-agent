@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""Load the real local sentence-embedding model and verify two vectors.
+
+First run (downloads the model if needed):
+    python scripts/smoke_embeddings.py
+Subsequent offline run after the cache is populated:
+    HF_HUB_OFFLINE=1 python scripts/smoke_embeddings.py
+"""
+
+from __future__ import annotations
+
+import math
+import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app.embeddings import DEFAULT_MODEL, EmbeddingError, embed_texts
+from app.scoring import cosine_similarity
+
+
+SAMPLE_TEXTS = (
+    "A small engineering team builds workflow software for logistics operations.",
+    "Logistics teams use software to coordinate operational workflows.",
+)
+
+
+def main() -> int:
+    offline = os.environ.get("HF_HUB_OFFLINE", "0")
+    print(f"Embedding model: {DEFAULT_MODEL}")
+    print(f"HF_HUB_OFFLINE: {offline}")
+    try:
+        vectors = embed_texts(SAMPLE_TEXTS)
+    except EmbeddingError as exc:
+        print(f"Embedding smoke test failed: {exc}", file=sys.stderr)
+        return 1
+    if len(vectors) != len(SAMPLE_TEXTS) or not vectors[0]:
+        print("Embedding smoke test failed: unexpected vector shape", file=sys.stderr)
+        return 1
+    dimensions = len(vectors[0])
+    if any(len(vector) != dimensions for vector in vectors):
+        print("Embedding smoke test failed: vector dimensions differ", file=sys.stderr)
+        return 1
+    if any(not math.isfinite(value) for vector in vectors for value in vector):
+        print("Embedding smoke test failed: vector contains non-finite values", file=sys.stderr)
+        return 1
+    norms = [math.sqrt(sum(value * value for value in vector)) for vector in vectors]
+    if any(not math.isclose(value, 1.0, rel_tol=1e-3, abs_tol=1e-3) for value in norms):
+        print("Embedding smoke test failed: vectors are not normalized", file=sys.stderr)
+        return 1
+    similarity = cosine_similarity(vectors[0], vectors[1])
+    if similarity is None:
+        print("Embedding smoke test failed: cosine similarity is unavailable", file=sys.stderr)
+        return 1
+    print(f"Vector count: {len(vectors)}")
+    print(f"Dimensions: {dimensions}")
+    print(f"First vector norm: {norms[0]:.6f}")
+    print(f"Cosine similarity: {similarity:.6f}")
+    print("PASS: local embeddings are available")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -10,7 +10,7 @@ until they have been installed and tested on the target machine.
 | Component | Intended licence | Use | Network behaviour |
 |---|---|---|---|
 | Qwen3 (recommended default family) | Apache-2.0 | Text inference through Ollama on this machine | Model files are downloaded before offline use; inference goes only to `http://127.0.0.1:11434` |
-| `all-MiniLM-L6-v2` | Apache-2.0 | Local text embeddings (Phase 4) | Model files are downloaded/cached before offline use; embedding inference is local |
+| `all-MiniLM-L6-v2` | Apache-2.0 | Local text embeddings (implemented in the deterministic batch) | Model files are downloaded/cached before offline use; embedding inference is local |
 
 ## Python dependencies
 

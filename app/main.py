@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel, Field
 
-from app import db, hardware, llm_client
+from app import batch, db, hardware, llm_client, prospects
 from app.queue_worker import QueueWorker
 
 
@@ -20,6 +23,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     finally:
         conn.close()
 
+    batch.register_batch_handlers()
     worker = QueueWorker()
     application.state.queue_worker = worker
     worker.start()
@@ -35,6 +39,134 @@ app = FastAPI(
     description="Local-only sales research and outreach backend. AI runs through local Ollama.",
     lifespan=lifespan,
 )
+
+
+class ProductCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    docs_path: str = ""
+
+
+def _prospect_response(row) -> dict:
+    result = dict(row)
+    result.pop("page_embedding", None)
+    return result
+
+
+@app.post("/api/products", status_code=201, tags=["products"])
+def api_create_product(request: ProductCreate) -> dict:
+    conn = db.connect()
+    try:
+        product_id = db.create_product(
+            conn, name=request.name, description=request.description, docs_path=request.docs_path
+        )
+        conn.commit()
+        product = db.get_product(conn, product_id)
+        return dict(product)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        conn.close()
+
+
+@app.get("/api/products", tags=["products"])
+def api_list_products() -> list[dict]:
+    conn = db.connect()
+    try:
+        return [dict(product) for product in db.list_products(conn)]
+    finally:
+        conn.close()
+
+
+@app.get("/api/products/{product_id}/prospects", tags=["prospects"])
+def api_list_prospects(product_id: int) -> list[dict]:
+    conn = db.connect()
+    try:
+        if db.get_product(conn, product_id) is None:
+            raise HTTPException(status_code=404, detail="product not found")
+        return [_prospect_response(prospect) for prospect in db.list_prospects(conn, product_id)]
+    finally:
+        conn.close()
+
+
+@app.post("/api/products/{product_id}/prospects/import", status_code=201, tags=["prospects"])
+async def api_import_prospects(product_id: int, request: Request) -> dict:
+    try:
+        csv_text = (await request.body()).decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="CSV must be UTF-8 encoded") from exc
+    conn = db.connect()
+    try:
+        imported = prospects.import_prospects_csv(
+            conn, product_id=product_id, csv_text=csv_text
+        )
+        return {"product_id": product_id, "imported": imported}
+    except prospects.ProductNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except prospects.ProspectImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=400, detail="CSV import violates a data constraint") from exc
+    finally:
+        conn.close()
+
+
+@app.get("/api/prospects/{prospect_id}", tags=["prospects"])
+def api_get_prospect(prospect_id: int) -> dict:
+    conn = db.connect()
+    try:
+        prospect = db.get_prospect(conn, prospect_id)
+        if prospect is None:
+            raise HTTPException(status_code=404, detail="prospect not found")
+        return _prospect_response(prospect)
+    finally:
+        conn.close()
+
+
+@app.put("/api/prospects/{prospect_id}/page", tags=["prospects"])
+async def api_store_prospect_page(prospect_id: int, request: Request) -> dict:
+    try:
+        page_text = (await request.body()).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="page text must be UTF-8 encoded") from exc
+    conn = db.connect()
+    try:
+        page_path = prospects.store_prospect_page(
+            conn, prospect_id=prospect_id, text=page_text
+        )
+        return {"prospect_id": prospect_id, "page_text_path": page_path}
+    except prospects.ProspectNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    finally:
+        conn.close()
+
+
+@app.get("/api/prospects/{prospect_id}/page", response_class=PlainTextResponse, tags=["prospects"])
+def api_load_prospect_page(prospect_id: int) -> PlainTextResponse:
+    conn = db.connect()
+    try:
+        page_text = prospects.load_prospect_page(conn, prospect_id)
+        return PlainTextResponse(page_text, media_type="text/plain; charset=utf-8")
+    except prospects.ProspectNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except prospects.ProspectPageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        conn.close()
+
+
+@app.post("/api/prospects/{prospect_id}/score", status_code=202, tags=["prospects"])
+def api_queue_prospect_score(prospect_id: int) -> dict:
+    conn = db.connect()
+    try:
+        if db.get_prospect(conn, prospect_id) is None:
+            raise HTTPException(status_code=404, detail="prospect not found")
+        task_id = db.enqueue_task(conn, batch.SCORE_PROSPECT_TASK, {"prospect_id": prospect_id})
+        return {"task_id": task_id, "status": "queued", "requires_ollama": False}
+    finally:
+        conn.close()
 
 
 @app.get("/api/hardware", tags=["system"])

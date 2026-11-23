@@ -4,7 +4,7 @@ import asyncio
 
 import httpx
 
-from app import db, llm_client
+from app import db, llm_client, prospects
 from app.main import app
 
 
@@ -139,6 +139,58 @@ def test_status_reports_connect_failure_as_unavailable(db_path, monkeypatch):
     assert status["state"] == "unavailable"
     assert status["available"] is False
     assert "message" not in status
+
+
+def test_product_prospect_csv_and_local_page_routes(db_path, monkeypatch, tmp_path):
+    monkeypatch.setattr(prospects, "DEFAULT_PAGE_DIR", tmp_path / "pages")
+
+    async def exercise():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            product_response = await client.post(
+                "/api/products", json={"name": "Harvey CRM", "description": "Local sales tool"}
+            )
+            product_id = product_response.json()["id"]
+            import_response = await client.post(
+                f"/api/products/{product_id}/prospects/import",
+                content=(
+                    "company_name,contact_name,contact_title,employee_count,do_not_contact\n"
+                    "Acme,Ada,VP Sales,25,false\n"
+                ),
+                headers={"content-type": "text/csv"},
+            )
+            prospect = (await client.get(f"/api/products/{product_id}/prospects")).json()[0]
+            prospect_id = prospect["id"]
+            saved_page = await client.put(
+                f"/api/prospects/{prospect_id}/page",
+                content="A local page excerpt.",
+                headers={"content-type": "text/plain; charset=utf-8"},
+            )
+            loaded_page = await client.get(f"/api/prospects/{prospect_id}/page")
+            detail = await client.get(f"/api/prospects/{prospect_id}")
+            score_response = await client.post(f"/api/prospects/{prospect_id}/score")
+        return (
+            product_response, import_response, prospect, saved_page, loaded_page, detail,
+            score_response,
+        )
+
+    (
+        product_response, import_response, prospect, saved_page, loaded_page, detail,
+        score_response,
+    ) = asyncio.run(exercise())
+    assert product_response.status_code == 201
+    assert product_response.json()["name"] == "Harvey CRM"
+    assert import_response.status_code == 201
+    assert import_response.json()["imported"] == 1
+    assert prospect["company_name"] == "Acme"
+    assert prospect["employee_count"] == 25
+    assert prospect["do_not_contact"] == 0
+    assert saved_page.status_code == 200
+    assert loaded_page.status_code == 200
+    assert loaded_page.text == "A local page excerpt."
+    assert detail.json()["id"] == prospect["id"]
+    assert score_response.status_code == 202
+    assert score_response.json()["requires_ollama"] is False
 
 
 def test_status_reports_ollama_http_failure_separately(db_path, monkeypatch):

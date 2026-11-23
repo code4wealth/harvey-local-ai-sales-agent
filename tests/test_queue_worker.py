@@ -53,6 +53,11 @@ def test_queue_worker_survives_read_timeout_from_health_probe(db_path, monkeypat
         )
 
     monkeypatch.setattr(llm_client, "_client", client_factory)
+    conn = db.connect()
+    try:
+        db.enqueue_task(conn, "test.requires_ollama", {})
+    finally:
+        conn.close()
     worker = QueueWorker(poll_seconds=0.05)
     worker.start()
     try:
