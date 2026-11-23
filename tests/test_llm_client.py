@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 
 import httpx
 import pytest
@@ -59,6 +60,7 @@ def test_options_schema_think_stripping_and_inference_log(db_path, monkeypatch):
                 "prompt_eval_count": 11,
                 "eval_count": 4,
                 "total_duration": 25_000_000,
+                "load_duration": 5_000_000_000,
             },
         )
 
@@ -86,6 +88,7 @@ def test_options_schema_think_stripping_and_inference_log(db_path, monkeypatch):
     assert rows[0]["prompt_tokens"] == 11
     assert rows[0]["eval_tokens"] == 4
     assert rows[0]["seconds"] == pytest.approx(0.025)
+    assert rows[0]["load_seconds"] == pytest.approx(5.0)
     assert rows[0]["status"] == "ok"
 
 
@@ -104,6 +107,7 @@ def test_prompt_near_context_limit_warns_and_format_is_optional(db_path, monkeyp
     assert "format" not in seen["payload"]
     assert seen["payload"]["options"] == {"temperature": 0.2, "num_ctx": 10}
     assert "at least 90%" in caplog.text
+    assert inference_rows()[0]["load_seconds"] is None
 
 
 def test_ollama_up_uses_tags_and_returns_online(monkeypatch):
@@ -208,8 +212,34 @@ def test_ollama_up_returns_false_for_connection_error(monkeypatch):
     assert llm_client.ollama_up(timeout=0.1) is False
 
 
-def test_chat_unmocked_raises_when_local_ollama_is_not_running(db_path):
-    if llm_client.ollama_up(timeout=0.1):
-        pytest.skip("Ollama is running on the local endpoint; unavailable case cannot be asserted")
+def test_chat_unmocked_raises_when_local_ollama_is_not_running(db_path, monkeypatch):
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.bind(("127.0.0.1", 0))
+        closed_port = probe.getsockname()[1]
+    finally:
+        probe.close()
+
+    monkeypatch.setattr(llm_client, "OLLAMA_URL", f"http://127.0.0.1:{closed_port}")
+    assert llm_client.ollama_up(timeout=5.0) is False
     with pytest.raises(OllamaUnavailable):
-        llm_client.chat("Reply briefly.", model="qwen3:4b", task="unmocked-down-test", timeout=0.2)
+        llm_client.chat("Reply briefly.", model="qwen3:4b", task="unmocked-down-test", timeout=5.0)
+
+
+def test_default_ollama_probe_timeout_is_five_seconds(monkeypatch):
+    observed_timeouts = []
+
+    def factory(timeout):
+        observed_timeouts.append(timeout)
+        return httpx.Client(
+            base_url=llm_client.OLLAMA_URL,
+            timeout=timeout,
+            trust_env=False,
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json={"models": []})
+            ),
+        )
+
+    monkeypatch.setattr(llm_client, "_client", factory)
+    assert llm_client.ollama_up() is True
+    assert observed_timeouts == [5.0]

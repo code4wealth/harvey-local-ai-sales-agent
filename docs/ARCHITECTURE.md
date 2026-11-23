@@ -9,7 +9,7 @@ FastAPI (app/main.py) --> Orchestrator (pipeline.py)
         +--> SQLite: products, business_profiles, icps, prospects, signals, problem_statements,
                      prospect_research, scores, emails, replies, inference_log,
                      pipeline_runs, pipeline_steps, task_queue
-Queue worker: polls task_queue; when Ollama is reachable, replays tasks. Connection failures and model timeouts remain distinct in API status and inference_log.
+Queue worker: polls task_queue; deterministic handlers run without Ollama, while LLM-dependent handlers wait for a healthy Ollama probe. Connection failures and model timeouts remain distinct in API status and inference_log.
 Context budget: chat() defaults to num_ctx=4096 and temperature 0.2. Hardware recommendations are 2048 for low-resource, 4096 for standard tiers, and 8192 for high-performance; callers pass the recommended value. Research workflows should keep source-page input to roughly 2500 tokens before prompt construction.
 inference_log.status: `ok`, `error:unavailable`, `error:timeout`, `error:http`, or `error:invalid_json`; inference-proof views should filter to `ok`.
 Separation principle
@@ -22,4 +22,4 @@ Ollama down	OllamaUnavailable, task queued, unavailable banner, deterministic fe
 Model not pulled	Error with ollama pull <model> hint
 Invalid JSON	Retry ×2 with validation feedback, then fail the step with message
 Model timeout	OllamaTimeout, slow-model status, queued task retries
-Embedding model missing offline	Clear error; similarity step skipped, score uses 0 for that term and flags it
+Embedding model missing offline	Similarity stays null; its weighted contribution is zero, listed in missing_components, and score is partial without re-normalization

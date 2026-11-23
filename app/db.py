@@ -58,8 +58,11 @@ CREATE TABLE IF NOT EXISTS prospects (
     contact_title  TEXT NOT NULL DEFAULT '',
     company_name   TEXT NOT NULL DEFAULT '',
     company_domain TEXT NOT NULL DEFAULT '',
+    employee_count INTEGER,
     contact_email  TEXT NOT NULL DEFAULT '',
     page_text_path TEXT NOT NULL DEFAULT '',
+    page_embedding BLOB,
+    page_embedding_model TEXT NOT NULL DEFAULT '',
     do_not_contact INTEGER NOT NULL DEFAULT 0,
     created_at     TEXT NOT NULL
 );
@@ -98,8 +101,9 @@ CREATE INDEX IF NOT EXISTS idx_problems_prospect ON problem_statements(prospect_
 CREATE TABLE IF NOT EXISTS scores (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     prospect_id   INTEGER NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
-    score         REAL NOT NULL,
+    score         REAL,
     breakdown_json TEXT NOT NULL DEFAULT '{}',
+    partial       INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_scores_prospect ON scores(prospect_id, created_at DESC);
@@ -132,6 +136,7 @@ CREATE TABLE IF NOT EXISTS inference_log (
     prompt_tokens INTEGER NOT NULL DEFAULT 0,
     eval_tokens   INTEGER NOT NULL DEFAULT 0,
     seconds       REAL NOT NULL DEFAULT 0.0,
+    load_seconds  REAL,
     status        TEXT NOT NULL DEFAULT 'ok'
                   CHECK (status IN ('ok', 'error:unavailable', 'error:timeout', 'error:http', 'error:invalid_json')),
     created_at    TEXT NOT NULL
@@ -196,12 +201,50 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    prospect_columns = {row[1] for row in conn.execute("PRAGMA table_info(prospects)")}
+    if "employee_count" not in prospect_columns:
+        conn.execute("ALTER TABLE prospects ADD COLUMN employee_count INTEGER")
+    if "page_embedding" not in prospect_columns:
+        conn.execute("ALTER TABLE prospects ADD COLUMN page_embedding BLOB")
+    if "page_embedding_model" not in prospect_columns:
+        conn.execute(
+            "ALTER TABLE prospects ADD COLUMN page_embedding_model TEXT NOT NULL DEFAULT ''"
+        )
+
+    score_columns = list(conn.execute("PRAGMA table_info(scores)"))
+    score_names = {row[1] for row in score_columns}
+    score_is_not_null = any(row[1] == "score" and row[3] for row in score_columns)
+    if "partial" not in score_names or score_is_not_null:
+        conn.execute("DROP TABLE IF EXISTS scores_migration")
+        conn.execute(
+            "CREATE TABLE scores_migration ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "prospect_id INTEGER NOT NULL REFERENCES prospects(id) ON DELETE CASCADE, "
+            "score REAL, breakdown_json TEXT NOT NULL DEFAULT '{}', "
+            "partial INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)"
+        )
+        if "partial" in score_names:
+            conn.execute(
+                "INSERT INTO scores_migration (id, prospect_id, score, breakdown_json, partial, created_at) "
+                "SELECT id, prospect_id, score, breakdown_json, partial, created_at FROM scores"
+            )
+        else:
+            conn.execute(
+                "INSERT INTO scores_migration (id, prospect_id, score, breakdown_json, partial, created_at) "
+                "SELECT id, prospect_id, score, breakdown_json, 0, created_at FROM scores"
+            )
+        conn.execute("DROP TABLE scores")
+        conn.execute("ALTER TABLE scores_migration RENAME TO scores")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scores_prospect ON scores(prospect_id, created_at DESC)")
+
     columns = {row[1] for row in conn.execute("PRAGMA table_info(inference_log)")}
     if "status" not in columns:
         conn.execute(
             "ALTER TABLE inference_log ADD COLUMN status TEXT NOT NULL DEFAULT 'ok' "
             "CHECK (status IN ('ok', 'error:unavailable', 'error:timeout', 'error:http', 'error:invalid_json'))"
         )
+    if "load_seconds" not in columns:
+        conn.execute("ALTER TABLE inference_log ADD COLUMN load_seconds REAL")
     conn.commit()
 
 
@@ -216,17 +259,18 @@ def log_inference(
     prompt_tokens: int = 0,
     eval_tokens: int = 0,
     seconds: float = 0.0,
+    load_seconds: float | None = None,
     status: str = "ok",
 ) -> int:
     if status not in INFERENCE_STATUSES:
         raise ValueError(f"invalid inference status: {status!r}")
     cur = conn.execute(
         "INSERT INTO inference_log "
-        "(task, model, host, prompt_tokens, eval_tokens, seconds, status, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "(task, model, host, prompt_tokens, eval_tokens, seconds, load_seconds, status, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             task, model, host, int(prompt_tokens), int(eval_tokens), float(seconds),
-            status, utcnow(),
+            float(load_seconds) if load_seconds is not None else None, status, utcnow(),
         ),
     )
     conn.commit()
@@ -243,6 +287,120 @@ def update_inference_status(conn: sqlite3.Connection, log_id: int, status: str) 
 def latest_inference(conn: sqlite3.Connection) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT * FROM inference_log ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+
+
+# ---------------- products, prospects, and deterministic scores ----------------
+
+def create_product(
+    conn: sqlite3.Connection, *, name: str, description: str = "", docs_path: str = ""
+) -> int:
+    name = str(name).strip()
+    if not name:
+        raise ValueError("product name must not be empty")
+    now = utcnow()
+    cur = conn.execute(
+        "INSERT INTO products (name, description, docs_path, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (name, str(description).strip(), str(docs_path).strip(), now, now),
+    )
+    return int(cur.lastrowid)
+
+
+def get_product(conn: sqlite3.Connection, product_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM products WHERE id = ?", (int(product_id),)).fetchone()
+
+
+def list_products(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(conn.execute("SELECT * FROM products ORDER BY id").fetchall())
+
+
+def create_prospect(
+    conn: sqlite3.Connection,
+    *,
+    product_id: int,
+    contact_name: str = "",
+    contact_title: str = "",
+    company_name: str = "",
+    company_domain: str = "",
+    employee_count: int | None = None,
+    contact_email: str = "",
+    page_text_path: str = "",
+    do_not_contact: bool = False,
+) -> int:
+    if employee_count is not None and (
+        isinstance(employee_count, bool) or not isinstance(employee_count, int) or employee_count < 0
+    ):
+        raise ValueError("employee_count must be a non-negative integer or None")
+    if not isinstance(do_not_contact, bool):
+        raise ValueError("do_not_contact must be a boolean")
+    cur = conn.execute(
+        "INSERT INTO prospects (product_id, contact_name, contact_title, company_name, "
+        "company_domain, employee_count, contact_email, page_text_path, do_not_contact, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            int(product_id), str(contact_name).strip(), str(contact_title).strip(),
+            str(company_name).strip(), str(company_domain).strip(),
+            int(employee_count) if employee_count is not None else None,
+            str(contact_email).strip(), str(page_text_path).strip(),
+            int(bool(do_not_contact)), utcnow(),
+        ),
+    )
+    return int(cur.lastrowid)
+
+
+def get_prospect(conn: sqlite3.Connection, prospect_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM prospects WHERE id = ?", (int(prospect_id),)).fetchone()
+
+
+def list_prospects(conn: sqlite3.Connection, product_id: int) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            "SELECT * FROM prospects WHERE product_id = ? ORDER BY id", (int(product_id),)
+        ).fetchall()
+    )
+
+
+def update_prospect_page_path(
+    conn: sqlite3.Connection, prospect_id: int, page_text_path: str
+) -> None:
+    cur = conn.execute(
+        "UPDATE prospects SET page_text_path = ?, page_embedding = NULL, "
+        "page_embedding_model = '' WHERE id = ?",
+        (str(page_text_path), int(prospect_id)),
+    )
+    if cur.rowcount != 1:
+        raise ValueError(f"prospect {prospect_id} not found")
+
+
+def save_score(
+    conn: sqlite3.Connection,
+    *,
+    prospect_id: int,
+    score: float | None,
+    breakdown: dict[str, Any],
+    partial: bool,
+) -> int:
+    import json
+
+    cur = conn.execute(
+        "INSERT INTO scores (prospect_id, score, breakdown_json, partial, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (
+            int(prospect_id),
+            float(score) if score is not None else None,
+            json.dumps(breakdown, ensure_ascii=False, sort_keys=True, allow_nan=False),
+            int(bool(partial)),
+            utcnow(),
+        ),
+    )
+    return int(cur.lastrowid)
+
+
+def latest_score(conn: sqlite3.Connection, prospect_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM scores WHERE prospect_id = ? ORDER BY id DESC LIMIT 1",
+        (int(prospect_id),),
     ).fetchone()
 
 
@@ -264,14 +422,31 @@ def enqueue_task(
     return int(cur.lastrowid)
 
 
-def fetch_queued_tasks(conn: sqlite3.Connection, *, limit: int = 5) -> list[sqlite3.Row]:
-    return list(
-        conn.execute(
-            "SELECT * FROM task_queue WHERE status = 'queued' AND attempts < max_attempts"
-            " ORDER BY created_at LIMIT ?",
-            (int(limit),),
-        ).fetchall()
+def fetch_queued_tasks(
+    conn: sqlite3.Connection,
+    *,
+    limit: int = 5,
+    task_types: list[str] | None = None,
+    exclude_task_types: list[str] | None = None,
+) -> list[sqlite3.Row]:
+    clauses = ["status = 'queued'", "attempts < max_attempts"]
+    params: list[Any] = []
+    if task_types is not None:
+        if not task_types:
+            return []
+        placeholders = ", ".join("?" for _ in task_types)
+        clauses.append(f"task_type IN ({placeholders})")
+        params.extend(task_types)
+    if exclude_task_types:
+        placeholders = ", ".join("?" for _ in exclude_task_types)
+        clauses.append(f"task_type NOT IN ({placeholders})")
+        params.extend(exclude_task_types)
+    params.append(int(limit))
+    query = (
+        "SELECT * FROM task_queue WHERE " + " AND ".join(clauses)
+        + " ORDER BY created_at, id LIMIT ?"
     )
+    return list(conn.execute(query, params).fetchall())
 
 
 def get_task(conn: sqlite3.Connection, task_id: int) -> sqlite3.Row | None:
@@ -303,6 +478,17 @@ def finish_attempt(conn: sqlite3.Connection, task_id: int, *, error: str | None)
     )
     conn.commit()
     return status
+
+
+def fail_task(conn: sqlite3.Connection, task_id: int, error: str) -> None:
+    """Mark a non-runnable task terminally failed with a visible error."""
+    cur = conn.execute(
+        "UPDATE task_queue SET status = 'failed', last_error = ?, updated_at = ? WHERE id = ?",
+        (str(error), utcnow(), int(task_id)),
+    )
+    if cur.rowcount != 1:
+        raise ValueError(f"task {task_id} not found")
+    conn.commit()
 
 
 def reset_stale_running(conn: sqlite3.Connection) -> int:

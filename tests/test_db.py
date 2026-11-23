@@ -20,7 +20,7 @@ def test_schema_initializes_all_phase_tables_idempotently(db_path):
         conn.close()
 
 
-def test_init_db_migrates_existing_inference_log_status_column(tmp_path):
+def test_init_db_migrates_existing_inference_log_status_and_load_seconds(tmp_path):
     conn = sqlite3.connect(tmp_path / "legacy.db")
     try:
         conn.execute(
@@ -35,7 +35,44 @@ def test_init_db_migrates_existing_inference_log_status_column(tmp_path):
         db.init_db(conn)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(inference_log)")}
         assert "status" in columns
-        assert conn.execute("SELECT status FROM inference_log").fetchone()[0] == "ok"
+        assert "load_seconds" in columns
+        row = conn.execute("SELECT status, load_seconds FROM inference_log").fetchone()
+        assert row == ("ok", None)
+    finally:
+        conn.close()
+
+
+def test_init_db_migrates_legacy_prospect_size_and_partial_score_columns(tmp_path):
+    conn = sqlite3.connect(tmp_path / "legacy-batch.db")
+    try:
+        conn.executescript(
+            "CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT NOT NULL, "
+            "description TEXT NOT NULL DEFAULT '', docs_path TEXT NOT NULL DEFAULT '', "
+            "created_at TEXT NOT NULL, updated_at TEXT NOT NULL);"
+            "CREATE TABLE prospects (id INTEGER PRIMARY KEY, product_id INTEGER NOT NULL, "
+            "contact_name TEXT NOT NULL DEFAULT '', contact_title TEXT NOT NULL DEFAULT '', "
+            "company_name TEXT NOT NULL DEFAULT '', company_domain TEXT NOT NULL DEFAULT '', "
+            "contact_email TEXT NOT NULL DEFAULT '', page_text_path TEXT NOT NULL DEFAULT '', "
+            "do_not_contact INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);"
+            "CREATE TABLE scores (id INTEGER PRIMARY KEY, prospect_id INTEGER NOT NULL, "
+            "score REAL NOT NULL, breakdown_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL);"
+            "INSERT INTO products VALUES (1, 'Product', '', '', 'now', 'now');"
+            "INSERT INTO prospects VALUES (1, 1, 'Sam', 'VP Sales', 'Acme', '', '', '', 0, 'now');"
+            "INSERT INTO scores VALUES (1, 1, 72.5, '{\"title_fit\": 100}', 'now');"
+        )
+        db.init_db(conn)
+        prospect_columns = {row[1] for row in conn.execute("PRAGMA table_info(prospects)")}
+        score_info = list(conn.execute("PRAGMA table_info(scores)"))
+        score_columns = {row[1]: row for row in score_info}
+        assert "employee_count" in prospect_columns
+        assert "page_embedding" in prospect_columns
+        assert "page_embedding_model" in prospect_columns
+        assert score_columns["score"][3] == 0
+        assert "partial" in score_columns
+        row = conn.execute(
+            "SELECT score, breakdown_json, partial FROM scores WHERE id = 1"
+        ).fetchone()
+        assert row == (72.5, '{"title_fit": 100}', 0)
     finally:
         conn.close()
 
