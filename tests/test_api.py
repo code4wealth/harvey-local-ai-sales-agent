@@ -197,12 +197,18 @@ def test_product_prospect_csv_and_local_page_routes(db_path, monkeypatch, tmp_pa
                 "/api/products", json={"name": "Harvey CRM", "description": "Local sales tool"}
             )
             product_id = product_response.json()["id"]
+            csv_content = (
+                "company_name,contact_name,contact_title,employee_count,do_not_contact\n"
+                "Acme,Ada,VP Sales,25,false\n"
+            )
             import_response = await client.post(
                 f"/api/products/{product_id}/prospects/import",
-                content=(
-                    "company_name,contact_name,contact_title,employee_count,do_not_contact\n"
-                    "Acme,Ada,VP Sales,25,false\n"
-                ),
+                content=csv_content,
+                headers={"content-type": "text/csv"},
+            )
+            duplicate_import_response = await client.post(
+                f"/api/products/{product_id}/prospects/import",
+                content=csv_content,
                 headers={"content-type": "text/csv"},
             )
             prospect = (await client.get(f"/api/products/{product_id}/prospects")).json()[0]
@@ -216,19 +222,22 @@ def test_product_prospect_csv_and_local_page_routes(db_path, monkeypatch, tmp_pa
             detail = await client.get(f"/api/prospects/{prospect_id}")
             score_response = await client.post(f"/api/prospects/{prospect_id}/score")
         return (
-            product_response, import_response, prospect, saved_page, loaded_page, detail,
-            score_response,
+            product_response, import_response, duplicate_import_response, prospect,
+            saved_page, loaded_page, detail, score_response,
         )
 
     (
-        product_response, import_response, prospect, saved_page, loaded_page, detail,
-        score_response,
+        product_response, import_response, duplicate_import_response, prospect,
+        saved_page, loaded_page, detail, score_response,
     ) = asyncio.run(exercise())
     assert product_response.status_code == 201
     assert product_response.json()["name"] == "Harvey CRM"
     assert import_response.status_code == 201
     assert import_response.json()["imported"] == 1
     assert import_response.json()["skipped"] == 0
+    assert duplicate_import_response.status_code == 201
+    assert duplicate_import_response.json()["imported"] == 0
+    assert duplicate_import_response.json()["skipped"] == 1
     assert prospect["company_name"] == "Acme"
     assert prospect["employee_count"] == 25
     assert prospect["do_not_contact"] == 0
