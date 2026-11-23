@@ -9,13 +9,19 @@ Phase 1 - Purge cloud AI (4-6h)
 [x] make verify passes
 Phase 2 - Core backend (6-14h)
 [x] db.py schema (all tables, including pipeline status) + logging/queue helpers
-[x] llm_client.py (generate, generate_json, ollama_up, OllamaUnavailable, inference logging, think:false, <think> stripping) (mocked)
-[x] hardware.py + GET /api/hardware, GET /api/status (mocked Ollama transport; hardware tiering uses fake RAM/VRAM values)
+[x] llm_client.py (local chat, JSON validation/retry, typed failures, status logging, think:false) (mocked)
+[x] hardware.py + GET /api/hardware, GET /api/status (mocked Ollama transport; hardware tiering uses explicit test values)
 [x] queue_worker.py (lifespan background thread, crash recovery, retry/max-attempt handling) (mocked)
-[x] Tests: HTTPX MockTransport client/queue/API tests and pure hardware tiers (mocked)
+[x] HTTPX MockTransport client/queue/API tests and pure hardware tiers (mocked)
 [x] Unmocked localhost-down OllamaUnavailable regression test (skips if a local Ollama server is running)
-[x] scripts/smoke_ollama.py: local Ollama smoke script created; run on target machine at Phase 2 gate
-[ ] Run `ollama pull qwen3:4b && python scripts/smoke_ollama.py` on target machine and review output
+[x] scripts/smoke_ollama.py created with nested-schema check; target-machine run pending
+Phase 2.1 - Ollama contract patch
+[x] Add temperature 0.2, configurable num_ctx, context-warning log, and hardware-tier context recommendation (mocked)
+[x] Distinguish OllamaUnavailable from OllamaTimeout; queue retries both; status reports slow vs unavailable (mocked)
+[x] Add inference_log status and legacy-schema migration; best-effort error logging (mocked)
+[x] Retry JSON with previous validation error; nested smoke schema; environment URL guard test (mocked)
+[x] Remove Docker files; README is the single setup path
+[ ] Run `ollama --version`, then `ollama pull qwen3:4b && python scripts/smoke_ollama.py` on target machine and review output
 Phase 3 - Sample data (14-18h)
 [ ] 2 products' company_info (labelled SAMPLE)
 [ ] 20-30 prospects + page texts (from public pages while online, or labelled samples)

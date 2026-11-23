@@ -15,7 +15,7 @@ import threading
 from typing import Callable
 
 from app import db
-from app.llm_client import OllamaUnavailable, ollama_up
+from app.llm_client import OllamaResponseError, OllamaTimeout, OllamaUnavailable, ollama_up
 
 logger = logging.getLogger("harvey.queue")
 
@@ -66,7 +66,10 @@ class QueueWorker:
 
     def run_once(self) -> int:
         """One poll iteration. Returns how many tasks were attempted."""
-        if not ollama_up():
+        try:
+            if not ollama_up():
+                return 0
+        except (OllamaUnavailable, OllamaTimeout, OllamaResponseError):
             return 0
         conn = db.connect()
         try:
@@ -89,8 +92,8 @@ class QueueWorker:
             if handler is None:
                 raise RuntimeError(f"no handler registered for task_type {task['task_type']!r}")
             handler(payload)
-        except OllamaUnavailable as exc:
-            db.finish_attempt(conn, task["id"], error=f"OllamaUnavailable: {exc}")
+        except (OllamaUnavailable, OllamaTimeout) as exc:
+            db.finish_attempt(conn, task["id"], error=f"{type(exc).__name__}: {exc}")
         except Exception as exc:
             logger.exception("queued task %s failed", task["id"])
             db.finish_attempt(conn, task["id"], error=f"{type(exc).__name__}: {exc}")

@@ -19,3 +19,11 @@ def test_verify_script_exists_and_mentions_local_only():
 def test_no_legacy_package():
     assert not (ROOT / "sellbird").exists()
     assert not (ROOT / "harvey").exists()
+
+
+def test_ollama_smoke_schema_is_nested():
+    from scripts.smoke_ollama import SmokeResponse
+
+    schema = SmokeResponse.model_json_schema()
+    assert "$defs" in schema
+    assert "$ref" in schema["properties"]["details"]

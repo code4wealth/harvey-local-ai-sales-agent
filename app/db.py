@@ -15,6 +15,13 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_DB_PATH = "./data/harvey.db"
+INFERENCE_STATUSES = (
+    "ok",
+    "error:unavailable",
+    "error:timeout",
+    "error:http",
+    "error:invalid_json",
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS products (
@@ -125,6 +132,8 @@ CREATE TABLE IF NOT EXISTS inference_log (
     prompt_tokens INTEGER NOT NULL DEFAULT 0,
     eval_tokens   INTEGER NOT NULL DEFAULT 0,
     seconds       REAL NOT NULL DEFAULT 0.0,
+    status        TEXT NOT NULL DEFAULT 'ok'
+                  CHECK (status IN ('ok', 'error:unavailable', 'error:timeout', 'error:http', 'error:invalid_json')),
     created_at    TEXT NOT NULL
 );
 
@@ -187,6 +196,12 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(inference_log)")}
+    if "status" not in columns:
+        conn.execute(
+            "ALTER TABLE inference_log ADD COLUMN status TEXT NOT NULL DEFAULT 'ok' "
+            "CHECK (status IN ('ok', 'error:unavailable', 'error:timeout', 'error:http', 'error:invalid_json'))"
+        )
     conn.commit()
 
 
@@ -201,14 +216,28 @@ def log_inference(
     prompt_tokens: int = 0,
     eval_tokens: int = 0,
     seconds: float = 0.0,
+    status: str = "ok",
 ) -> int:
+    if status not in INFERENCE_STATUSES:
+        raise ValueError(f"invalid inference status: {status!r}")
     cur = conn.execute(
-        "INSERT INTO inference_log (task, model, host, prompt_tokens, eval_tokens, seconds, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (task, model, host, int(prompt_tokens), int(eval_tokens), float(seconds), utcnow()),
+        "INSERT INTO inference_log "
+        "(task, model, host, prompt_tokens, eval_tokens, seconds, status, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            task, model, host, int(prompt_tokens), int(eval_tokens), float(seconds),
+            status, utcnow(),
+        ),
     )
     conn.commit()
     return int(cur.lastrowid)
+
+
+def update_inference_status(conn: sqlite3.Connection, log_id: int, status: str) -> None:
+    if status not in INFERENCE_STATUSES:
+        raise ValueError(f"invalid inference status: {status!r}")
+    conn.execute("UPDATE inference_log SET status = ? WHERE id = ?", (status, int(log_id)))
+    conn.commit()
 
 
 def latest_inference(conn: sqlite3.Connection) -> sqlite3.Row | None:

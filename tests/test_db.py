@@ -1,3 +1,5 @@
+import sqlite3
+
 from app import db
 
 
@@ -14,6 +16,26 @@ def test_schema_initializes_all_phase_tables_idempotently(db_path):
             "prospect_research", "problem_statements", "scores", "emails", "replies",
             "inference_log", "task_queue", "pipeline_runs", "pipeline_steps",
         } <= names
+    finally:
+        conn.close()
+
+
+def test_init_db_migrates_existing_inference_log_status_column(tmp_path):
+    conn = sqlite3.connect(tmp_path / "legacy.db")
+    try:
+        conn.execute(
+            "CREATE TABLE inference_log ("
+            "id INTEGER PRIMARY KEY, task TEXT NOT NULL, model TEXT NOT NULL, host TEXT NOT NULL, "
+            "prompt_tokens INTEGER NOT NULL DEFAULT 0, eval_tokens INTEGER NOT NULL DEFAULT 0, "
+            "seconds REAL NOT NULL DEFAULT 0.0, created_at TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO inference_log (task, model, host, created_at) VALUES ('old', 'qwen3:4b', 'local', 'now')"
+        )
+        db.init_db(conn)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(inference_log)")}
+        assert "status" in columns
+        assert conn.execute("SELECT status FROM inference_log").fetchone()[0] == "ok"
     finally:
         conn.close()
 

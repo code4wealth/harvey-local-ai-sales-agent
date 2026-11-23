@@ -1,6 +1,6 @@
 Workflows: prompts, schemas, rules
-General: system prompt short; user prompt includes a JSON example; json_mode=True; validate with pydantic; retry ×2; log every call.
-Qwen3: think:false. Keep inputs trimmed (e.g. <=3000 chars of page text per call for small models).
+General: keep the system prompt short; pass the Pydantic JSON schema in Ollama's `format`; validate with Pydantic; retry invalid JSON ×2; log every call.
+Qwen3: think:false, temperature 0.2. Keep source text to roughly <=2500 tokens per call; pass the hardware tier's recommended `num_ctx` (default 4096).
 1. Business profile
 Input: concatenated data/company_info/<product>/*.md.
 Schema: {summary, value_proposition, key_features[], pain_points_solved[], differentiators[]}.

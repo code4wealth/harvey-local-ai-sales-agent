@@ -18,6 +18,13 @@ TIER_HIGH = "high-performance"
 TIER_PLUS = "standard-plus"
 TIER_LAPTOP = "standard-laptop"
 TIER_LOW = "low-resource"
+DEFAULT_NUM_CTX = 4096
+NUM_CTX_BY_TIER = {
+    TIER_HIGH: 8192,
+    TIER_PLUS: 4096,
+    TIER_LAPTOP: 4096,
+    TIER_LOW: 2048,
+}
 
 
 @dataclass
@@ -27,6 +34,7 @@ class HardwareInfo:
     gpu_vram_gb: float | None
     tier: str
     recommended_model: str
+    recommended_num_ctx: int
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -43,6 +51,11 @@ def recommend(ram_gb: float | None, vram_gb: float | None) -> tuple[str, str]:
     if ram >= 8:
         return TIER_LAPTOP, "qwen3:4b"
     return TIER_LOW, "qwen3:1.7b"
+
+
+def recommended_num_ctx_for_tier(tier: str) -> int:
+    """Conservative context window for the detected hardware tier."""
+    return NUM_CTX_BY_TIER.get(tier, DEFAULT_NUM_CTX)
 
 
 def _read_ram_gb() -> float | None:
@@ -114,4 +127,5 @@ def detect() -> HardwareInfo:
         gpu_vram_gb=round(vram, 1) if vram is not None else None,
         tier=tier,
         recommended_model=model,
+        recommended_num_ctx=recommended_num_ctx_for_tier(tier),
     )
