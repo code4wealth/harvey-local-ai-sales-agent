@@ -1,198 +1,80 @@
-<p align="center">
-  <a href="https://sellbird.ai">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="docs/brand/sellbird-wordmark-white.svg">
-      <img src="docs/brand/sellbird-wordmark.svg" alt="Sellbird" width="300">
-    </picture>
-  </a>
-</p>
+# Harvey Local Multi-Product AI Sales Agent
 
-<p align="center"><strong>The open-source outreach platform that runs on your Claude or ChatGPT plan.</strong></p>
+A local-first foundation for product-specific sales research and drafting. Every model call is routed through `app/llm_client.py` to Ollama at the fixed address `http://127.0.0.1:11434`; the client has no remote endpoint configuration or fallback.
 
-<p align="center">
-Sellbird finds companies that need what you sell, finds the person who decides, checks their email address, writes each one a personal cold email, sends it and handles the replies.
-It runs on your own machine, and by default nothing goes out until you approve it.
-</p>
+## Upstream and rebuild status
 
-<p align="center">
-  <a href="https://x.com/sellbirdagent"><img alt="Follow @sellbirdagent on X" src="https://img.shields.io/badge/follow-%40sellbirdagent-000000?logo=x&logoColor=white"></a>
-  <a href="https://github.com/ethanplusai/sellbird/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/ethanplusai/sellbird?style=flat&logo=github&label=stars&color=244b62&cacheSeconds=3600"></a>
-  <a href="https://github.com/ethanplusai/sellbird/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/ethanplusai/sellbird/actions/workflows/tests.yml/badge.svg"></a>
-  <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-244b62"></a>
-  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-244b62?logo=python&logoColor=white">
-  <a href="https://sellbird.ai"><img alt="Hosted at sellbird.ai" src="https://img.shields.io/badge/hosted-sellbird.ai-244b62"></a>
-  <a href="https://sellbird.ai/harvey/"><img alt="Formerly Harvey" src="https://img.shields.io/badge/formerly-Harvey-8aa0ad"></a>
-</p>
+GitHub identifies this repository as a real fork of `ethanplusai/sellbird`; the upstream repository was named `ethanplusai/harvey` when its v0.3.0 MIT release was published and has since been renamed. The current working tree was rebuilt from scratch for the local-first assignment. It carries forward only design ideas—such as deterministic scoring concepts, the signal catalog, and anti-fabrication safeguards—not legacy implementation code.
 
-<p align="center">
-  <a href="https://trendshift.io/repositories/303676?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-303676" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/303676" alt="ethanplusai%2Fsellbird | Trendshift" width="250" height="55"/></a>
-</p>
+See [`docs/MODELS_AND_LICENCES.md`](docs/MODELS_AND_LICENCES.md) for the license and history notes. The historical `legacy-sellbird` tag is kept locally for lineage and is not pushed during this review phase.
 
-> **[Harvey is now Sellbird.](https://sellbird.ai/harvey/)** Same project, same history, new name. Already running Harvey? Your setup carries over: see [Upgrading from Harvey](#upgrading-from-harvey).
+## Current implementation
 
-**New releases, features and the roadmap go out first on X: [follow @sellbirdagent](https://x.com/sellbirdagent).**
+The current foundation includes:
 
-**Prefer not to run it yourself? [sellbird.ai](https://sellbird.ai) is the hosted version, with sending domains, inboxes and warmup set up for you. It's in early access.**
+- A synchronous local inference client with structured JSON validation, up to two retries for invalid output, Qwen-style thinking-block stripping, and inference logging.
+- Hardware detection and deterministic local-model recommendations.
+- A SQLite foundation for products, a retryable AI task queue, and inference logs.
+- A queue worker that retries tasks after the local inference service returns.
+- A live `qwen3:4b` smoke script. Its latest run is **BLOCKED** because Ollama is not running in the sandbox; no live model result is claimed. See `test_evidence/smoke_ollama.txt`.
+- Fictional `SAMPLE` data: two products, 25 prospects with page texts, and 20 labelled replies (13 development, 7 held out). No classifier accuracy is claimed because classification and its evaluator are not implemented yet.
+- Unit tests using HTTPX's in-process mock transport; no running model or network is needed for those unit tests.
 
-![Sellbird's dashboard: the Today screen, a conversation that needs you, approving a drafted reply in the Outbox, the signals to confirm, searching contacts, then dark mode](docs/dashboard.gif)
+The API, dashboard, product workflows, embeddings, and end-to-end offline acceptance run remain future work. Embeddings are gated on a full installed-metadata license audit and a usable CPU-only PyTorch installation; see [`docs/MODELS_AND_LICENCES.md`](docs/MODELS_AND_LICENCES.md) and [`docs/TASKS.md`](docs/TASKS.md). This foundation does not send email, perform paid research, or ship trainer defaults.
 
-<sub>The demo data is invented: "Bookwell" selling online booking to roofers, dental practices and HVAC shops, on `.test` domains.</sub>
+## Setup
 
-## What it does
+Use Python 3.11 or newer:
 
-Sellbird is a pipeline you can run end to end, or stop at any step.
-
-| | What happens | More |
-|---|---|---|
-| **Find companies** | Searches for businesses that match your customer: free on OpenStreetMap, or on a paid source you pick. Every paid search shows its cost before it runs. | [Discovery](docs/signals-and-pipeline.md#1-discover--who-exists) |
-| **Learn why they'd buy** | Reads each company's own website for the buying signals you confirmed, like no online booking, ads running or a role they're hiring for. No model calls, no cost. | [Signals](docs/signals-and-pipeline.md) |
-| **Find who decides** | Finds the owner or manager named on the company's own pages, two people per company at most. | [Enrich](docs/signals-and-pipeline.md#3-enrich--who-decides) |
-| **Check the address** | Learns the company's email pattern and verifies one address. Every address is marked verified, risky, guess or invalid, and only deliverable ones are ever sent to. | [Verify](docs/signals-and-pipeline.md#4-verify--can-you-reach-them) |
-| **Write and send** | Writes a short sequence for each person from what it found, then sends from your Gmail, Microsoft 365 or SMTP mailbox inside your daily limit and their office hours. | [Sending](docs/approval-and-sending.md) |
-| **Handle replies** | Reads every reply, drafts an answer, sets auto-replies aside, honours opt-outs at once, and hands you anything it shouldn't answer alone. | [Dashboard](docs/dashboard.md) |
-
-Only want the list? Stop after verifying and run `sellbird export` for a sequencer-ready CSV of everything it found.
-
-```
-$ sellbird run
-
-============================================================
-Sellbird is online.
-============================================================
-Checking pipeline state...
-Decision: write_campaign (3 new prospects with no drafts)
-  handler   → Elena Park, Harbor Dental Studio     interested, answer drafted
-  handler   → Priya Nair, Highline Roofing         objection, answer drafted
-  writer    → 2-email sequence: Phoenix HVAC hiring a dispatcher
-  outbox    → 5 emails waiting for your approval
-Cycle complete. Sleeping for 15 minutes.
+```sh
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -e ".[dev]"
 ```
 
-## No model API bill
+For local inference, install Ollama separately, then start it and pull a model in another terminal:
 
-Sellbird thinks through the Claude Code CLI on your Claude Pro or Max plan, or through Codex on a ChatGPT plan. There's no API key and no per-token billing, and Sellbird throttles itself to leave room for your own work.
-
-| | |
-|---|---|
-| Claude Pro or Max, or a ChatGPT plan with Codex | the subscription you already have |
-| Finding businesses | **$0** on the default source, or about $0.37 per 1,000 on the cheapest paid one |
-| Reading their websites | **$0**: three HTTP requests each, no model call |
-| Writing and sending | your subscription and a mailbox (about $7 a month for Google Workspace) |
-| Prospecting tools | **None.** No Apollo, ZoomInfo, Clearbit or Clay. |
-
-How the loop, the budget and the isolation work: [How Sellbird works](docs/how-it-works.md).
-
-## Quick start
-
-You need:
-
-- **Python 3.11 or newer.** macOS ships 3.9, so run `brew install python@3.13` first if `python3 --version` says so.
-- **Claude Pro or Max** with the CLI signed in (`claude login`), or a **ChatGPT plan with the Codex CLI** ([Codex setup](docs/codex.md)).
-- **A mailbox to send from**, ideally Google Workspace on a separate sending domain. [Microsoft 365](docs/microsoft365.md) and SMTP work too.
-- **Warmup on that mailbox.** We recommend [TrulyInbox](https://trulyinbox.com/?via=sellbird): it warms a new mailbox before cold email and keeps it out of spam after, and Sellbird reads its inbox rate to tell you when you're ready.
-
-### Let Claude set it up
-
-```bash
-git clone https://github.com/ethanplusai/sellbird.git
-cd sellbird
-claude
+```sh
+ollama serve
+ollama pull qwen3:4b
 ```
 
-Then say **"set up Sellbird for me"**. The repo's `CLAUDE.md` turns Claude Code into the setup guide: it checks where you are, installs what's missing, asks what it needs and trains Sellbird on your product.
+The default model is selected from detected hardware when `DEFAULT_MODEL` is blank. You can set `DEFAULT_MODEL` to a model already installed in your local Ollama instance. `DB_PATH` can point to a local SQLite file; by default the database is `./data/harvey.db`. No API keys are used or needed. `.env.example` lists the local settings; the client always uses the fixed local endpoint regardless of environment variables.
 
-### Or do it yourself
+## Development and verification
 
-```bash
-# 1. Install. Use python3.13, not python3: on macOS bare python3 is 3.9.
-python3.13 -m venv .venv && source .venv/bin/activate && pip install -e .
-
-# 2. Add credentials. Every variable is documented inline.
-cp .env.example .env && $EDITOR .env
-
-# 3. Learn your product from your website (writes sellbird.local.yaml).
-sellbird train https://your-company.com
-
-# 4. Confirm what makes a good prospect.
-sellbird signals --confirm free
-
-# 5. Find businesses. The default source is free and needs no account.
-sellbird discover
-
-# 6. Open the dashboard and start the loop.
-sellbird dashboard          # prints a private link to http://127.0.0.1:5555
-sellbird run
+```sh
+make verify
 ```
 
-On Linux you can also [run it with Docker](docs/docker.md).
+The verifier scans source/configuration for prohibited hosted inference references and checks that the inference client uses only the local endpoint; pytest then runs the suite. Current tests use mock HTTP responses and temporary SQLite files.
 
-## Nothing sends without you
+The client can be used directly:
 
-Every outgoing email waits in the Outbox for your approval until you turn on autopilot yourself. Before anything leaves, a pre-send check with no model involved rejects unfilled merge tags, banned phrases, overlong emails, extra links and undeliverable addresses. Autopilot still holds back any email that links to a domain that isn't yours or quotes Sellbird's own instructions. `sellbird sending pause` stops everything at once.
+```python
+from app.llm_client import OllamaClient, OllamaUnavailable
 
-Details: [Approval and sending](docs/approval-and-sending.md) and [Legal and deliverability](docs/deliverability.md).
-
-## Upgrading from Harvey
-
-Harvey was renamed Sellbird in 0.4.0. Your configuration, data and dashboard sign-in carry over:
-
-```bash
-git pull
-pip install -e .        # once, to get the new `sellbird` command
-sellbird dashboard
+with OllamaClient() as client:
+    try:
+        text = client.generate_or_queue(
+            task="profile",
+            prompt="Use only the product facts supplied here.",
+        )
+    except OllamaUnavailable as error:
+        # Show the clear message and retain error.task_id for queue status.
+        print(error, error.task_id)
 ```
 
-- On first run Sellbird renames `harvey.local.yaml` to `sellbird.local.yaml` and `data/harvey.db` (and its log) to `data/sellbird.*`. It never overwrites a file that already exists under the new name, and waits if a Harvey process is still running from the folder. Stop that first.
-- `HARVEY_*` environment variables still work when the `SELLBIRD_*` one isn't set; rename them when convenient.
-- The `harvey` command and `python -m harvey` still work for now and say they moved. They will be removed in a later release.
-- If you edited the tracked `harvey.yaml` directly, `git pull` stops with "your local changes would be overwritten". Run `git stash`, `git pull`, then `git stash pop`. Git carries your edits into `sellbird.yaml`. If it reports a conflict there, keep your lines, delete the conflict markers, and run `git stash drop`. Better still, put your settings in `sellbird.local.yaml`, which git never touches.
-- Docker: the service is now `sellbird`. Run `docker compose down`, `git pull`, `docker compose build`, then `docker compose up -d`. `HARVEY_UID`/`HARVEY_GID` are still read.
+The `QueueWorker` can drain persisted tasks once the local server is available. Deterministic operations do not require Ollama.
 
-Links to `github.com/ethanplusai/harvey` keep working: GitHub redirects them here.
+## Project rules
 
-## Where your files live
-
-Your config, knowledge and data live in one home folder. Which one, first match wins:
-
-1. `SELLBIRD_HOME`, if you set it (the Docker image sets it to `/app`).
-2. A checkout: the checkout folder itself, as before.
-3. Otherwise, for an installed package (`pip` or `pipx`), your user data folder:
-
-| | Home folder |
-|---|---|
-| macOS | `~/Library/Application Support/sellbird` |
-| Windows | `%APPDATA%\sellbird` |
-| Linux | `~/.local/share/sellbird` (or `$XDG_DATA_HOME/sellbird`) |
-
-Inside it are `sellbird.yaml` (and `sellbird.local.yaml` once you train), `.env`,
-`prompts/` and `skills/`, all yours to edit. An installed package copies the defaults in on
-first run and never overwrites them, so your edits survive upgrades. `data/` holds the
-database, the logs and the dashboard token.
-
-## Documentation
-
-| Guide | What's in it |
-|---|---|
-| [How Sellbird works](docs/how-it-works.md) | The heartbeat loop, the subscription budget, project structure and the ideas behind it |
-| [Signals and the prospecting pipeline](docs/signals-and-pipeline.md) | The 29 signals, cohorts, and the discover, profile, enrich and verify stages |
-| [Skills and sub-agents](docs/skills-and-agents.md) | The editable sales playbooks and which agent uses which |
-| [Approval and sending](docs/approval-and-sending.md) | The Outbox, autopilot, office hours and email signatures |
-| [The dashboard and the data](docs/dashboard.md) | Every screen, how sign-in works, and how the data is stored |
-| [Configuration and commands](docs/configuration.md) | `.env`, `sellbird.yaml` and every command |
-| [Extensions](docs/extensions.md) | Adding routes, heartbeat steps and commands from a separate package |
-| [Using a ChatGPT plan (Codex)](docs/codex.md) | Running on Codex instead of Claude |
-| [Legal and deliverability](docs/deliverability.md) | The rules you're sending under, and warmup |
-| [Microsoft 365](docs/microsoft365.md) · [Precleared](docs/precleared.md) | Provider setup guides |
-| [Docker](docs/docker.md) · [Troubleshooting](docs/troubleshooting.md) · [Roadmap](docs/roadmap.md) | Running, fixing and what's next |
-
-## Contributing
-
-Pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: it covers keeping real contact data out of the repo, test email, and signing off your commits. Found a security problem? Follow [SECURITY.md](SECURITY.md) instead of opening an issue.
-
-See [CHANGELOG.md](CHANGELOG.md) for what changed in each release, and [follow @sellbirdagent on X](https://x.com/sellbirdagent) to hear about new ones first.
+- Keep all model inference inside `app/llm_client.py` and only on `127.0.0.1:11434`.
+- Never add a hosted inference dependency or silent fallback.
+- Label test fixtures and sample data `SAMPLE`; never describe mocked output as real intelligence.
+- Do not add email sending, paid research, CRM integrations, or trainer default values.
+- Ask before adding dependencies. `psutil` (BSD-3-Clause) is the only newly approved foundation dependency; embedding dependencies are deferred pending a license review.
 
 ## License
 
-Sellbird is licensed under the [GNU Affero General Public License v3.0](LICENSE). Harvey releases up to 0.3.x were released under MIT, and that code keeps its MIT notice in [NOTICE](NOTICE).
-
-TrulyInbox links in this project are affiliate links: the maintainer may earn a commission, at no extra cost to you.
+The newly authored application code is MIT licensed. The old Sellbird 0.4.0 baseline is preserved separately by the `legacy-sellbird` tag; see `NOTICE` for the lineage note.
