@@ -107,6 +107,7 @@ def test_prompt_near_context_limit_warns_and_format_is_optional(db_path, monkeyp
     assert "format" not in seen["payload"]
     assert seen["payload"]["options"] == {"temperature": 0.2, "num_ctx": 10}
     assert "at least 90%" in caplog.text
+    assert inference_rows()[0]["load_seconds"] is None
 
 
 def test_ollama_up_uses_tags_and_returns_online(monkeypatch):

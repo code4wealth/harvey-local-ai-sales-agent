@@ -56,6 +56,10 @@ def test_size_fit_is_full_in_range_and_logarithmic_to_zero_at_three_x():
     assert scoring.size_fit(1000 * math.sqrt(3), bounds) == pytest.approx(50.0)
     assert scoring.size_fit(None, bounds) is None
     assert scoring.size_fit(500, None) is None
+    assert scoring.size_fit(0, {"min": 0, "max": 100}) == 100.0
+    assert scoring.size_fit(0, {"min": 0, "max": 0}) == 100.0
+    assert scoring.size_fit(1, {"min": 0, "max": 0}) == 0.0
+    assert scoring.size_fit(500, {"min": 100, "max": None}) is None
     assert scoring.size_fit(500, {"min": 1000, "max": 100}) is None
 
 
@@ -78,7 +82,8 @@ def test_score_keeps_missing_components_null_and_marks_partial():
     assert result["score"] == pytest.approx(46.5)
     assert result["partial"] is True
     assert result["breakdown"]["size_fit"] is None
-    assert result["breakdown"]["weighted_contributions"]["size_fit"] is None
+    assert result["breakdown"]["weighted_contributions"]["size_fit"] == 0.0
+    assert result["breakdown"]["missing_components"] == ["size_fit"]
 
     empty = scoring.score_prospect(
         icp_similarity=None,
@@ -86,8 +91,12 @@ def test_score_keeps_missing_components_null_and_marks_partial():
         size_fit=None,
         title_fit=None,
     )
-    assert empty["score"] is None
+    assert empty["score"] == 0.0
     assert empty["partial"] is True
+    assert empty["breakdown"]["missing_components"] == [
+        "icp_similarity", "signal_score", "size_fit", "title_fit"
+    ]
+    assert set(empty["breakdown"]["weighted_contributions"].values()) == {0.0}
 
     complete = scoring.score_prospect(
         icp_similarity=0.5,
@@ -99,17 +108,25 @@ def test_score_keeps_missing_components_null_and_marks_partial():
     assert complete["partial"] is False
 
 
-def test_quote_verification_normalizes_unicode_punctuation_spacing_and_case():
-    source = "‘The café—team’s　size is １０’ and launch-ready."
+def test_quote_verification_normalizes_text_and_rejects_empty_or_short_quotes():
+    source = (
+        "‘The café—team’s　size is １０’ and launch–ready workflow. "
+        "superlongsingleword."
+    )
     quotes, dropped = scoring.verify_quotes(
         source,
         [
             "'the café-team's size is 10'",
-            "LAUNCH–READY.",
+            "LAUNCH–READY workflow.",
             "not in the source",
             17,
             "   ",
+            "",
+            "the",
+            "superlongsingleword",
         ],
     )
-    assert quotes == ["'the café-team's size is 10'", "launch-ready."]
-    assert dropped == 3
+    assert quotes == ["'the café-team's size is 10'", "launch-ready workflow."]
+    assert dropped == 6
+    assert scoring.MIN_VERIFIED_QUOTE_CHARS == 8
+    assert scoring.MIN_VERIFIED_QUOTE_WORDS == 2

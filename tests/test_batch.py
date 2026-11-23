@@ -63,6 +63,7 @@ def test_local_task_is_not_starved_by_older_llm_tasks_when_probe_times_out(db_pa
         raise OllamaTimeout("/api/tags timed out")
 
     monkeypatch.setattr(queue_worker, "ollama_up", slow_health_probe)
+    queue_worker.register_handler("pending.llm.workflow", lambda payload: None)
     conn = db.connect()
     try:
         product_id = db.create_product(conn, name="CSV product")
@@ -77,14 +78,17 @@ def test_local_task_is_not_starved_by_older_llm_tasks_when_probe_times_out(db_pa
     finally:
         conn.close()
 
-    assert QueueWorker(batch_size=6).run_once() == 1
-    conn = db.connect()
     try:
-        assert db.get_task(conn, local_id)["status"] == "done"
-        assert db.queue_counts(conn)["queued"] == 5
-        assert len(db.list_prospects(conn, product_id)) == 1
+        assert QueueWorker(batch_size=6).run_once() == 1
+        conn = db.connect()
+        try:
+            assert db.get_task(conn, local_id)["status"] == "done"
+            assert db.queue_counts(conn)["queued"] == 5
+            assert len(db.list_prospects(conn, product_id)) == 1
+        finally:
+            conn.close()
     finally:
-        conn.close()
+        queue_worker.HANDLERS.pop("pending.llm.workflow", None)
 
 
 def test_deterministic_score_handler_uses_only_persisted_inputs(db_path, monkeypatch):
@@ -243,14 +247,18 @@ def test_missing_score_inputs_are_null_and_score_is_partial(db_path):
         _, prospect_id = _product_and_prospect(conn)
         result = batch.score_and_store_prospect(conn, prospect_id)
         saved = db.latest_score(conn, prospect_id)
-        assert result["score"] is None
+        assert result["score"] == 0.0
         assert result["partial"] is True
-        assert saved["score"] is None
+        assert saved["score"] == 0.0
         assert saved["partial"] == 1
         breakdown = json.loads(saved["breakdown_json"])
         assert breakdown["icp_similarity"] is None
         assert breakdown["signal_score"] is None
         assert breakdown["size_fit"] is None
         assert breakdown["title_fit"] is None
+        assert breakdown["missing_components"] == [
+            "icp_similarity", "signal_score", "size_fit", "title_fit"
+        ]
+        assert set(breakdown["weighted_contributions"].values()) == {0.0}
     finally:
         conn.close()

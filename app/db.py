@@ -480,6 +480,17 @@ def finish_attempt(conn: sqlite3.Connection, task_id: int, *, error: str | None)
     return status
 
 
+def fail_task(conn: sqlite3.Connection, task_id: int, error: str) -> None:
+    """Mark a non-runnable task terminally failed with a visible error."""
+    cur = conn.execute(
+        "UPDATE task_queue SET status = 'failed', last_error = ?, updated_at = ? WHERE id = ?",
+        (str(error), utcnow(), int(task_id)),
+    )
+    if cur.rowcount != 1:
+        raise ValueError(f"task {task_id} not found")
+    conn.commit()
+
+
 def reset_stale_running(conn: sqlite3.Connection) -> int:
     """Recover tasks left running by a crash without stranding exhausted tasks."""
     now = utcnow()

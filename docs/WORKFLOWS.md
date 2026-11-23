@@ -14,10 +14,13 @@ patch; the operator will tune them against real local-model output later.
   hyphens normalize to underscores. `company_name` is required. Supported
   optional headers are `contact_name`, `contact_title`, `company_domain`,
   `employee_count`, `contact_email`, `page_text_path`, and `do_not_contact`.
-  Imports validate before writing and are atomic.
-- `page_text_path` is a filename or path inside `data/prospect_pages/`. Page
-  text is explicitly stored/read as local UTF-8 text. Replacing it clears the
-  cached page embedding. The API does not fetch a URL or perform online research.
+  File imports open with `utf-8-sig` for Excel BOMs. Errors identify the row;
+  validation completes before any insert, so imports are atomic.
+- `page_text_path` must be a relative filename/path resolving inside
+  `data/prospect_pages/`; absolute paths and any `..` component are rejected
+  on POSIX and Windows. Page text is explicitly stored/read as local UTF-8
+  text. Replacing it clears the cached page embedding. The API does not fetch a
+  URL or perform online research.
 - Queue handlers `prospects.import_csv` and `prospects.score` are
   **deterministic** and do not require an Ollama health probe. A slow or
   unavailable probe must not block these local tasks. LLM-dependent handlers
@@ -50,10 +53,11 @@ this order:
 3. Collapse every whitespace run to one space and trim.
 4. Lowercase.
 
-Retain a quote only if its **normalized** text is a substring of the
-**normalized** source. Return the retained normalized quotes and the count
-that were dropped. Non-string, empty, and unmatched quotes are dropped; a
-quote is never repaired by inventing source text.
+Retain a quote only if it has at least **8 normalized characters** and at
+least **2 whitespace-separated words**, and its normalized text is a substring
+of the normalized source. Return the retained normalized quotes and the count
+that were dropped. Non-string, empty, too-short, one-word, and unmatched quotes
+are dropped; a quote is never repaired by inventing source text.
 
 ## Scoring — deterministic
 
@@ -106,11 +110,11 @@ The complete formula is:
 `0.35 × icp_similarity × 100 + 0.35 × signal_score + 0.15 × size_fit + 0.15 × title_fit`
 
 `icp_similarity` is on 0–1; the other components are on 0–100. An
-uncomputable component is stored as JSON `null`, and `partial` is true. The
-partial total sums only known weighted contributions using the original
-weights (no re-normalization); it is not presented as a complete score. If
-all components are missing, `score` is `null`. Never substitute guessed
-inputs, zero-fill missing metrics, or claim a partial total is complete.
+uncomputable component stays JSON `null`, contributes zero to the weighted
+sum, appears in `missing_components`, and sets `partial` true. Use the original
+weights without re-normalization. If all components are missing, the score is
+`0` and `partial` is true. Never substitute guessed inputs or claim a partial
+total is complete.
 
 ## LLM workflow contract — deferred; no prompts implemented here
 

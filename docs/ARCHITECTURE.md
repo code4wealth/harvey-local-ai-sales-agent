@@ -22,4 +22,4 @@ Ollama down	OllamaUnavailable, task queued, unavailable banner, deterministic fe
 Model not pulled	Error with ollama pull <model> hint
 Invalid JSON	Retry ×2 with validation feedback, then fail the step with message
 Model timeout	OllamaTimeout, slow-model status, queued task retries
-Embedding model missing offline	Similarity stays null; deterministic score is partial and never substitutes zero for missing input
+Embedding model missing offline	Similarity stays null; its weighted contribution is zero, listed in missing_components, and score is partial without re-normalization

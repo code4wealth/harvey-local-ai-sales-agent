@@ -79,27 +79,41 @@ class QueueWorker:
         """One poll iteration. Returns how many runnable tasks were attempted."""
         conn = db.connect()
         try:
+            known_types = list(HANDLERS)
             local_types = [
                 task_type
                 for task_type, registration in HANDLERS.items()
                 if not registration.requires_ollama
             ]
+            ollama_types = [
+                task_type
+                for task_type, registration in HANDLERS.items()
+                if registration.requires_ollama
+            ]
             local_tasks = db.fetch_queued_tasks(
                 conn, limit=self.batch_size, task_types=local_types
             )
             remaining = max(0, self.batch_size - len(local_tasks))
-            other_tasks = (
+            unknown_tasks = (
                 db.fetch_queued_tasks(
-                    conn, limit=remaining, exclude_task_types=local_types
+                    conn, limit=remaining, exclude_task_types=known_types
                 )
                 if remaining
                 else []
             )
-            if not local_tasks and not other_tasks:
+            remaining = max(0, remaining - len(unknown_tasks))
+            ollama_tasks = (
+                db.fetch_queued_tasks(
+                    conn, limit=remaining, task_types=ollama_types
+                )
+                if remaining
+                else []
+            )
+            if not local_tasks and not unknown_tasks and not ollama_tasks:
                 return 0
 
             ollama_available = False
-            if other_tasks:
+            if ollama_tasks:
                 try:
                     ollama_available = ollama_up()
                 except (OllamaUnavailable, OllamaTimeout, OllamaResponseError):
@@ -108,11 +122,11 @@ class QueueWorker:
                     ollama_available = False
 
             attempted = 0
-            for task in local_tasks:
+            for task in local_tasks + unknown_tasks:
                 self._process(conn, task)
                 attempted += 1
             if ollama_available:
-                for task in other_tasks:
+                for task in ollama_tasks:
                     self._process(conn, task)
                     attempted += 1
             return attempted
@@ -120,16 +134,19 @@ class QueueWorker:
             conn.close()
 
     def _process(self, conn, task) -> None:
+        registration = HANDLERS.get(task["task_type"])
         db.start_attempt(conn, task["id"])
+        if registration is None:
+            error = f"no handler registered for task_type {task['task_type']!r}"
+            logger.error("queued task %s failed: %s", task["id"], error)
+            db.fail_task(conn, task["id"], error)
+            return
         try:
             payload = json.loads(task["payload_json"] or "{}")
         except json.JSONDecodeError as exc:
             db.finish_attempt(conn, task["id"], error=f"payload_json is not valid JSON: {exc}")
             return
-        registration = HANDLERS.get(task["task_type"])
         try:
-            if registration is None:
-                raise RuntimeError(f"no handler registered for task_type {task['task_type']!r}")
             registration.handler(payload)
         except (OllamaUnavailable, OllamaTimeout) as exc:
             db.finish_attempt(conn, task["id"], error=f"{type(exc).__name__}: {exc}")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import sqlite3
 from typing import Any
@@ -141,7 +141,7 @@ def _parse_csv(csv_text: str) -> list[dict[str, Any]]:
 def import_prospects_csv(
     conn: sqlite3.Connection, *, product_id: int, csv_text: str
 ) -> int:
-    """Import validated CSV rows atomically into one product's prospect list."""
+    """Import validated CSV text atomically into one product's prospect list."""
     if db.get_product(conn, product_id) is None:
         raise ProductNotFound(f"product {product_id} not found")
     records = _parse_csv(csv_text)
@@ -151,24 +151,47 @@ def import_prospects_csv(
     return len(records)
 
 
+def import_prospects_csv_file(
+    conn: sqlite3.Connection, *, product_id: int, csv_path: str | Path
+) -> int:
+    """Read a local CSV as UTF-8-with-BOM support, then import atomically."""
+    try:
+        with Path(csv_path).open("r", encoding="utf-8-sig", newline="") as csv_file:
+            csv_text = csv_file.read()
+    except UnicodeDecodeError as exc:
+        raise ProspectImportError("CSV file must be UTF-8 encoded") from exc
+    except OSError as exc:
+        raise ProspectImportError(f"cannot read CSV file: {exc}") from exc
+    return import_prospects_csv(conn, product_id=product_id, csv_text=csv_text)
+
+
 def resolve_page_path(
     page_text_path: str, *, page_dir: str | Path | None = None
 ) -> Path:
-    """Resolve a page path strictly inside the local prospect-page directory."""
+    """Resolve a relative page path strictly inside the local page directory."""
     if not isinstance(page_text_path, str) or not page_text_path.strip():
-        raise ProspectPageError("page_text_path must be a non-empty string")
+        raise ProspectPageError("page_text_path must be a non-empty relative path")
+    normalized_separators = page_text_path.replace("\\", "/")
+    posix_path = PurePosixPath(normalized_separators)
+    windows_path = PureWindowsPath(page_text_path)
+    if (
+        Path(page_text_path).is_absolute()
+        or posix_path.is_absolute()
+        or windows_path.is_absolute()
+        or windows_path.drive
+        or ".." in posix_path.parts
+    ):
+        raise ProspectPageError("page_text_path must be relative and contain no '..' components")
+
     root = Path(DEFAULT_PAGE_DIR if page_dir is None else page_dir).resolve()
-    raw_path = Path(page_text_path)
-    if raw_path.is_absolute():
-        candidate = raw_path.resolve()
-    else:
-        repo_relative = (Path.cwd() / raw_path).resolve()
-        candidate = (
-            repo_relative
-            if repo_relative.is_relative_to(root)
-            else (root / raw_path).resolve()
-        )
-    if not candidate.is_relative_to(root):
+    raw_path = Path(normalized_separators)
+    repo_relative = (Path.cwd() / raw_path).resolve()
+    candidate = (
+        repo_relative
+        if repo_relative.is_relative_to(root)
+        else (root / raw_path).resolve()
+    )
+    if candidate == root or not candidate.is_relative_to(root):
         raise ProspectPageError("page_text_path must remain inside data/prospect_pages")
     return candidate
 

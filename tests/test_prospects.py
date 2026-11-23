@@ -41,6 +41,41 @@ def test_import_prospects_csv_normalizes_headers_and_persists_fields(db_path, tm
         conn.close()
 
 
+def test_csv_file_import_reads_excel_bom_as_utf8_sig(db_path, tmp_path):
+    conn = db.connect()
+    try:
+        product_id = _create_product(conn)
+        csv_path = tmp_path / "excel-export.csv"
+        csv_path.write_bytes(
+            "\ufeffcompany_name,employee_count\r\nAcme,25\r\n".encode("utf-8")
+        )
+        assert prospects.import_prospects_csv_file(
+            conn, product_id=product_id, csv_path=csv_path
+        ) == 1
+        assert db.list_prospects(conn, product_id)[0]["company_name"] == "Acme"
+    finally:
+        conn.close()
+
+
+def test_csv_file_import_reports_row_error_without_partial_import(db_path, tmp_path):
+    conn = db.connect()
+    try:
+        product_id = _create_product(conn)
+        csv_path = tmp_path / "bad-row.csv"
+        csv_path.write_bytes(
+            "\ufeffcompany_name,employee_count\r\nGood Co,25\r\nBad Co,2.5\r\n".encode(
+                "utf-8"
+            )
+        )
+        with pytest.raises(prospects.ProspectImportError, match="row 3: employee_count"):
+            prospects.import_prospects_csv_file(
+                conn, product_id=product_id, csv_path=csv_path
+            )
+        assert db.list_prospects(conn, product_id) == []
+    finally:
+        conn.close()
+
+
 def test_csv_import_is_atomic_and_rejects_invalid_rows(db_path):
     conn = db.connect()
     try:
@@ -79,6 +114,25 @@ def test_csv_import_requires_product_and_blocks_path_escape(db_path, tmp_path):
         assert db.list_prospects(conn, product_id) == []
     finally:
         conn.close()
+
+
+@pytest.mark.parametrize(
+    "bad_path",
+    [
+        "../secrets.txt",
+        r"..\..\secrets.txt",
+        "/etc/passwd",
+        r"C:\Windows\win.ini",
+    ],
+)
+def test_resolve_page_path_rejects_traversal_and_absolute_paths_cross_platform(
+    tmp_path, bad_path
+):
+    with pytest.raises(prospects.ProspectPageError):
+        prospects.resolve_page_path(bad_path, page_dir=tmp_path / "prospect_pages")
+    absolute_inside = tmp_path / "prospect_pages" / "safe.txt"
+    with pytest.raises(prospects.ProspectPageError):
+        prospects.resolve_page_path(str(absolute_inside), page_dir=tmp_path / "prospect_pages")
 
 
 def test_store_and_load_prospect_page_uses_local_utf8_file(db_path, tmp_path):

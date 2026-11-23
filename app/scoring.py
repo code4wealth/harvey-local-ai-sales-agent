@@ -27,6 +27,8 @@ SIGNAL_WEIGHTS: dict[str, float] = {
 
 _TITLE_CONNECTORS = {"a", "an", "and", "at", "for", "in", "of", "on", "the", "to"}
 _TITLE_TOKEN_RE = re.compile(r"[^\w]+", flags=re.UNICODE)
+MIN_VERIFIED_QUOTE_CHARS = 8
+MIN_VERIFIED_QUOTE_WORDS = 2
 
 
 def cosine_similarity(left: Sequence[float] | None, right: Sequence[float] | None) -> float | None:
@@ -151,8 +153,10 @@ def size_fit(employee_count: int | float | None, company_size: Mapping[str, Any]
         return None
     minimum = _number(company_size.get("min"))
     maximum = _number(company_size.get("max"))
-    if minimum is None or maximum is None or minimum < 0 or maximum <= 0 or minimum > maximum:
+    if minimum is None or maximum is None or minimum < 0 or maximum < 0 or minimum > maximum:
         return None
+    if maximum == 0:
+        return 100.0 if minimum == 0 and count == 0 else 0.0
     if minimum <= count <= maximum:
         return 100.0
     if count > maximum:
@@ -208,12 +212,11 @@ def score_prospect(
     size_fit: float | None,
     title_fit: float | None,
 ) -> dict[str, Any]:
-    """Return component values and the known weighted contribution.
+    """Return components, missing flags, and a non-renormalized weighted total.
 
-    Missing components stay null. The partial total is the sum of known weighted
-    terms using the original formula weights; it is not re-normalized or
-    presented as a complete 0–100 score. If no component is computable, score is
-    null. ``partial`` is true whenever at least one component is missing.
+    Missing components stay null in the component breakdown, contribute zero,
+    and are listed in ``missing_components``. The total uses original weights
+    without re-normalization; ``partial`` is true whenever a component is missing.
     """
     components: dict[str, float | None] = {
         "icp_similarity": _bounded_component(icp_similarity, 0.0, 1.0),
@@ -221,19 +224,23 @@ def score_prospect(
         "size_fit": _bounded_component(size_fit, 0.0, 100.0),
         "title_fit": _bounded_component(title_fit, 0.0, 100.0),
     }
-    contributions: dict[str, float | None] = {
-        name: (SCORE_WEIGHTS[name] * (value * 100.0 if name == "icp_similarity" else value))
-        if value is not None
-        else None
-        for name, value in components.items()
-    }
-    known = [value for value in contributions.values() if value is not None]
-    total = sum(known) if known else None
-    partial = any(value is None for value in components.values())
+    contributions: dict[str, float] = {}
+    missing_components = []
+    for name, value in components.items():
+        if value is None:
+            missing_components.append(name)
+            contributions[name] = 0.0
+        else:
+            contributions[name] = SCORE_WEIGHTS[name] * (
+                value * 100.0 if name == "icp_similarity" else value
+            )
+    total = sum(contributions.values())
+    partial = bool(missing_components)
     breakdown: dict[str, Any] = {
         **components,
         "weights": dict(SCORE_WEIGHTS),
         "weighted_contributions": contributions,
+        "missing_components": missing_components,
         "partial": partial,
     }
     return {"score": total, "breakdown": breakdown, "partial": partial}
@@ -275,7 +282,12 @@ def verify_quotes(source: str, quotes: Sequence[str]) -> tuple[list[str], int]:
             dropped += 1
             continue
         normalized_quote = normalize_evidence_text(quote)
-        if normalized_quote and normalized_quote in normalized_source:
+        words = normalized_quote.split()
+        if (
+            len(normalized_quote) >= MIN_VERIFIED_QUOTE_CHARS
+            and len(words) >= MIN_VERIFIED_QUOTE_WORDS
+            and normalized_quote in normalized_source
+        ):
             verified.append(normalized_quote)
         else:
             dropped += 1
