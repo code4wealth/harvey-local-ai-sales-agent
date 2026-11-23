@@ -70,6 +70,10 @@ def test_title_fit_uses_only_icp_buyer_title_keywords():
     assert scoring.title_fit("Chief Financial Officer", buyer_titles) == 20.0
     assert scoring.title_fit("", buyer_titles) is None
     assert scoring.title_fit("VP Sales", []) is None
+    assert scoring.title_fit("Engineering Intern", ["Head of Engineering"]) == 20.0
+    assert scoring.title_fit("Assistant to the CTO", ["CTO"]) == 20.0
+    assert scoring.title_fit("VP Sales", ["VP Marketing"]) == 20.0
+    assert scoring.title_fit("VP Sales", ["VP"]) == 20.0
 
 
 def test_score_keeps_missing_components_null_and_marks_partial():
@@ -108,7 +112,43 @@ def test_score_keeps_missing_components_null_and_marks_partial():
     assert complete["partial"] is False
 
 
+def test_bounded_component_warns_when_value_is_out_of_range(caplog):
+    with caplog.at_level("WARNING", logger="harvey.scoring"):
+        result = scoring.score_prospect(
+            icp_similarity=1.1,
+            signal_score=40,
+            size_fit=80,
+            title_fit=100,
+        )
+
+    assert result["breakdown"]["icp_similarity"] is None
+    assert result["breakdown"]["missing_components"] == ["icp_similarity"]
+    assert "icp_similarity" in caplog.text
+    assert "out-of-range" in caplog.text
+
+
+def test_verify_signals_keeps_original_evidence_and_counts_drop_reasons():
+    source = "The Café—team’s size is 10, improving operations."
+    original_evidence = "THE CAFÉ—TEAM’S SIZE IS 10"
+    valid = {"type": "funding", "evidence": original_evidence, "confidence": 0.8}
+    signals = [
+        valid,
+        {"type": "partnership", "evidence": original_evidence, "confidence": 0.7},
+        {"type": "none", "evidence": original_evidence, "confidence": 0.0},
+        {"type": "hiring", "evidence": "not present in this source", "confidence": 0.5},
+    ]
+
+    kept, quote_drops, type_drops = scoring.verify_signals(source, signals)
+
+    assert kept == [valid]
+    assert kept[0] is valid
+    assert kept[0]["evidence"] == original_evidence
+    assert quote_drops == 1
+    assert type_drops == 2
+
+
 def test_quote_verification_normalizes_text_and_rejects_empty_or_short_quotes():
+
     source = (
         "‘The café—team’s　size is １０’ and launch–ready workflow. "
         "superlongsingleword."

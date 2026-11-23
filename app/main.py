@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request
@@ -53,6 +54,19 @@ def _prospect_response(row) -> dict:
     return result
 
 
+def _recent_timeout_inference(row) -> bool:
+    if row is None or row["status"] != "error:timeout":
+        return False
+    try:
+        created_at = datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return False
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - created_at
+    return timedelta(0) <= age < timedelta(minutes=5)
+
+
 @app.post("/api/products", status_code=201, tags=["products"])
 def api_create_product(request: ProductCreate) -> dict:
     conn = db.connect()
@@ -97,10 +111,10 @@ async def api_import_prospects(product_id: int, request: Request) -> dict:
         raise HTTPException(status_code=400, detail="CSV must be UTF-8 encoded") from exc
     conn = db.connect()
     try:
-        imported = prospects.import_prospects_csv(
+        imported, skipped = prospects.import_prospects_csv(
             conn, product_id=product_id, csv_text=csv_text
         )
-        return {"product_id": product_id, "imported": imported}
+        return {"product_id": product_id, "imported": imported, "skipped": skipped}
     except prospects.ProductNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except prospects.ProspectImportError as exc:
@@ -190,7 +204,7 @@ def api_status() -> dict:
         ollama_available = llm_client.ollama_up()
         ollama_state = "available" if ollama_available else "unavailable"
         ollama_message = None
-        if ollama_available and latest_inference and latest_inference["status"] == "error:timeout":
+        if ollama_available and _recent_timeout_inference(latest_inference):
             ollama_state = "slow"
             ollama_message = (
                 "Ollama is reachable, but the last model request timed out; "

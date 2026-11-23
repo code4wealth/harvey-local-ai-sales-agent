@@ -148,7 +148,11 @@ class QueueWorker:
             return
         try:
             registration.handler(payload)
-        except (OllamaUnavailable, OllamaTimeout) as exc:
+        except OllamaUnavailable as exc:
+            db.requeue_unavailable_attempt(
+                conn, task["id"], error=f"{type(exc).__name__}: {exc}"
+            )
+        except OllamaTimeout as exc:
             db.finish_attempt(conn, task["id"], error=f"{type(exc).__name__}: {exc}")
         except Exception as exc:
             logger.exception("queued task %s failed", task["id"])

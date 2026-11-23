@@ -19,6 +19,8 @@ EMBEDDING_MODEL = DEFAULT_MODEL
 _EMBEDDING_MAGIC = b"HE01"
 _MODEL_CACHE: dict[str, Any] = {}
 _MODEL_LOCK = threading.Lock()
+LONG_TEXT_CHUNK_CHARS = 800
+MAX_LONG_TEXT_CHUNKS = 6
 
 
 class EmbeddingError(RuntimeError):
@@ -108,6 +110,54 @@ def embed_texts(
     if any(not math.isfinite(value) for vector in vectors for value in vector):
         raise EmbeddingError("Embedding model returned a non-finite value")
     return vectors
+
+
+def _chunk_long_text(text: str) -> list[str]:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    words = text.split()
+    if not words:
+        return [""]
+
+    chunks: list[str] = []
+    current_words: list[str] = []
+    current_chars = 0
+    for word in words:
+        next_chars = current_chars + (1 if current_words else 0) + len(word)
+        if current_words and next_chars > LONG_TEXT_CHUNK_CHARS:
+            chunks.append(" ".join(current_words))
+            if len(chunks) >= MAX_LONG_TEXT_CHUNKS:
+                return chunks
+            current_words = [word]
+            current_chars = len(word)
+        else:
+            current_words.append(word)
+            current_chars = next_chars
+    if current_words and len(chunks) < MAX_LONG_TEXT_CHUNKS:
+        chunks.append(" ".join(current_words))
+    return chunks
+
+
+def embed_long_text(
+    text: str,
+    *,
+    model_name: str = DEFAULT_MODEL,
+    batch_size: int = 32,
+) -> list[float]:
+    """Embed up to six ~800-character chunks and renormalize their mean vector."""
+    chunks = _chunk_long_text(text)
+    vectors = embed_texts(chunks, model_name=model_name, batch_size=batch_size)
+    if not vectors:
+        raise EmbeddingError("Long-text embedding produced no chunks")
+    dimensions = len(vectors[0])
+    mean_vector = [
+        sum(vector[index] for vector in vectors) / len(vectors)
+        for index in range(dimensions)
+    ]
+    norm = math.sqrt(sum(value * value for value in mean_vector))
+    if norm == 0.0 or not math.isfinite(norm):
+        raise EmbeddingError("Long-text chunk embeddings average to a zero-length vector")
+    return [value / norm for value in mean_vector]
 
 
 def embed_text(text: str, *, model_name: str = DEFAULT_MODEL) -> list[float]:

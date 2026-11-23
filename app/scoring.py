@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
+
+logger = logging.getLogger("harvey.scoring")
 
 SCORE_WEIGHTS: dict[str, float] = {
     "icp_similarity": 0.35,
@@ -26,6 +29,8 @@ SIGNAL_WEIGHTS: dict[str, float] = {
 }
 
 _TITLE_CONNECTORS = {"a", "an", "and", "at", "for", "in", "of", "on", "the", "to"}
+_TITLE_MODIFIERS = {"intern", "assistant", "associate", "junior", "former", "ex", "student"}
+_TITLE_SENIORITY = {"vp", "director", "head", "manager", "chief", "senior", "lead"}
 _TITLE_TOKEN_RE = re.compile(r"[^\w]+", flags=re.UNICODE)
 MIN_VERIFIED_QUOTE_CHARS = 8
 MIN_VERIFIED_QUOTE_WORDS = 2
@@ -190,7 +195,10 @@ def title_fit(contact_title: str | None, buyer_titles: Sequence[str] | None) -> 
     candidate_tokens = _title_tokens(contact_title)
     if not candidate_tokens:
         return None
+    if _TITLE_MODIFIERS.intersection(candidate_tokens):
+        return 20.0
     candidate = set(candidate_tokens)
+    candidate_keywords = candidate - _TITLE_SENIORITY
     target_tokens = [_title_tokens(target) for target in targets]
     target_tokens = [tokens for tokens in target_tokens if tokens]
     if not target_tokens:
@@ -198,9 +206,11 @@ def title_fit(contact_title: str | None, buyer_titles: Sequence[str] | None) -> 
 
     for tokens in target_tokens:
         width = len(tokens)
+        if not set(tokens) - _TITLE_SENIORITY:
+            continue
         if any(candidate_tokens[index : index + width] == tokens for index in range(len(candidate_tokens) - width + 1)):
             return 100.0
-    if any(candidate.intersection(tokens) for tokens in target_tokens):
+    if any(candidate_keywords.intersection(set(tokens) - _TITLE_SENIORITY) for tokens in target_tokens):
         return 60.0
     return 20.0
 
@@ -219,10 +229,14 @@ def score_prospect(
     without re-normalization; ``partial`` is true whenever a component is missing.
     """
     components: dict[str, float | None] = {
-        "icp_similarity": _bounded_component(icp_similarity, 0.0, 1.0),
-        "signal_score": _bounded_component(signal_score, 0.0, 100.0),
-        "size_fit": _bounded_component(size_fit, 0.0, 100.0),
-        "title_fit": _bounded_component(title_fit, 0.0, 100.0),
+        "icp_similarity": _bounded_component(
+            icp_similarity, 0.0, 1.0, component="icp_similarity"
+        ),
+        "signal_score": _bounded_component(
+            signal_score, 0.0, 100.0, component="signal_score"
+        ),
+        "size_fit": _bounded_component(size_fit, 0.0, 100.0, component="size_fit"),
+        "title_fit": _bounded_component(title_fit, 0.0, 100.0, component="title_fit"),
     }
     contributions: dict[str, float] = {}
     missing_components = []
@@ -246,9 +260,30 @@ def score_prospect(
     return {"score": total, "breakdown": breakdown, "partial": partial}
 
 
-def _bounded_component(value: float | None, minimum: float, maximum: float) -> float | None:
+def _bounded_component(
+    value: float | None,
+    minimum: float,
+    maximum: float,
+    *,
+    component: str = "score",
+) -> float | None:
     parsed = _number(value)
-    if parsed is None or not minimum <= parsed <= maximum:
+    if parsed is None:
+        if value is not None:
+            logger.warning(
+                "score component %s rejected non-numeric value %r",
+                component,
+                value,
+            )
+        return None
+    if not minimum <= parsed <= maximum:
+        logger.warning(
+            "score component %s rejected out-of-range value %r (expected %s..%s)",
+            component,
+            value,
+            minimum,
+            maximum,
+        )
         return None
     return parsed
 
@@ -292,3 +327,33 @@ def verify_quotes(source: str, quotes: Sequence[str]) -> tuple[list[str], int]:
         else:
             dropped += 1
     return verified, dropped
+
+
+def verify_signals(
+    source: str, signals: Sequence[Any] | None
+) -> tuple[list[Any], int, int]:
+    """Keep recognized signals whose evidence is source-backed.
+
+    The original signal objects and evidence strings are retained. Returns the
+    kept signals, invalid-quote count, and unsupported-type count.
+    """
+    if signals is None:
+        return [], 0, 0
+    if isinstance(signals, (str, bytes)):
+        raise TypeError("signals must be a sequence of signal objects")
+    kept: list[Any] = []
+    quote_drops = 0
+    type_drops = 0
+    for signal in signals:
+        signal_type = _signal_field(signal, "type")
+        normalized_type = signal_type.strip().lower() if isinstance(signal_type, str) else ""
+        if normalized_type == "none" or normalized_type not in SIGNAL_WEIGHTS:
+            type_drops += 1
+            continue
+        evidence = _signal_field(signal, "evidence")
+        verified, dropped = verify_quotes(source, [evidence])
+        if dropped:
+            quote_drops += dropped
+            continue
+        kept.append(signal)
+    return kept, quote_drops, type_drops

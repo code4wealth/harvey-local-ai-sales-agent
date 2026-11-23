@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import sqlite3
+from pathlib import Path
+
 import pytest
 
 from app import db, embeddings, prospects
@@ -24,10 +27,11 @@ def test_import_prospects_csv_normalizes_headers_and_persists_fields(db_path, tm
             "Contact Email,Page Text Path,Do Not Contact\n"
             "Ada Example,VP of Operations,Acme,acme.test,120,ada@acme.test,acme.txt,yes\n"
         )
-        imported = prospects.import_prospects_csv(
+        imported, skipped = prospects.import_prospects_csv(
             conn, product_id=product_id, csv_text=csv_text
         )
         assert imported == 1
+        assert skipped == 0
         row = db.list_prospects(conn, product_id)[0]
         assert row["contact_name"] == "Ada Example"
         assert row["contact_title"] == "VP of Operations"
@@ -51,7 +55,7 @@ def test_csv_file_import_reads_excel_bom_as_utf8_sig(db_path, tmp_path):
         )
         assert prospects.import_prospects_csv_file(
             conn, product_id=product_id, csv_path=csv_path
-        ) == 1
+        ) == (1, 0)
         assert db.list_prospects(conn, product_id)[0]["company_name"] == "Acme"
     finally:
         conn.close()
@@ -70,6 +74,63 @@ def test_csv_file_import_reports_row_error_without_partial_import(db_path, tmp_p
         with pytest.raises(prospects.ProspectImportError, match="row 3: employee_count"):
             prospects.import_prospects_csv_file(
                 conn, product_id=product_id, csv_path=csv_path
+            )
+        assert db.list_prospects(conn, product_id) == []
+    finally:
+        conn.close()
+
+
+def test_csv_import_skips_existing_and_in_file_duplicates(db_path):
+    conn = db.connect()
+    try:
+        product_id = _create_product(conn)
+        csv_text = (
+            "company_name,company_domain\n"
+            "Acme Inc,acme.example\n"
+            "Acme Group,ACME.EXAMPLE\n"
+            "Solo Company,\n"
+            "solo company,\n"
+        )
+        assert prospects.import_prospects_csv(
+            conn, product_id=product_id, csv_text=csv_text
+        ) == (2, 2)
+        assert len(db.list_prospects(conn, product_id)) == 2
+        assert prospects.import_prospects_csv(
+            conn, product_id=product_id, csv_text=csv_text
+        ) == (0, 4)
+        assert len(db.list_prospects(conn, product_id)) == 2
+
+        another_product = db.create_product(conn, name="Other product")
+        conn.commit()
+        assert prospects.import_prospects_csv(
+            conn,
+            product_id=another_product,
+            csv_text="company_name,company_domain\nAcme,acme.example\n",
+        ) == (1, 0)
+    finally:
+        conn.close()
+
+
+def test_csv_import_rolls_back_partial_insert_on_database_error(db_path, monkeypatch):
+    conn = db.connect()
+    try:
+        product_id = _create_product(conn)
+        original_create = db.create_prospect
+        calls = 0
+
+        def fail_on_second_insert(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise sqlite3.IntegrityError("simulated insert failure")
+            return original_create(*args, **kwargs)
+
+        monkeypatch.setattr(db, "create_prospect", fail_on_second_insert)
+        with pytest.raises(sqlite3.IntegrityError, match="simulated insert failure"):
+            prospects.import_prospects_csv(
+                conn,
+                product_id=product_id,
+                csv_text="company_name\nFirst Co\nSecond Co\n",
             )
         assert db.list_prospects(conn, product_id) == []
     finally:
@@ -133,6 +194,17 @@ def test_resolve_page_path_rejects_traversal_and_absolute_paths_cross_platform(
     absolute_inside = tmp_path / "prospect_pages" / "safe.txt"
     with pytest.raises(prospects.ProspectPageError):
         prospects.resolve_page_path(str(absolute_inside), page_dir=tmp_path / "prospect_pages")
+
+
+def test_default_page_dir_is_repo_anchored_from_a_different_cwd(tmp_path, monkeypatch):
+    repo_root = Path(prospects.__file__).resolve().parents[1]
+    expected_root = repo_root / "data" / "prospect_pages"
+    monkeypatch.chdir(tmp_path)
+
+    assert prospects.DEFAULT_PAGE_DIR == expected_root
+    assert prospects.resolve_page_path("nested/company.txt") == (
+        expected_root / "nested" / "company.txt"
+    )
 
 
 def test_store_and_load_prospect_page_uses_local_utf8_file(db_path, tmp_path):

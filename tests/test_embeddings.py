@@ -5,6 +5,7 @@ import math
 import pytest
 
 from app import embeddings
+from scripts import smoke_embeddings
 
 
 class StubSentenceTransformer:
@@ -12,14 +13,16 @@ class StubSentenceTransformer:
 
     def __init__(self):
         self.calls = []
+        self.max_seq_length = 256
 
     def encode(self, texts, **kwargs):
         self.calls.append((list(texts), kwargs))
         vectors = {
             "first": [0.6, 0.8],
             "second": [1.0, 0.0],
+            "left": [1.0, 0.0],
         }
-        return [vectors[text] for text in texts]
+        return [vectors.get(text, [0.0, 1.0]) for text in texts]
 
 
 def test_embed_texts_uses_normalized_local_model_and_caches_it(monkeypatch):
@@ -41,6 +44,57 @@ def test_embed_texts_uses_normalized_local_model_and_caches_it(monkeypatch):
         "normalize_embeddings": True,
     }
     assert math.sqrt(sum(value * value for value in first[0])) == pytest.approx(1.0)
+
+
+def test_embed_long_text_chunks_averages_normalizes_and_caps_at_six(monkeypatch):
+    model = StubSentenceTransformer()
+    monkeypatch.setattr(embeddings, "_MODEL_CACHE", {})
+    monkeypatch.setattr(embeddings, "_load_model", lambda _: model)
+
+    text = "left " + ("x" * 800) + " right"
+    vector = embeddings.embed_long_text(text)
+
+    chunks = model.calls[0][0]
+    assert chunks == ["left", "x" * 800, "right"]
+    assert vector == pytest.approx([1 / math.sqrt(5), 2 / math.sqrt(5)])
+    assert math.sqrt(sum(value * value for value in vector)) == pytest.approx(1.0)
+
+    too_many_chunks = " ".join(f"word{index}" + ("x" * 800) for index in range(8))
+    embeddings.embed_long_text(too_many_chunks)
+    assert len(model.calls[1][0]) == embeddings.MAX_LONG_TEXT_CHUNKS == 6
+
+
+def test_embed_long_text_rejects_non_string_input():
+    with pytest.raises(TypeError, match="text must be a string"):
+        embeddings.embed_long_text(42)
+
+
+def test_embedding_smoke_reports_model_sequence_limit_and_dimension(monkeypatch, capsys):
+    model = StubSentenceTransformer()
+    monkeypatch.setattr(embeddings, "_MODEL_CACHE", {})
+    monkeypatch.setattr(embeddings, "_load_model", lambda _: model)
+
+    assert smoke_embeddings.main() == 0
+    output = capsys.readouterr().out
+    assert "Model max_seq_length: 256" in output
+    assert "Vector dimension: 2" in output
+
+
+def test_failed_model_load_is_retried_instead_of_cached(monkeypatch):
+    calls = []
+
+    def fail_to_load(model_name):
+        calls.append(model_name)
+        raise embeddings.EmbeddingModelUnavailable("model files unavailable")
+
+    monkeypatch.setattr(embeddings, "_MODEL_CACHE", {})
+    monkeypatch.setattr(embeddings, "_load_model", fail_to_load)
+    for _ in range(2):
+        with pytest.raises(embeddings.EmbeddingModelUnavailable):
+            embeddings.embed_texts(["retry me"])
+
+    assert calls == [embeddings.DEFAULT_MODEL, embeddings.DEFAULT_MODEL]
+    assert embeddings._MODEL_CACHE == {}
 
 
 def test_embed_texts_empty_input_needs_no_model(monkeypatch):

@@ -12,6 +12,7 @@ from app import db, scoring
 from app.embeddings import (
     DEFAULT_MODEL,
     EmbeddingError,
+    embed_long_text,
     embed_texts,
     pack_embedding,
     unpack_embedding,
@@ -39,7 +40,15 @@ def _handle_import_prospects(payload: dict[str, Any]) -> None:
         raise ValueError("csv_text must be a string")
     conn = db.connect()
     try:
-        import_prospects_csv(conn, product_id=product_id, csv_text=csv_text)
+        imported, skipped = import_prospects_csv(
+            conn, product_id=product_id, csv_text=csv_text
+        )
+        logger.info(
+            "prospect CSV import product_id=%s inserted=%s skipped_duplicates=%s",
+            product_id,
+            imported,
+            skipped,
+        )
     finally:
         conn.close()
 
@@ -181,36 +190,29 @@ def embed_and_score_prospect(
             logger.info("local page text unavailable for prospect_id=%s: %s", prospect_id, exc)
         needs_page = bool(page_text.strip())
 
-    texts: list[str] = []
-    icp_index: int | None = None
-    page_index: int | None = None
-    if needs_icp:
-        icp_index = len(texts)
-        texts.append(icp_text)
-    if needs_page:
-        page_index = len(texts)
-        texts.append(page_text)
+    new_icp_vector: list[float] | None = None
+    new_page_vector: list[float] | None = None
+    try:
+        if needs_icp:
+            new_icp_vector = embed_texts([icp_text], model_name=DEFAULT_MODEL)[0]
+        if needs_page:
+            new_page_vector = embed_long_text(page_text, model_name=DEFAULT_MODEL)
+    except EmbeddingError as exc:
+        logger.warning("local embeddings unavailable; score will be partial: %s", exc)
 
-    if texts:
-        try:
-            vectors = embed_texts(texts, model_name=DEFAULT_MODEL)
-        except EmbeddingError as exc:
-            logger.warning("local embeddings unavailable; score will be partial: %s", exc)
-        else:
-            if icp_index is not None:
-                icp_vector = vectors[icp_index]
-                conn.execute(
-                    "UPDATE icps SET embedding = ?, embedding_model = ? WHERE id = ?",
-                    (pack_embedding(icp_vector), DEFAULT_MODEL, icp["id"]),
-                )
-            if page_index is not None:
-                page_vector = vectors[page_index]
-                conn.execute(
-                    "UPDATE prospects SET page_embedding = ?, page_embedding_model = ? "
-                    "WHERE id = ?",
-                    (pack_embedding(page_vector), DEFAULT_MODEL, prospect_id),
-                )
-            conn.commit()
+    if new_icp_vector is not None:
+        conn.execute(
+            "UPDATE icps SET embedding = ?, embedding_model = ? WHERE id = ?",
+            (pack_embedding(new_icp_vector), DEFAULT_MODEL, icp["id"]),
+        )
+    if new_page_vector is not None:
+        conn.execute(
+            "UPDATE prospects SET page_embedding = ?, page_embedding_model = ? "
+            "WHERE id = ?",
+            (pack_embedding(new_page_vector), DEFAULT_MODEL, prospect_id),
+        )
+    if new_icp_vector is not None or new_page_vector is not None:
+        conn.commit()
     return score_and_store_prospect(conn, prospect_id)
 
 

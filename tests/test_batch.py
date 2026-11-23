@@ -174,22 +174,27 @@ def test_embed_and_score_uses_test_only_embedding_stub_for_local_inputs(
         seen = {}
 
         def test_embedder(texts, *, model_name):
-            seen["texts"] = list(texts)
+            seen["icp_texts"] = list(texts)
             seen["model_name"] = model_name
             return [[1.0, 0.0] for _ in texts]
 
+        def test_page_embedder(text, *, model_name):
+            seen["page_text"] = text
+            seen["page_model_name"] = model_name
+            return [1.0, 0.0]
+
         monkeypatch.setattr(batch, "embed_texts", test_embedder)
+        monkeypatch.setattr(batch, "embed_long_text", test_page_embedder)
         result = batch.embed_and_score_prospect(conn, prospect_id, page_dir=page_dir)
         icp_row = conn.execute(
             "SELECT embedding, embedding_model FROM icps WHERE product_id = ?", (product_id,)
         ).fetchone()
         prospect_row = db.get_prospect(conn, prospect_id)
         saved = db.latest_score(conn, prospect_id)
-        assert seen["texts"] == [
-            json.dumps(icp_data, ensure_ascii=False, sort_keys=True),
-            "Local prospect page.",
-        ]
+        assert seen["icp_texts"] == [json.dumps(icp_data, ensure_ascii=False, sort_keys=True)]
+        assert seen["page_text"] == "Local prospect page."
         assert seen["model_name"] == embeddings.DEFAULT_MODEL
+        assert seen["page_model_name"] == embeddings.DEFAULT_MODEL
         assert embeddings.unpack_embedding(icp_row["embedding"]) == [1.0, 0.0]
         assert icp_row["embedding_model"] == embeddings.DEFAULT_MODEL
         assert embeddings.unpack_embedding(prospect_row["page_embedding"]) == [1.0, 0.0]

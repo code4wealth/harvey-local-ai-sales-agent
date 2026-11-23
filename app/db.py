@@ -461,6 +461,22 @@ def start_attempt(conn: sqlite3.Connection, task_id: int) -> None:
     conn.commit()
 
 
+def requeue_unavailable_attempt(
+    conn: sqlite3.Connection, task_id: int, *, error: str
+) -> None:
+    """Requeue a handler that found Ollama unavailable without consuming a try."""
+    row = get_task(conn, task_id)
+    if row is None:
+        raise ValueError(f"task {task_id} not found")
+    attempts = max(0, int(row["attempts"]) - 1)
+    conn.execute(
+        "UPDATE task_queue SET status = 'queued', attempts = ?, last_error = ?, updated_at = ? "
+        "WHERE id = ?",
+        (attempts, str(error), utcnow(), int(task_id)),
+    )
+    conn.commit()
+
+
 def finish_attempt(conn: sqlite3.Connection, task_id: int, *, error: str | None) -> str:
     """Mark a running attempt done/queued/failed. Tasks are never deleted."""
     row = get_task(conn, task_id)

@@ -19,6 +19,30 @@ def test_context_budget_is_keyed_to_hardware_tier():
     assert hardware.recommended_num_ctx_for_tier("unknown") == 4096
 
 
+def test_detect_caches_hardware_for_process_lifetime(monkeypatch):
+    calls = {"ram": 0, "vram": 0}
+    hardware.detect.cache_clear()
+
+    def read_ram():
+        calls["ram"] += 1
+        return 16.0
+
+    def read_vram():
+        calls["vram"] += 1
+        return 6.0
+
+    monkeypatch.setattr(hardware, "_read_ram_gb", read_ram)
+    monkeypatch.setattr(hardware, "_read_gpu_vram_gb", read_vram)
+    try:
+        first = hardware.detect()
+        second = hardware.detect()
+    finally:
+        hardware.detect.cache_clear()
+
+    assert first is second
+    assert calls == {"ram": 1, "vram": 1}
+
+
 def test_hardware_endpoint_reports_detected_fields():
     from app.main import api_hardware
 

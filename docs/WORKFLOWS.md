@@ -14,13 +14,18 @@ patch; the operator will tune them against real local-model output later.
   hyphens normalize to underscores. `company_name` is required. Supported
   optional headers are `contact_name`, `contact_title`, `company_domain`,
   `employee_count`, `contact_email`, `page_text_path`, and `do_not_contact`.
-  File imports open with `utf-8-sig` for Excel BOMs. Errors identify the row;
-  validation completes before any insert, so imports are atomic.
+  File imports open with `utf-8-sig` for Excel BOMs. Errors identify the row.
+  Imports are atomic and skip duplicate companies: within a product, a
+  non-empty `company_domain` is compared case-insensitively; if it is empty,
+  case-insensitive `company_name` is used. Duplicates already in SQLite and
+  earlier in the same CSV are skipped. The API reports `imported` and `skipped`
+  counts.
 - `page_text_path` must be a relative filename/path resolving inside
-  `data/prospect_pages/`; absolute paths and any `..` component are rejected
-  on POSIX and Windows. Page text is explicitly stored/read as local UTF-8
-  text. Replacing it clears the cached page embedding. The API does not fetch a
-  URL or perform online research.
+  `data/prospect_pages/`, anchored to the repository root from `app/prospects.py`
+  rather than the process working directory. Absolute paths and any `..`
+  component are rejected on POSIX and Windows. Page text is explicitly
+  stored/read as local UTF-8 text. Replacing it clears the cached page
+  embedding. The API does not fetch a URL or perform online research.
 - Queue handlers `prospects.import_csv` and `prospects.score` are
   **deterministic** and do not require an Ollama health probe. A slow or
   unavailable probe must not block these local tasks. LLM-dependent handlers
@@ -31,15 +36,22 @@ patch; the operator will tune them against real local-model output later.
 
 ### Local embeddings
 
-- `app/embeddings.py` uses the real
+- `app/embeddings.py` uses the
   `sentence-transformers/all-MiniLM-L6-v2` model and returns normalized local
   vectors. The model is lazy-loaded and cached in-process. Test doubles exist
   only in `tests/`.
+- MiniLM-L6 has a `max_seq_length` of 256 word pieces and silently truncates
+  longer inputs. `embed_long_text` splits page text on whitespace into chunks
+  of about 800 characters, embeds at most six chunks, averages their vectors,
+  and renormalizes the result. Text beyond six chunks is omitted.
 - First run `python scripts/smoke_embeddings.py` while the model can be
-  downloaded. After the model is cached, run with `HF_HUB_OFFLINE=1` to check
-  offline load and inference. On Windows PowerShell use
+  downloaded; it reports `max_seq_length` and vector dimension. After the model
+  is cached, run with `HF_HUB_OFFLINE=1` to check offline load and inference.
+  Set offline variables in the shell before starting Python (before importing
+  the embeddings library). On Windows PowerShell use
   `$env:HF_HUB_OFFLINE='1'; python scripts/smoke_embeddings.py`; in Command
   Prompt use `set HF_HUB_OFFLINE=1 && python scripts/smoke_embeddings.py`.
+  Failed model loads are not cached, so a later call will try loading again.
   No embedding output is fabricated when the model is absent.
 
 ## Quote verification — deterministic
@@ -58,6 +70,12 @@ least **2 whitespace-separated words**, and its normalized text is a substring
 of the normalized source. Return the retained normalized quotes and the count
 that were dropped. Non-string, empty, too-short, one-word, and unmatched quotes
 are dropped; a quote is never repaired by inventing source text.
+
+`verify_signals(source, signals)` verifies each signal's evidence with this
+same normalized matching, but returns retained signal objects without changing
+their original evidence strings. Its return value is
+`(kept_signals, quote_drops, type_drops)`. Types outside `SIGNAL_WEIGHTS`,
+including `none`, are dropped and counted separately from evidence failures.
 
 ## Scoring — deterministic
 
@@ -97,11 +115,15 @@ inputs make the component `null`.
 
 ### Title fit
 
-Use only the ICP's `buyer_titles` keywords. A buyer-title phrase appearing
-contiguously in the contact title scores 100 (decision-maker); any remaining
-non-connector keyword overlap scores 60 (influencer); no overlap scores 20
-(other). If the contact title or buyer-title list is missing, the component
-is `null`. No external title dictionary or synonym list is inferred.
+Use only the ICP's `buyer_titles` keywords. A substantive buyer-title phrase
+appearing contiguously in the contact title scores 100 (decision-maker); any
+remaining non-connector keyword overlap scores 60 (influencer); no substantive
+overlap scores 20 (other). Seniority-only overlap (`vp`, `director`, `head`, `manager`,
+`chief`, `senior`, `lead`) is not substantive. Contact-title modifiers
+(`intern`, `assistant`, `associate`, `junior`, `former`, `ex`, `student`) cap
+the score at 20. If the contact title or buyer-title list is missing, the
+component is `null`. This remains a deterministic keyword heuristic; see
+`docs/KNOWN_LIMITATIONS.md`.
 
 ### Overall score and missing inputs
 

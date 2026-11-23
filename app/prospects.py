@@ -11,7 +11,8 @@ from typing import Any
 
 from app import db
 
-DEFAULT_PAGE_DIR = Path("data/prospect_pages")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_PAGE_DIR = REPO_ROOT / "data" / "prospect_pages"
 CSV_FIELDS = (
     "contact_name",
     "contact_title",
@@ -138,22 +139,59 @@ def _parse_csv(csv_text: str) -> list[dict[str, Any]]:
     return records
 
 
+def _prospect_dedupe_key(
+    product_id: int, company_name: str, company_domain: str
+) -> tuple[int, str]:
+    identity = company_domain.strip().casefold() or company_name.strip().casefold()
+    return int(product_id), identity
+
+
 def import_prospects_csv(
     conn: sqlite3.Connection, *, product_id: int, csv_text: str
-) -> int:
-    """Import validated CSV text atomically into one product's prospect list."""
+) -> tuple[int, int]:
+    """Import rows atomically; return (inserted_count, skipped_duplicate_count)."""
     if db.get_product(conn, product_id) is None:
         raise ProductNotFound(f"product {product_id} not found")
     records = _parse_csv(csv_text)
-    with conn:
+
+    # Serialize the existence check and inserts so concurrent imports cannot
+    # both pass the dedupe check for the same product/company key.
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if db.get_product(conn, product_id) is None:
+            raise ProductNotFound(f"product {product_id} not found")
+        existing = conn.execute(
+            "SELECT company_name, company_domain FROM prospects WHERE product_id = ?",
+            (int(product_id),),
+        ).fetchall()
+        seen = {
+            _prospect_dedupe_key(
+                int(product_id), row["company_name"], row["company_domain"]
+            )
+            for row in existing
+        }
+        imported = 0
+        skipped = 0
         for record in records:
+            key = _prospect_dedupe_key(
+                int(product_id), record["company_name"], record["company_domain"]
+            )
+            if key in seen:
+                skipped += 1
+                continue
             db.create_prospect(conn, product_id=product_id, **record)
-    return len(records)
+            seen.add(key)
+            imported += 1
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return imported, skipped
 
 
 def import_prospects_csv_file(
     conn: sqlite3.Connection, *, product_id: int, csv_path: str | Path
-) -> int:
+) -> tuple[int, int]:
     """Read a local CSV as UTF-8-with-BOM support, then import atomically."""
     try:
         with Path(csv_path).open("r", encoding="utf-8-sig", newline="") as csv_file:
@@ -185,7 +223,7 @@ def resolve_page_path(
 
     root = Path(DEFAULT_PAGE_DIR if page_dir is None else page_dir).resolve()
     raw_path = Path(normalized_separators)
-    repo_relative = (Path.cwd() / raw_path).resolve()
+    repo_relative = (REPO_ROOT / raw_path).resolve()
     candidate = (
         repo_relative
         if repo_relative.is_relative_to(root)

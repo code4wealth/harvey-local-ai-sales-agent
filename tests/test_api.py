@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -115,6 +116,51 @@ def test_status_shows_last_generation_timeout_as_slow_when_probe_is_up(db_path, 
     assert status["last_inference"]["status"] == "error:timeout"
 
 
+def test_status_does_not_keep_old_timeout_as_slow(db_path, monkeypatch):
+    conn = db.connect()
+    try:
+        inference_id = db.log_inference(
+            conn,
+            task="old-timeout-test",
+            model="qwen3:4b",
+            host=llm_client.OLLAMA_URL,
+            status="error:timeout",
+        )
+        created_at = (datetime.now(timezone.utc) - timedelta(minutes=5, seconds=1)).strftime(
+            "%Y-%m-%dT%H:%M:%S.%fZ"
+        )
+        conn.execute(
+            "UPDATE inference_log SET created_at = ? WHERE id = ?",
+            (created_at, inference_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    def healthy_handler(request):
+        return httpx.Response(200, json={"models": []})
+
+    def ollama_client(timeout):
+        return httpx.Client(
+            base_url=llm_client.OLLAMA_URL,
+            timeout=timeout,
+            transport=httpx.MockTransport(healthy_handler),
+        )
+
+    monkeypatch.setattr(llm_client, "_client", ollama_client)
+
+    async def get_status():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.get("/api/status")
+
+    response = asyncio.run(get_status())
+    assert response.status_code == 200
+    status = response.json()["ollama"]
+    assert status["available"] is True
+    assert status["state"] == "available"
+
+
 def test_status_reports_connect_failure_as_unavailable(db_path, monkeypatch):
     def unavailable_handler(request):
         raise httpx.ConnectError("connection refused", request=request)
@@ -182,6 +228,7 @@ def test_product_prospect_csv_and_local_page_routes(db_path, monkeypatch, tmp_pa
     assert product_response.json()["name"] == "Harvey CRM"
     assert import_response.status_code == 201
     assert import_response.json()["imported"] == 1
+    assert import_response.json()["skipped"] == 0
     assert prospect["company_name"] == "Acme"
     assert prospect["employee_count"] == 25
     assert prospect["do_not_contact"] == 0
