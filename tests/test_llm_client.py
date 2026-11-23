@@ -1,0 +1,219 @@
+from __future__ import annotations
+
+import json
+
+import httpx
+import pytest
+from pydantic import BaseModel
+
+from app.db import list_inference_logs
+from app.llm_client import (
+    OLLAMA_GENERATE_URL,
+    OLLAMA_TAGS_URL,
+    InvalidLLMResponse,
+    OllamaClient,
+    OllamaModelMissing,
+    OllamaUnavailable,
+)
+
+
+class CompanyProfile(BaseModel):
+    name: str
+
+
+def test_generate_uses_only_local_ollama_and_logs_usage(tmp_path):
+    requests = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "model": "qwen3:4b",
+                "response": "<think>private reasoning</think>\nHello from local Ollama.",
+                "prompt_eval_count": 12,
+                "eval_count": 7,
+            },
+        )
+
+    client = OllamaClient(
+        db_path=tmp_path / "harvey.db",
+        default_model="qwen3:4b",
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        result = client.generate(task="profile", prompt="Summarize these local facts.")
+    finally:
+        client.close()
+
+    assert result == "Hello from local Ollama."
+    assert requests[0].url == httpx.URL(OLLAMA_GENERATE_URL)
+    payload = json.loads(requests[0].content)
+    assert payload["model"] == "qwen3:4b"
+    assert payload["think"] is False
+    assert payload["stream"] is False
+    logs = list_inference_logs(db_path=tmp_path / "harvey.db")
+    assert len(logs) == 1
+    assert logs[0]["task"] == "profile"
+    assert logs[0]["host"] == "http://127.0.0.1:11434"
+    assert logs[0]["prompt_tokens"] == 12
+    assert logs[0]["eval_tokens"] == 7
+    assert logs[0]["status"] == "success"
+
+
+
+def test_ollama_up_checks_local_tags_endpoint(tmp_path):
+    seen = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"models": []})
+
+    client = OllamaClient(
+        db_path=tmp_path / "harvey.db",
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        assert client.ollama_up() is True
+    finally:
+        client.close()
+    assert seen[0].url == httpx.URL(OLLAMA_TAGS_URL)
+
+
+def test_unavailable_request_is_logged_and_queued(tmp_path):
+    def unavailable(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    db_path = tmp_path / "harvey.db"
+    client = OllamaClient(
+        db_path=db_path,
+        default_model="qwen3:4b",
+        transport=httpx.MockTransport(unavailable),
+    )
+    try:
+        with pytest.raises(OllamaUnavailable, match="127.0.0.1:11434") as raised:
+            client.generate_or_queue(
+                task="research",
+                prompt="Summarize the saved page.",
+                max_attempts=3,
+            )
+    finally:
+        client.close()
+
+    assert raised.value.task_id is not None
+    assert "queued" in str(raised.value).lower()
+    from app.db import get_task
+
+    queued = get_task(raised.value.task_id, db_path=db_path)
+    assert queued is not None
+    assert queued["status"] == "queued"
+    assert queued["task_type"] == "llm.generate"
+    assert queued["payload"]["task"] == "research"
+    assert queued["payload"]["model"] == "qwen3:4b"
+    logs = list_inference_logs(db_path=db_path)
+    assert logs[0]["status"] == "error"
+    assert logs[0]["host"] == "http://127.0.0.1:11434"
+
+
+def test_missing_model_error_includes_local_pull_hint(tmp_path):
+    def missing_model(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "model 'qwen3:4b' not found"})
+
+    client = OllamaClient(
+        db_path=tmp_path / "harvey.db",
+        default_model="qwen3:4b",
+        transport=httpx.MockTransport(missing_model),
+    )
+    try:
+        with pytest.raises(OllamaModelMissing, match="ollama pull qwen3:4b"):
+            client.generate(task="profile", prompt="facts")
+    finally:
+        client.close()
+    assert list_inference_logs(db_path=tmp_path / "harvey.db")[0]["status"] == "error"
+
+
+def test_generate_json_retries_invalid_output_and_validates_schema(tmp_path):
+    responses = iter(["not JSON", '{"name":"Sample Product"}'])
+    requests = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"response": next(responses), "eval_count": 4})
+
+    db_path = tmp_path / "harvey.db"
+    client = OllamaClient(
+        db_path=db_path,
+        default_model="qwen3:4b",
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        profile = client.generate_json(
+            task="profile",
+            prompt="Return a company profile as JSON.",
+            response_model=CompanyProfile,
+            max_retries=1,
+        )
+    finally:
+        client.close()
+
+    assert profile == CompanyProfile(name="Sample Product")
+    assert len(requests) == 2
+    assert json.loads(requests[0].content)["format"]["type"] == "object"
+    assert len(list_inference_logs(db_path=db_path)) == 2
+
+
+def test_generate_json_stops_after_two_retries(tmp_path):
+    calls = 0
+
+    def invalid(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"response": "not JSON"})
+
+    db_path = tmp_path / "harvey.db"
+    client = OllamaClient(
+        db_path=db_path,
+        default_model="qwen3:4b",
+        transport=httpx.MockTransport(invalid),
+    )
+    try:
+        with pytest.raises(InvalidLLMResponse, match="after 3 attempt"):
+            client.generate_json(
+                task="profile",
+                prompt="Return JSON.",
+                response_model=CompanyProfile,
+                max_retries=2,
+            )
+    finally:
+        client.close()
+
+    assert calls == 3
+    assert len(list_inference_logs(db_path=db_path)) == 3
+
+
+def test_json_generation_queues_when_local_ollama_is_unavailable(tmp_path):
+    def unavailable(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    db_path = tmp_path / "harvey.db"
+    client = OllamaClient(
+        db_path=db_path,
+        default_model="qwen3:4b",
+        transport=httpx.MockTransport(unavailable),
+    )
+    try:
+        with pytest.raises(OllamaUnavailable) as raised:
+            client.generate_json(
+                task="profile",
+                prompt="Return a product profile as JSON.",
+                response_model=CompanyProfile,
+            )
+    finally:
+        client.close()
+
+    assert raised.value.task_id is not None
+    from app.db import get_task
+
+    queued = get_task(raised.value.task_id, db_path=db_path)
+    assert queued["status"] == "queued"
+    assert queued["payload"]["response_format"]["type"] == "object"
