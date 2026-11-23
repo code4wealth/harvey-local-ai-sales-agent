@@ -73,6 +73,7 @@ def test_status_distinguishes_slow_ollama_from_unavailable(db_path, monkeypatch)
     status = response.json()["ollama"]
     assert status["state"] == "slow"
     assert status["available"] is None
+    assert "model may still be loading" in status["message"]
     assert "did not answer" in status["message"]
 
 

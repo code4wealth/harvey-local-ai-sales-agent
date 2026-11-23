@@ -31,7 +31,7 @@ DEFAULT_TEMPERATURE = 0.2
 
 logger = logging.getLogger("harvey.llm")
 DEFAULT_TIMEOUT = 180.0
-UP_TIMEOUT = 2.0
+UP_TIMEOUT = 5.0
 
 
 class OllamaError(Exception):
@@ -150,6 +150,7 @@ def _write_inference_log(
     eval_tokens: int,
     seconds: float,
     status: str,
+    load_seconds: float | None = None,
 ) -> int:
     """Persist one request row. Success-path write errors intentionally propagate."""
     conn = _db.connect()
@@ -162,6 +163,7 @@ def _write_inference_log(
             prompt_tokens=prompt_tokens,
             eval_tokens=eval_tokens,
             seconds=seconds,
+            load_seconds=load_seconds,
             status=status,
         )
     finally:
@@ -176,6 +178,7 @@ def _write_error_log_best_effort(
     eval_tokens: int,
     seconds: float,
     status: str,
+    load_seconds: float | None = None,
 ) -> int | None:
     try:
         return _write_inference_log(
@@ -184,6 +187,7 @@ def _write_error_log_best_effort(
             prompt_tokens=prompt_tokens,
             eval_tokens=eval_tokens,
             seconds=seconds,
+            load_seconds=load_seconds,
             status=status,
         )
     except Exception:
@@ -208,18 +212,24 @@ def _mark_error_log_best_effort(log_id: int | None, *, task: str, status: str) -
                 logger.exception("could not close inference_log connection for row %s", log_id)
 
 
-def _response_metrics(body: Any, wall_seconds: float) -> tuple[int, int, float]:
+def _response_metrics(body: Any, wall_seconds: float) -> tuple[int, int, float, float | None]:
     if not isinstance(body, dict):
-        return 0, 0, wall_seconds
+        return 0, 0, wall_seconds, None
     prompt_tokens = body.get("prompt_eval_count")
     eval_tokens = body.get("eval_count")
     total_duration = body.get("total_duration")
+    load_duration = body.get("load_duration")
     seconds = (
         float(total_duration) / 1_000_000_000
         if isinstance(total_duration, (int, float)) and total_duration >= 0
         else wall_seconds
     )
-    return int(prompt_tokens or 0), int(eval_tokens or 0), seconds
+    load_seconds = (
+        float(load_duration) / 1_000_000_000
+        if isinstance(load_duration, (int, float)) and load_duration >= 0
+        else None
+    )
+    return int(prompt_tokens or 0), int(eval_tokens or 0), seconds, load_seconds
 
 
 def _chat(
@@ -313,7 +323,7 @@ def _chat(
         )
         raise OllamaResponseError(f"Ollama returned a non-JSON body: {exc}") from exc
 
-    prompt_tokens, eval_tokens, seconds = _response_metrics(body, wall_seconds)
+    prompt_tokens, eval_tokens, seconds, load_seconds = _response_metrics(body, wall_seconds)
     if prompt_tokens >= 0.9 * num_ctx:
         logger.warning(
             "Ollama prompt_eval_count=%s is at least 90%% of num_ctx=%s for task=%s; "
@@ -351,6 +361,7 @@ def _chat(
             eval_tokens=eval_tokens,
             seconds=seconds,
             status="ok",
+            load_seconds=load_seconds,
         )
     else:
         log_id = _write_error_log_best_effort(
@@ -360,6 +371,7 @@ def _chat(
             eval_tokens=eval_tokens,
             seconds=seconds,
             status=initial_status,
+            load_seconds=load_seconds,
         )
     return _ChatResult(content=content, log_id=log_id)
 

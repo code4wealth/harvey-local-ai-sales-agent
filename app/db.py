@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS inference_log (
     prompt_tokens INTEGER NOT NULL DEFAULT 0,
     eval_tokens   INTEGER NOT NULL DEFAULT 0,
     seconds       REAL NOT NULL DEFAULT 0.0,
+    load_seconds  REAL,
     status        TEXT NOT NULL DEFAULT 'ok'
                   CHECK (status IN ('ok', 'error:unavailable', 'error:timeout', 'error:http', 'error:invalid_json')),
     created_at    TEXT NOT NULL
@@ -202,6 +203,8 @@ def init_db(conn: sqlite3.Connection) -> None:
             "ALTER TABLE inference_log ADD COLUMN status TEXT NOT NULL DEFAULT 'ok' "
             "CHECK (status IN ('ok', 'error:unavailable', 'error:timeout', 'error:http', 'error:invalid_json'))"
         )
+    if "load_seconds" not in columns:
+        conn.execute("ALTER TABLE inference_log ADD COLUMN load_seconds REAL")
     conn.commit()
 
 
@@ -216,17 +219,18 @@ def log_inference(
     prompt_tokens: int = 0,
     eval_tokens: int = 0,
     seconds: float = 0.0,
+    load_seconds: float | None = None,
     status: str = "ok",
 ) -> int:
     if status not in INFERENCE_STATUSES:
         raise ValueError(f"invalid inference status: {status!r}")
     cur = conn.execute(
         "INSERT INTO inference_log "
-        "(task, model, host, prompt_tokens, eval_tokens, seconds, status, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "(task, model, host, prompt_tokens, eval_tokens, seconds, load_seconds, status, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             task, model, host, int(prompt_tokens), int(eval_tokens), float(seconds),
-            status, utcnow(),
+            float(load_seconds) if load_seconds is not None else None, status, utcnow(),
         ),
     )
     conn.commit()

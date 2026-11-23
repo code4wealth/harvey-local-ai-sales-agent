@@ -14,7 +14,9 @@ Phase 2 - Core backend (6-14h)
 [x] queue_worker.py (lifespan background thread, crash recovery, retry/max-attempt handling) (mocked)
 [x] HTTPX MockTransport client/queue/API tests and pure hardware tiers (mocked)
 [x] Unmocked localhost-down OllamaUnavailable regression test (skips if a local Ollama server is running)
-[x] scripts/smoke_ollama.py created with nested-schema check; target-machine run pending
+[x] Smoke test (real): 1 call, Windows, qwen3:4b, Ollama 0.40.17, Python 3.12.16; format schema, think:false, and inference_log status ok verified
+  - Warm run: seconds=1.7107742, eval_tokens=27 (test_evidence/real_run/smoke_ollama.txt)
+  - Cold first call: seconds=9.1278431, eval_tokens=26 (operator terminal; not in evidence file)
 Phase 2.1 - Ollama contract patch
 [x] Add temperature 0.2, configurable num_ctx, context-warning log, and hardware-tier context recommendation (mocked)
 [x] Distinguish OllamaUnavailable from OllamaTimeout; queue retries both; status reports slow vs unavailable (mocked)

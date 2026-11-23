@@ -20,7 +20,7 @@ def test_schema_initializes_all_phase_tables_idempotently(db_path):
         conn.close()
 
 
-def test_init_db_migrates_existing_inference_log_status_column(tmp_path):
+def test_init_db_migrates_existing_inference_log_status_and_load_seconds(tmp_path):
     conn = sqlite3.connect(tmp_path / "legacy.db")
     try:
         conn.execute(
@@ -35,7 +35,9 @@ def test_init_db_migrates_existing_inference_log_status_column(tmp_path):
         db.init_db(conn)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(inference_log)")}
         assert "status" in columns
-        assert conn.execute("SELECT status FROM inference_log").fetchone()[0] == "ok"
+        assert "load_seconds" in columns
+        row = conn.execute("SELECT status, load_seconds FROM inference_log").fetchone()
+        assert row == ("ok", None)
     finally:
         conn.close()
 
