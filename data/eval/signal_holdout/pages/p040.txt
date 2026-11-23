@@ -1,0 +1,6 @@
+SAMPLE — fictional company source for held-out signal evaluation.
+Company: Wren Harbor Repair Cooperative
+Industry: Marine equipment repair
+Source: Local business journal, September 2026
+
+Wren Harbor Repair Cooperative began operating a second service yard in South Quay on September 19, 2026. The new yard has two covered work bays and a parts counter for commercial fishing vessels. Managing director Elise Tan said the existing harbor workshop will continue to handle engine overhauls while the South Quay crew takes scheduled inspections and hull repairs. The cooperative has served the inlet communities from one location since 2014.

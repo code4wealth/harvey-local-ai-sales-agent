@@ -1,0 +1,6 @@
+SAMPLE — fictional company source for held-out signal evaluation.
+Company: Vellum Peak Textiles
+Industry: Technical fabric weaving
+Source: Planning committee record, May 2026
+
+Vellum Peak Textiles reviewed a proposal to add a night-shift weaving hall at its Norvale mill. After comparing projected utility costs with the current order book, the committee rejected the proposal on May 14, 2026. The minutes state that the company has no current plan to open a second hall or add an overnight production crew. Existing looms will remain on the established daytime schedule.

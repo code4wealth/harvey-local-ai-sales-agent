@@ -1,0 +1,6 @@
+SAMPLE — fictional company source for held-out signal evaluation.
+Company: Pennant Ridge Tool Library
+Industry: Community equipment lending
+Source: Member service review, July 2026
+
+Members returning workshop kits often find that a tool's inspection note is filed under a different checkout number. The service desk says staff spend part of each afternoon calling the previous borrower or searching paper slips before they can clear a kit for the next reservation. The library has had to delay several member pickups while a missing inspection record is reconstructed. The issue is most common with multi-part woodworking sets shared between the north and central branches.

@@ -1,0 +1,6 @@
+SAMPLE — fictional company source for held-out signal evaluation.
+Company: Greyhaven Motion Controls
+Industry: Factory automation components
+Source: Regional manufacturing digest, October 2026
+
+A separate business, Mallow Quay Robotics, raised $9 million in October to open an assembly floor in the West Docks district. Greyhaven Motion Controls is mentioned in the same digest because both companies contributed demonstrations to the regional automation fair. Greyhaven's own display featured its current motor controllers and a maintenance guide; the digest reports no financing, hiring, leadership, facility, or software change at Greyhaven.
