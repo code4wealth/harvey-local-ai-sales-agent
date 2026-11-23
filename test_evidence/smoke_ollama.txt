@@ -1,10 +1,15 @@
 Harvey Local Ollama live smoke test
-timestamp_utc: 2026-11-23T11:00:19+00:00
+timestamp_utc: 2026-11-23T11:12:52+00:00
 endpoint: http://127.0.0.1:11434
 model: qwen3:4b
-ollama_executable: not found in sandbox PATH
+ollama_executable: C:\Users\paras\AppData\Local\Programs\Ollama\ollama.EXE
 health_check_url: http://127.0.0.1:11434/api/tags
-status: BLOCKED
-live_inference: not attempted
-health_check: ConnectError: [Errno 111] Connection refused
-hint: start Ollama and run 'ollama pull <DEFAULT_MODEL>', then rerun this script
+INFO model emitted reasoning: yes
+PASS cleaned output equals READY; latency=9.200456s tokens_per_second=21.986
+format_json_response: '{\n  "status": "ok",\n  "count": 3\n}'
+format_json: PASS (response parsed as a JSON object)
+log[smoke_think_false]: host=http://127.0.0.1:11434 model=qwen3:4b prompt_tokens=22 eval_count=193 latency_seconds=9.200456 tokens_per_second=21.986
+log[smoke_json_format]: host=http://127.0.0.1:11434 model=qwen3:4b prompt_tokens=28 eval_count=17 latency_seconds=1.056314 tokens_per_second=22.392
+observed_tcp_peers: ['127.0.0.1:11434']
+network_target: PASS (health and generation URLs use only 127.0.0.1:11434)
+status: PASS
