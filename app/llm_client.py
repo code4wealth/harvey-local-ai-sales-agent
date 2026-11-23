@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import time
 from typing import Any, TypeVar
 
@@ -17,6 +16,7 @@ from app.db import (
     record_inference,
 )
 from app.hardware import recommend_model
+from app.text_clean import clean_reply, had_reasoning
 
 OLLAMA_HOST = LOCAL_OLLAMA_HOST
 OLLAMA_GENERATE_URL = f"{OLLAMA_HOST}/api/generate"
@@ -47,8 +47,8 @@ class InvalidLLMResponse(ValueError):
 
 
 def _strip_thinking(text: str) -> str:
-    """Remove Qwen-style thinking blocks without changing other response text."""
-    return re.sub(r"<think\b[^>]*>.*?</think\s*>", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
+    """Compatibility wrapper for the shared response cleaner."""
+    return clean_reply(text)
 
 
 def _error_text(response: httpx.Response) -> str:
@@ -80,6 +80,7 @@ class OllamaClient:
         self.default_model = default_model
         self.last_health_url: str | None = None
         self.last_request_metadata: dict[str, Any] | None = None
+        self.last_raw_response: str | None = None
         self.last_response_had_thinking: bool | None = None
         self._http = httpx.Client(transport=transport, timeout=timeout)
 
@@ -117,6 +118,7 @@ class OllamaClient:
         status: str,
         prompt_tokens: int | None = None,
         eval_tokens: int | None = None,
+        tokens_per_second: float | None = None,
         error: str | None = None,
     ) -> None:
         record_inference(
@@ -125,6 +127,7 @@ class OllamaClient:
             host=OLLAMA_HOST,
             prompt_tokens=prompt_tokens,
             eval_tokens=eval_tokens,
+            tokens_per_second=tokens_per_second,
             latency_seconds=max(0.0, time.perf_counter() - started),
             status=status,
             error=error,
@@ -138,16 +141,20 @@ class OllamaClient:
         prompt: str,
         model: str | None = None,
         response_format: str | dict[str, Any] | None = None,
+        num_predict: int = 1500,
     ) -> str:
         """Generate text using only the configured local Ollama endpoint."""
         if not task.strip():
             raise ValueError("Inference task must not be blank.")
+        if isinstance(num_predict, bool) or not isinstance(num_predict, int) or num_predict < 1:
+            raise ValueError("num_predict must be a positive integer.")
         selected_model = self._resolve_model(model)
         payload: dict[str, Any] = {
             "model": selected_model,
             "prompt": prompt,
             "stream": False,
             "think": False,
+            "options": {"num_predict": num_predict},
         }
         if response_format is not None:
             payload["format"] = response_format
@@ -158,11 +165,14 @@ class OllamaClient:
             "model": selected_model,
             "think": False,
             "format": response_format,
+            "num_predict": num_predict,
         }
+        self.last_raw_response = None
         self.last_response_had_thinking = None
         started = time.perf_counter()
         prompt_tokens: int | None = None
         eval_tokens: int | None = None
+        tokens_per_second: float | None = None
         try:
             response = self._http.post(OLLAMA_GENERATE_URL, json=payload)
             self.last_request_metadata["url"] = str(response.request.url)
@@ -184,13 +194,17 @@ class OllamaClient:
                 raise OllamaRequestError("Ollama returned a response without generated text.")
             prompt_tokens = _optional_int(data.get("prompt_eval_count"))
             eval_tokens = _optional_int(data.get("eval_count"))
+            eval_duration_ns = _optional_int(data.get("eval_duration"))
+            if eval_tokens is not None and eval_duration_ns is not None and eval_duration_ns > 0:
+                tokens_per_second = eval_tokens * 1_000_000_000 / eval_duration_ns
             raw_result = data["response"]
+            self.last_raw_response = raw_result
             separate_thinking = data.get("thinking")
             self.last_response_had_thinking = bool(
-                re.search(r"<think\b|</think\s*>", raw_result, flags=re.IGNORECASE)
+                had_reasoning(raw_result)
                 or (isinstance(separate_thinking, str) and separate_thinking.strip())
             )
-            result = _strip_thinking(raw_result)
+            result = clean_reply(raw_result)
         except OllamaUnavailable as exc:
             self._log(
                 task=task,
@@ -199,6 +213,7 @@ class OllamaClient:
                 status="error",
                 prompt_tokens=prompt_tokens,
                 eval_tokens=eval_tokens,
+                tokens_per_second=tokens_per_second,
                 error=str(exc),
             )
             raise
@@ -210,6 +225,7 @@ class OllamaClient:
                 status="error",
                 prompt_tokens=prompt_tokens,
                 eval_tokens=eval_tokens,
+                tokens_per_second=tokens_per_second,
                 error=str(exc),
             )
             raise
@@ -223,6 +239,7 @@ class OllamaClient:
                 status="error",
                 prompt_tokens=prompt_tokens,
                 eval_tokens=eval_tokens,
+                tokens_per_second=tokens_per_second,
                 error=f"{message} ({exc})",
             )
             raise unavailable from exc
@@ -234,6 +251,7 @@ class OllamaClient:
             status="success",
             prompt_tokens=prompt_tokens,
             eval_tokens=eval_tokens,
+            tokens_per_second=tokens_per_second,
         )
         return result
 
@@ -245,6 +263,7 @@ class OllamaClient:
         response_model: type[T],
         model: str | None = None,
         max_retries: int = 2,
+        num_predict: int = 1500,
     ) -> T:
         """Generate JSON and validate it, retrying invalid output at most twice."""
         if max_retries < 0 or max_retries > 2:
@@ -258,6 +277,7 @@ class OllamaClient:
                 prompt=current_prompt,
                 model=model,
                 response_format=schema,
+                num_predict=num_predict,
             )
             try:
                 decoded = json.loads(raw)
@@ -282,6 +302,7 @@ class OllamaClient:
         model: str | None = None,
         response_format: str | dict[str, Any] | None = None,
         max_attempts: int = 5,
+        num_predict: int = 1500,
     ) -> str:
         """Generate now, or persist the exact local generation task for retry.
 
@@ -295,12 +316,14 @@ class OllamaClient:
                 prompt=prompt,
                 model=selected_model,
                 response_format=response_format,
+                num_predict=num_predict,
             )
         except OllamaUnavailable as exc:
             payload: dict[str, Any] = {
                 "task": task,
                 "prompt": prompt,
                 "model": selected_model,
+                "num_predict": num_predict,
             }
             if response_format is not None:
                 payload["response_format"] = response_format

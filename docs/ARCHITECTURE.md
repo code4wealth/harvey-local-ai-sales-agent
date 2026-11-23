@@ -33,4 +33,4 @@ Local page text → research summary (local LLM) + optional local embedding simi
 | Timeout | Mark the step failed or queued according to the failure class; allow retry |
 | Local embedding model unavailable offline | Clear error; skip similarity and flag the zero contribution (future phase) |
 
-Every inference call writes task, model, fixed host, token counts when reported, latency, timestamp, status, and any error to `inference_log`. SQLite `task_queue` is distinct from any email outbox; no mail-sending subsystem is part of this product.
+Every inference call writes task, model, fixed host, token counts when reported, generation throughput when `eval_duration` is available, wall latency, timestamp, status, and any error to `inference_log`. SQLite `task_queue` is distinct from any email outbox; no mail-sending subsystem is part of this product.

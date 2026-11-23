@@ -12,7 +12,7 @@ See [`docs/MODELS_AND_LICENCES.md`](docs/MODELS_AND_LICENCES.md) for the license
 
 The current foundation includes:
 
-- A synchronous local inference client with structured JSON validation, up to two retries for invalid output, Qwen-style thinking-block stripping, and inference logging.
+- A synchronous local inference client with structured JSON validation, up to two retries for invalid output, Qwen-style response cleaning, and inference logging for token counts, request latency, and generation throughput when Ollama reports it.
 - Hardware detection and deterministic local-model recommendations.
 - A SQLite foundation for products, a retryable AI task queue, and inference logs.
 - A queue worker that retries tasks after the local inference service returns.

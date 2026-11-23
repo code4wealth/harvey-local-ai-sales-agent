@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS inference_log (
     host TEXT NOT NULL CHECK (host = 'http://127.0.0.1:11434'),
     prompt_tokens INTEGER,
     eval_tokens INTEGER,
+    tokens_per_second REAL CHECK (tokens_per_second IS NULL OR tokens_per_second >= 0),
     latency_seconds REAL NOT NULL CHECK (latency_seconds >= 0),
     created_at TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('success', 'error')),
@@ -101,6 +102,14 @@ def init_db(db_path: str | Path | None = None) -> Path:
     path = resolve_db_path(db_path)
     with connect_db(path) as connection:
         connection.executescript(_SCHEMA)
+        inference_columns = {
+            str(row["name"])
+            for row in connection.execute("PRAGMA table_info(inference_log)")
+        }
+        if "tokens_per_second" not in inference_columns:
+            connection.execute(
+                "ALTER TABLE inference_log ADD COLUMN tokens_per_second REAL"
+            )
     return path
 
 
@@ -306,6 +315,7 @@ def record_inference(
     eval_tokens: int | None,
     latency_seconds: float,
     status: str,
+    tokens_per_second: float | None = None,
     error: str | None = None,
     host: str = LOCAL_OLLAMA_HOST,
     db_path: str | Path | None = None,
@@ -317,19 +327,22 @@ def record_inference(
         raise ValueError("Inference status must be 'success' or 'error'.")
     if latency_seconds < 0:
         raise ValueError("latency_seconds must be non-negative.")
+    if tokens_per_second is not None and tokens_per_second < 0:
+        raise ValueError("tokens_per_second must be non-negative.")
     init_db(db_path)
     with connect_db(db_path) as connection:
         cursor = connection.execute(
             """INSERT INTO inference_log
-               (task, model, host, prompt_tokens, eval_tokens, latency_seconds,
-                created_at, status, error)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (task, model, host, prompt_tokens, eval_tokens, tokens_per_second,
+                latency_seconds, created_at, status, error)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 task,
                 model,
                 host,
                 prompt_tokens,
                 eval_tokens,
+                tokens_per_second,
                 float(latency_seconds),
                 _timestamp(),
                 status,

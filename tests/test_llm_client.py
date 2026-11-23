@@ -33,6 +33,7 @@ def test_generate_uses_only_local_ollama_and_logs_usage(tmp_path):
                 "response": "<think>private reasoning</think>\nHello from local Ollama.",
                 "prompt_eval_count": 12,
                 "eval_count": 7,
+                "eval_duration": 2_000_000_000,
             },
         )
 
@@ -53,22 +54,45 @@ def test_generate_uses_only_local_ollama_and_logs_usage(tmp_path):
         "model": "qwen3:4b",
         "think": False,
         "format": None,
+        "num_predict": 1500,
     }
+    assert client.last_raw_response == "<think>private reasoning</think>\nHello from local Ollama."
     assert client.last_response_had_thinking is True
     assert requests[0].url == httpx.URL(OLLAMA_GENERATE_URL)
     payload = json.loads(requests[0].content)
     assert payload["model"] == "qwen3:4b"
     assert payload["think"] is False
     assert payload["stream"] is False
+    assert payload["options"]["num_predict"] == 1500
     logs = list_inference_logs(db_path=tmp_path / "harvey.db")
     assert len(logs) == 1
     assert logs[0]["task"] == "profile"
     assert logs[0]["host"] == "http://127.0.0.1:11434"
     assert logs[0]["prompt_tokens"] == 12
     assert logs[0]["eval_tokens"] == 7
+    assert logs[0]["tokens_per_second"] == pytest.approx(3.5)
     assert logs[0]["latency_seconds"] is not None
     assert logs[0]["latency_seconds"] >= 0
     assert logs[0]["status"] == "success"
+
+
+def test_generate_cleans_lone_closing_think_marker(tmp_path):
+    raw = 'Let me consider the instruction first.\n</think>\n\nREADY'
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"response": raw, "eval_count": 5})
+
+    client = OllamaClient(
+        db_path=tmp_path / "harvey.db",
+        default_model="qwen3:4b",
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        assert client.generate(task="smoke", prompt="Reply READY") == "READY"
+        assert client.last_raw_response == raw
+        assert client.last_response_had_thinking is True
+    finally:
+        client.close()
 
 
 def test_generate_detects_separate_ollama_thinking_field(tmp_path):
@@ -139,6 +163,7 @@ def test_unavailable_request_is_logged_and_queued(tmp_path):
     assert queued["task_type"] == "llm.generate"
     assert queued["payload"]["task"] == "research"
     assert queued["payload"]["model"] == "qwen3:4b"
+    assert queued["payload"]["num_predict"] == 1500
     logs = list_inference_logs(db_path=db_path)
     assert logs[0]["status"] == "error"
     assert logs[0]["host"] == "http://127.0.0.1:11434"
@@ -162,7 +187,7 @@ def test_missing_model_error_includes_local_pull_hint(tmp_path):
 
 
 def test_generate_json_retries_invalid_output_and_validates_schema(tmp_path):
-    responses = iter(["not JSON", '{"name":"Sample Product"}'])
+    responses = iter(["not JSON", '<think>reasoning</think>\n{"name":"Sample Product"}'])
     requests = []
 
     def respond(request: httpx.Request) -> httpx.Response:
@@ -246,6 +271,28 @@ def test_json_generation_queues_when_local_ollama_is_unavailable(tmp_path):
     queued = get_task(raised.value.task_id, db_path=db_path)
     assert queued["status"] == "queued"
     assert queued["payload"]["response_format"]["type"] == "object"
+
+
+def test_generate_allows_per_call_num_predict(tmp_path):
+    requests = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"response": "READY"})
+
+    client = OllamaClient(
+        db_path=tmp_path / "harvey.db",
+        default_model="qwen3:4b",
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        client.generate(task="test", prompt="Reply READY.", num_predict=64)
+    finally:
+        client.close()
+
+    payload = json.loads(requests[0].content)
+    assert payload["options"]["num_predict"] == 64
+    assert client.last_request_metadata["num_predict"] == 64
 
 
 def test_generate_accepts_ollama_json_mode_string(tmp_path):

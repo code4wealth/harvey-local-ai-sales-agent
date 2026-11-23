@@ -57,10 +57,12 @@ def test_inference_log_accepts_only_the_local_host(tmp_path):
         eval_tokens=4,
         latency_seconds=0.25,
         status="success",
+        tokens_per_second=2.0,
         db_path=db_path,
     )
     log = list_inference_logs(db_path=db_path)[0]
     assert log["host"] == "http://127.0.0.1:11434"
+    assert log["tokens_per_second"] == 2.0
     with pytest.raises(ValueError, match="fixed local"):
         record_inference(
             task="profile",
@@ -72,3 +74,30 @@ def test_inference_log_accepts_only_the_local_host(tmp_path):
             host="https://not-local.invalid",
             db_path=db_path,
         )
+
+
+def test_init_db_migrates_existing_inference_log_for_throughput(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """CREATE TABLE inference_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task TEXT NOT NULL,
+                model TEXT NOT NULL,
+                host TEXT NOT NULL,
+                prompt_tokens INTEGER,
+                eval_tokens INTEGER,
+                latency_seconds REAL NOT NULL,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL,
+                error TEXT
+            )"""
+        )
+
+    init_db(db_path)
+    with sqlite3.connect(db_path) as connection:
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(inference_log)")
+        }
+    assert "tokens_per_second" in columns

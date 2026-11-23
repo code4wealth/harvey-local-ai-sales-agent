@@ -4,7 +4,9 @@
 
 This checkpoint records the Phase 2 scope approved for this branch; the broader phase headings below are the original project build plan.
 
-- **Implemented:** live Ollama smoke harness and transcript; the attempt is recorded as `BLOCKED` because `127.0.0.1:11434` refused the connection. No Qwen inference was performed.
+- **Implemented:** `app/text_clean.py` strips complete, lone-closing, and unclosed Qwen-style reasoning markers before downstream parsing; the client requests `think: false` but also checks/cleans raw replies. `num_predict` defaults to 1500 and can be overridden per call.
+- **Implemented:** inference logs retain `eval_count`, wall latency, and tokens/second when Ollama provides `eval_duration`; existing databases are migrated additively.
+- **Implemented:** live Ollama smoke harness and script-generated transcript; the latest sandbox attempt is recorded as `BLOCKED` because `127.0.0.1:11434` refused the connection. No Qwen inference was performed.
 - **Implemented:** fictional SAMPLE corpus with two products, 25 prospect pages, 20 labelled replies, and a 13/7 development/held-out split. No reply-classification accuracy is reported because the classifier/evaluator is not implemented.
 - **Verified:** official Hugging Face model card lists `all-MiniLM-L6-v2` as Apache-2.0; existing installed runtime metadata is documented in `docs/MODELS_AND_LICENCES.md`.
 - **Blocked:** do not add `sentence-transformers` or PyTorch until the installed-metadata audit covers the actual CPU-only dependency set. The PyPI Torch wheels available to this sandbox declare CUDA dependencies; the CPU wheel distribution is not accessible through the permitted package-download hosts.

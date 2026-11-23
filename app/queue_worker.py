@@ -49,6 +49,7 @@ class QueueWorker:
             prompt=str(payload["prompt"]),
             model=str(payload["model"]),
             response_format=payload.get("response_format"),
+            num_predict=int(payload.get("num_predict", 1500)),
         )
 
     def run_once(self) -> bool:
