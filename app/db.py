@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS signal_runs (
     product_id             INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     status                 TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
     model_name             TEXT,
+    temperature            REAL NOT NULL DEFAULT 0.0,
+    seed                   INTEGER NOT NULL DEFAULT 42,
     signals_json           TEXT,
     drop_counts_json       TEXT,
     removed_content_json   TEXT,
@@ -162,6 +164,8 @@ CREATE TABLE IF NOT EXISTS reply_classifications (
     confidence   REAL,
     rationale    TEXT,
     model_name   TEXT,
+    temperature  REAL NOT NULL DEFAULT 0.0,
+    seed         INTEGER NOT NULL DEFAULT 42,
     error        TEXT,
     queue_task_id INTEGER,
     created_at   TEXT NOT NULL,
@@ -179,6 +183,8 @@ CREATE TABLE IF NOT EXISTS inference_log (
     eval_tokens   INTEGER NOT NULL DEFAULT 0,
     seconds       REAL NOT NULL DEFAULT 0.0,
     load_seconds  REAL,
+    temperature   REAL NOT NULL DEFAULT 0.0,
+    seed          INTEGER NOT NULL DEFAULT 42,
     status        TEXT NOT NULL DEFAULT 'ok'
                   CHECK (status IN ('ok', 'error:unavailable', 'error:timeout', 'error:http', 'error:invalid_json')),
     created_at    TEXT NOT NULL
@@ -225,6 +231,8 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     workflow       TEXT NOT NULL CHECK (workflow IN ('profile', 'icp')),
     status         TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
     model_name     TEXT,
+    temperature    REAL NOT NULL DEFAULT 0.0,
+    seed           INTEGER NOT NULL DEFAULT 42,
     result_json    TEXT,
     error          TEXT,
     queue_task_id  INTEGER,
@@ -310,6 +318,15 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE scores_migration RENAME TO scores")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_scores_prospect ON scores(prospect_id, created_at DESC)")
 
+    for table in ("workflow_runs", "signal_runs", "reply_classifications", "inference_log"):
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if "temperature" not in columns:
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN temperature REAL NOT NULL DEFAULT 0.0"
+            )
+        if "seed" not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN seed INTEGER NOT NULL DEFAULT 42")
+
     columns = {row[1] for row in conn.execute("PRAGMA table_info(inference_log)")}
     if "status" not in columns:
         conn.execute(
@@ -357,7 +374,12 @@ def list_sample_replies(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def start_reply_classification(
-    conn: sqlite3.Connection, *, reply_id: str, model_name: str
+    conn: sqlite3.Connection,
+    *,
+    reply_id: str,
+    model_name: str,
+    temperature: float = 0.0,
+    seed: int = 42,
 ) -> None:
     reply_id = str(reply_id).strip()
     if get_sample_reply(conn, reply_id) is None:
@@ -365,11 +387,13 @@ def start_reply_classification(
     now = utcnow()
     conn.execute(
         "INSERT INTO reply_classifications "
-        "(reply_id, status, model_name, created_at, updated_at) VALUES (?, 'running', ?, ?, ?) "
+        "(reply_id, status, model_name, temperature, seed, created_at, updated_at) "
+        "VALUES (?, 'running', ?, ?, ?, ?, ?) "
         "ON CONFLICT(reply_id) DO UPDATE SET status = 'running', label = NULL, "
         "confidence = NULL, rationale = NULL, model_name = excluded.model_name, "
+        "temperature = excluded.temperature, seed = excluded.seed, "
         "error = NULL, queue_task_id = NULL, updated_at = excluded.updated_at",
-        (reply_id, str(model_name), now, now),
+        (reply_id, str(model_name), float(temperature), int(seed), now, now),
     )
     conn.commit()
 
@@ -439,16 +463,28 @@ def log_inference(
     seconds: float = 0.0,
     load_seconds: float | None = None,
     status: str = "ok",
+    temperature: float = 0.0,
+    seed: int = 42,
 ) -> int:
     if status not in INFERENCE_STATUSES:
         raise ValueError(f"invalid inference status: {status!r}")
     cur = conn.execute(
         "INSERT INTO inference_log "
-        "(task, model, host, prompt_tokens, eval_tokens, seconds, load_seconds, status, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "(task, model, host, prompt_tokens, eval_tokens, seconds, load_seconds, "
+        "temperature, seed, status, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            task, model, host, int(prompt_tokens), int(eval_tokens), float(seconds),
-            float(load_seconds) if load_seconds is not None else None, status, utcnow(),
+            task,
+            model,
+            host,
+            int(prompt_tokens),
+            int(eval_tokens),
+            float(seconds),
+            float(load_seconds) if load_seconds is not None else None,
+            float(temperature),
+            int(seed),
+            status,
+            utcnow(),
         ),
     )
     conn.commit()
@@ -499,15 +535,17 @@ def create_workflow_run(
     product_id: int,
     workflow: str,
     model_name: str | None,
+    temperature: float = 0.0,
+    seed: int = 42,
 ) -> int:
     if workflow not in {"profile", "icp"}:
         raise ValueError(f"invalid workflow: {workflow!r}")
     now = utcnow()
     cur = conn.execute(
         "INSERT INTO workflow_runs "
-        "(product_id, workflow, status, model_name, created_at, updated_at) "
-        "VALUES (?, ?, 'running', ?, ?, ?)",
-        (int(product_id), workflow, model_name, now, now),
+        "(product_id, workflow, status, model_name, temperature, seed, created_at, updated_at) "
+        "VALUES (?, ?, 'running', ?, ?, ?, ?, ?)",
+        (int(product_id), workflow, model_name, float(temperature), int(seed), now, now),
     )
     conn.commit()
     return int(cur.lastrowid)
@@ -631,7 +669,12 @@ def get_prospect(conn: sqlite3.Connection, prospect_id: int) -> sqlite3.Row | No
 
 
 def create_signal_run(
-    conn: sqlite3.Connection, *, prospect_id: int, model_name: str | None
+    conn: sqlite3.Connection,
+    *,
+    prospect_id: int,
+    model_name: str | None,
+    temperature: float = 0.0,
+    seed: int = 42,
 ) -> int:
     prospect = get_prospect(conn, prospect_id)
     if prospect is None:
@@ -639,9 +682,17 @@ def create_signal_run(
     now = utcnow()
     cur = conn.execute(
         "INSERT INTO signal_runs "
-        "(prospect_id, product_id, status, model_name, created_at, updated_at) "
-        "VALUES (?, ?, 'running', ?, ?, ?)",
-        (int(prospect_id), int(prospect["product_id"]), model_name, now, now),
+        "(prospect_id, product_id, status, model_name, temperature, seed, created_at, updated_at) "
+        "VALUES (?, ?, 'running', ?, ?, ?, ?, ?)",
+        (
+            int(prospect_id),
+            int(prospect["product_id"]),
+            model_name,
+            float(temperature),
+            int(seed),
+            now,
+            now,
+        ),
     )
     conn.commit()
     return int(cur.lastrowid)

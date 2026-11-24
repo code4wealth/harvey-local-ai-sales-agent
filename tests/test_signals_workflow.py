@@ -160,6 +160,8 @@ def test_signal_api_validates_schema_uses_only_clean_page_and_persists_exact_rem
     body = response.json()
     assert body["status"] == "succeeded"
     assert body["model_name"] == "signal-test-model"
+    assert body["temperature"] == 0.0
+    assert body["seed"] == 42
     assert body["prospect_id"] == prospect_id
     assert body["product_id"] == product_id
     assert body["signals"] == [
@@ -188,7 +190,11 @@ def test_signal_api_validates_schema_uses_only_clean_page_and_persists_exact_rem
     assert len(seen_payloads) == 1
     payload = seen_payloads[0]
     assert payload["format"] == signal_workflow.SignalExtraction.model_json_schema()
-    assert payload["options"]["num_ctx"] == signal_workflow.NUM_CTX
+    assert payload["options"] == {
+        "temperature": 0.0,
+        "seed": 42,
+        "num_ctx": signal_workflow.NUM_CTX,
+    }
     prompt = payload["messages"][-1]["content"]
     assert quote in prompt
     assert "Navigation: Home" not in prompt
@@ -210,6 +216,8 @@ def test_signal_api_validates_schema_uses_only_clean_page_and_persists_exact_rem
         assert run["product_id"] == product_id
         assert run["prospect_id"] == prospect_id
         assert run["model_name"] == "signal-test-model"
+        assert run["temperature"] == 0.0
+        assert run["seed"] == 42
         assert run["created_at"]
         assert json.loads(run["signals_json"]) == body["signals"]
         stored = conn.execute(

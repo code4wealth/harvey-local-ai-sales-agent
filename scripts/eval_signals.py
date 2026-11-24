@@ -312,7 +312,8 @@ def _read_inference_diagnostics(run_id: int | None) -> list[dict[str, Any]]:
     conn = db.connect()
     try:
         rows = conn.execute(
-            "SELECT model, prompt_tokens, eval_tokens, seconds, load_seconds, status, created_at "
+            "SELECT model, prompt_tokens, eval_tokens, seconds, load_seconds, "
+            "temperature, seed, status, created_at "
             "FROM inference_log WHERE task = ? ORDER BY id",
             (f"signals:{int(run_id)}",),
         ).fetchall()
@@ -560,7 +561,8 @@ def run_evaluation(
 
     print(
         f"Run config: mode={'held-out' if held_out else 'development'} model={model_name} "
-        f"think=false num_ctx={signal_workflow.NUM_CTX} "
+        f"think=false temperature={llm_client.DEFAULT_TEMPERATURE:g} "
+        f"seed={llm_client.DEFAULT_SEED} num_ctx={signal_workflow.NUM_CTX} "
         f"prompt_sha256={current_prompt_hash}"
         + (f" frozen_sha256={frozen_hash}" if frozen_hash else "")
     )
@@ -684,6 +686,8 @@ def run_evaluation(
         "run_config": {
             "model": model_name,
             "think": False,
+            "temperature": llm_client.DEFAULT_TEMPERATURE,
+            "seed": llm_client.DEFAULT_SEED,
             "num_ctx": signal_workflow.NUM_CTX,
             "signal_prompt_sha256": current_prompt_hash,
             "frozen_signal_prompt_sha256": frozen_hash,

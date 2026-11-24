@@ -312,7 +312,13 @@ def execute_icp_run(product_id: int, run_id: int, model_name: str) -> IdealCusto
 
 def submit_icp(product_id: int, *, model: str | None = None) -> int:
     """Run an ICP immediately, queueing the same task if Ollama is unavailable."""
-    run_id = common.create_run(product_id, "icp", model)
+    run_id = common.create_run(
+        product_id,
+        "icp",
+        model,
+        temperature=llm_client.DEFAULT_TEMPERATURE,
+        seed=llm_client.DEFAULT_SEED,
+    )
     model_name = model
     try:
         model_name = llm_client.resolve_model_name(model)

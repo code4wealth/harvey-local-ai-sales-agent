@@ -10,7 +10,7 @@ FastAPI (app/main.py) --> Orchestrator (pipeline.py)
                      prospect_research, scores, emails, replies, inference_log,
                      pipeline_runs, pipeline_steps, task_queue
 Queue worker: polls task_queue; deterministic handlers run without Ollama, while LLM-dependent handlers wait for a healthy Ollama probe. Connection failures and model timeouts remain distinct in API status and inference_log.
-Context budget: chat() defaults to num_ctx=4096 and temperature 0.2. Hardware recommendations are 2048 for low-resource, 4096 for standard tiers, and 8192 for high-performance; callers pass the recommended value. Research workflows should keep source-page input to roughly 2500 tokens before prompt construction.
+Context budget: chat() defaults to num_ctx=4096, temperature 0, and fixed seed 42. Hardware recommendations are 2048 for low-resource, 4096 for standard tiers, and 8192 for high-performance; callers pass the recommended value. Run records, inference logs, and signal-evaluation evidence record the temperature and seed. Research workflows should keep source-page input to roughly 2500 tokens before prompt construction.
 inference_log.status: `ok`, `error:unavailable`, `error:timeout`, `error:http`, or `error:invalid_json`; inference-proof views should filter to `ok`.
 Separation principle
 app/research/ may touch the internet and must never import llm_client. llm_client may only touch localhost and must never import research.

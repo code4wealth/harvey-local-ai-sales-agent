@@ -27,7 +27,8 @@ from app import db as _db
 # Hard-coded by design. Do not read this value from environment/configuration.
 OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_NUM_CTX = 4096
-DEFAULT_TEMPERATURE = 0.2
+DEFAULT_TEMPERATURE = 0.0
+DEFAULT_SEED = 42
 
 logger = logging.getLogger("harvey.llm")
 DEFAULT_TIMEOUT = 180.0
@@ -177,6 +178,8 @@ def _write_inference_log(
             seconds=seconds,
             load_seconds=load_seconds,
             status=status,
+            temperature=DEFAULT_TEMPERATURE,
+            seed=DEFAULT_SEED,
         )
     finally:
         conn.close()
@@ -266,7 +269,11 @@ def _chat(
         "messages": messages,
         "stream": False,
         "think": False,
-        "options": {"temperature": DEFAULT_TEMPERATURE, "num_ctx": num_ctx},
+        "options": {
+            "temperature": DEFAULT_TEMPERATURE,
+            "seed": DEFAULT_SEED,
+            "num_ctx": num_ctx,
+        },
     }
     if format is not None:
         payload["format"] = format
@@ -471,6 +478,7 @@ def generate_json(
     timeout: float = DEFAULT_TIMEOUT,
     num_ctx: int = DEFAULT_NUM_CTX,
     post_validate: Callable[[BaseModel], None] | None = None,
+    retry_instruction: str | None = None,
     on_raw: Callable[[str], None] | None = None,
 ) -> BaseModel:
     """Generate structured output and validate it with Pydantic.
@@ -478,7 +486,8 @@ def generate_json(
     ``retries=2`` means up to three total inference calls. Each retry includes
     the previous schema or ``post_validate`` error. Transport/response failures
     propagate immediately so callers can queue or report the task instead of
-    hot-looping. If supplied, ``on_raw`` receives each reply before cleanup.
+    hot-looping. If supplied, ``retry_instruction`` is appended to every retry
+    after a validation failure, and ``on_raw`` receives each reply before cleanup.
     """
     last_error: Exception | None = None
     retry_prompt = prompt
@@ -515,6 +524,8 @@ def generate_json(
                 + f"\n\nYour previous answer was invalid: {last_error}. "
                 "Return only valid JSON matching the schema."
             )
+            if retry_instruction:
+                retry_prompt += f"\n{retry_instruction}"
     reason = type(last_error).__name__ if last_error is not None else "unknown validation error"
     raise InvalidJsonResponse(
         f"Model did not return valid {schema.__name__} after {retries + 1} attempts ({reason})"

@@ -15,7 +15,7 @@ def test_schema_initializes_all_phase_tables_idempotently(db_path):
             "products", "business_profiles", "icps", "prospects", "signals",
             "prospect_research", "problem_statements", "scores", "emails", "replies",
             "inference_log", "task_queue", "pipeline_runs", "pipeline_steps", "workflow_runs",
-            "signal_runs",
+            "signal_runs", "sample_replies", "reply_classifications",
         } <= names
         assert "model_name" in {
             row[1] for row in conn.execute("PRAGMA table_info(business_profiles)")
@@ -26,6 +26,12 @@ def test_schema_initializes_all_phase_tables_idempotently(db_path):
         assert "signal_run_id" in {
             row[1] for row in conn.execute("PRAGMA table_info(signals)")
         }
+        for table in (
+            "workflow_runs", "signal_runs", "reply_classifications", "inference_log"
+        ):
+            assert {"temperature", "seed"} <= {
+                row[1] for row in conn.execute(f"PRAGMA table_info({table})")
+            }
     finally:
         conn.close()
 
@@ -65,8 +71,11 @@ def test_init_db_migrates_existing_inference_log_status_and_load_seconds(tmp_pat
         columns = {row[1] for row in conn.execute("PRAGMA table_info(inference_log)")}
         assert "status" in columns
         assert "load_seconds" in columns
-        row = conn.execute("SELECT status, load_seconds FROM inference_log").fetchone()
-        assert row == ("ok", None)
+        assert {"temperature", "seed"} <= columns
+        row = conn.execute(
+            "SELECT status, load_seconds, temperature, seed FROM inference_log"
+        ).fetchone()
+        assert row == ("ok", None, 0.0, 42)
     finally:
         conn.close()
 

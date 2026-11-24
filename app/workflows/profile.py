@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -98,12 +99,28 @@ def _word_coverage(claim: str, source_words: set[str]) -> float:
     return len(claim_words & source_words) / len(claim_words)
 
 
-def validate_profile_grounding(profile: BusinessProfile, document: str) -> None:
-    """Reject profile claims whose content words are not supported by the source."""
+def validate_profile_grounding(
+    profile: BusinessProfile, document: str, product_name: str
+) -> None:
+    """Reject unsupported claims and summaries without the exact stored product name."""
     if not isinstance(profile, BusinessProfile):
         raise TypeError("profile grounding requires a BusinessProfile")
+    if not isinstance(product_name, str) or not product_name:
+        raise TypeError("profile grounding requires the stored product name")
     source_words = _content_words(document)
     issues: list[str] = []
+    name_suffix = (
+        profile.summary[len(product_name) : len(product_name) + 1]
+        if profile.summary.startswith(product_name)
+        else ""
+    )
+    if not name_suffix or not (
+        name_suffix == " " or unicodedata.category(name_suffix).startswith("P")
+    ):
+        issues.append(
+            f"summary must start with the exact product name {product_name!r} "
+            "followed by a space or punctuation"
+        )
     fields = (
         "summary",
         "value_proposition",
@@ -126,7 +143,10 @@ def validate_profile_grounding(profile: BusinessProfile, document: str) -> None:
         for index, statement in enumerate(statements):
             if _is_not_stated(statement):
                 continue
-            coverage = _word_coverage(statement, source_words)
+            support_words = source_words | (
+                _content_words(product_name) if field_name == "summary" else set()
+            )
+            coverage = _word_coverage(statement, support_words)
             if coverage < threshold:
                 location = f"{field_name}[{index}]" if isinstance(value, list) else field_name
                 issues.append(
@@ -165,12 +185,13 @@ def build_profile_prompt(document: str) -> str:
     )
 
 
-def _company_info_document(product_id: int) -> str:
+def _profile_inputs(product_id: int) -> tuple[str, str]:
     conn = db.connect()
     try:
         product = db.get_product(conn, product_id)
         if product is None:
             raise common.ProductNotFound(f"product {product_id} not found")
+        product_name = str(product["name"])
         docs_path = str(product["docs_path"] or "").strip()
     finally:
         conn.close()
@@ -186,13 +207,13 @@ def _company_info_document(product_id: int) -> str:
         raise common.WorkflowInputError(f"company-info file could not be read: {exc}") from exc
     if not document:
         raise common.WorkflowInputError("company-info file is empty")
-    return document[:MAX_DOCUMENT_CHARS]
+    return product_name, document[:MAX_DOCUMENT_CHARS]
 
 
 def execute_profile_run(product_id: int, run_id: int, model_name: str) -> BusinessProfile:
     """Run one already-persisted profile task; exceptions remain visible to callers."""
     common.update_run(run_id, status="running", model_name=model_name)
-    document = _company_info_document(product_id)
+    product_name, document = _profile_inputs(product_id)
     generated = llm_client.generate_json(
         build_profile_prompt(document),
         BusinessProfile,
@@ -200,7 +221,12 @@ def execute_profile_run(product_id: int, run_id: int, model_name: str) -> Busine
         task=f"profile:{run_id}",
         retries=2,
         num_ctx=NUM_CTX,
-        post_validate=lambda result: validate_profile_grounding(result, document),
+        post_validate=lambda result: validate_profile_grounding(
+            result, document, product_name
+        ),
+        retry_instruction=(
+            f"The summary must start with the exact product name {product_name}."
+        ),
     )
     if not isinstance(generated, BusinessProfile):
         # Defensive schema boundary: do not persist an unvalidated object.
@@ -217,7 +243,13 @@ def execute_profile_run(product_id: int, run_id: int, model_name: str) -> Busine
 
 def submit_profile(product_id: int, *, model: str | None = None) -> int:
     """Run a profile immediately, queueing the same task if Ollama is unavailable."""
-    run_id = common.create_run(product_id, "profile", model)
+    run_id = common.create_run(
+        product_id,
+        "profile",
+        model,
+        temperature=llm_client.DEFAULT_TEMPERATURE,
+        seed=llm_client.DEFAULT_SEED,
+    )
     model_name = model
     try:
         model_name = llm_client.resolve_model_name(model)

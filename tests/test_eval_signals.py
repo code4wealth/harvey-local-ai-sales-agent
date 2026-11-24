@@ -196,13 +196,18 @@ def test_only_development_run_records_diagnostics_without_reading_or_writing_has
     assert report["selected_ids"] == ["P012", "P028", "P030"]
     assert report["counts"]["passed"] == report["counts"]["total"] == 3
     assert report["run_config"]["signal_prompt_sha256"] == eval_signals.signal_prompt_hash()
+    assert report["run_config"]["temperature"] == 0.0
+    assert report["run_config"]["seed"] == 42
     assert report["counts"]["signals_returned"] == 3
     assert report["counts"]["signals_returned_then_filtered"] == 1
     assert report["counts"]["aggregate_drop_counts"]["negated"] == 1
+    assert report["results"]["P012"]["inference"][0]["temperature"] == 0.0
+    assert report["results"]["P012"]["inference"][0]["seed"] == 42
     assert report["results"]["P012"]["diagnostics"]["raw_replies"] == [raw_responses[0]]
     assert report["results"]["P012"]["diagnostics"]["parsed_signals"][0]["type"] == "expansion"
     assert report["results"]["P030"]["diagnostics"]["drop_details"][0]["reason"] == "negated"
     stdout = capsys.readouterr().out
+    assert "Run config: mode=development model=qwen3:4b think=false temperature=0 seed=42" in stdout
     assert "removed_lines=" in stdout
     assert "cleaned_text=" in stdout
     assert "raw_replies=" in stdout
@@ -253,7 +258,11 @@ def test_mocked_held_out_run_redacts_text_from_stdout_and_report(db_path, monkey
     def handler(request):
         payload = json.loads(request.content)
         assert payload["think"] is False
-        assert payload["options"]["num_ctx"] == 4096
+        assert payload["options"] == {
+            "temperature": 0.0,
+            "seed": 42,
+            "num_ctx": 4096,
+        }
         assert request.url.path == "/api/chat"
         return httpx.Response(
             200,
@@ -284,6 +293,8 @@ def test_mocked_held_out_run_redacts_text_from_stdout_and_report(db_path, monkey
     assert report["mode"] == "held-out"
     assert report["run_config"]["model"] == "qwen3:4b"
     assert report["run_config"]["think"] is False
+    assert report["run_config"]["temperature"] == 0.0
+    assert report["run_config"]["seed"] == 42
     assert report["run_config"]["num_ctx"] == 4096
     assert report["run_config"]["signal_prompt_sha256"] == prompt_hash
     assert report["run_config"]["frozen_signal_prompt_sha256"] == prompt_hash
@@ -293,6 +304,7 @@ def test_mocked_held_out_run_redacts_text_from_stdout_and_report(db_path, monkey
     assert report["results"]["P038"]["inference_attempt_count"] == 1
     assert heldout_annotations["P038"]["expected_types"] == ("funding",)
     stdout = capsys.readouterr().out
+    assert "Run config: mode=held-out model=qwen3:4b think=false temperature=0 seed=42" in stdout
     for secret in (raw_reply, evidence, page_text):
         assert secret not in report_text
         assert secret not in stdout

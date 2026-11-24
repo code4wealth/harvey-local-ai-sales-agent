@@ -531,7 +531,11 @@ def submit_signals(
     try:
         try:
             run_id = db.create_signal_run(
-                conn, prospect_id=prospect_id, model_name=model
+                conn,
+                prospect_id=prospect_id,
+                model_name=model,
+                temperature=llm_client.DEFAULT_TEMPERATURE,
+                seed=llm_client.DEFAULT_SEED,
             )
         except LookupError as exc:
             raise prospects.ProspectNotFound(str(exc)) from exc
@@ -644,6 +648,8 @@ def signal_run_payload(row) -> dict[str, Any]:
         "removed_content": decode("removed_content_json"),
         "error": row["error"],
         "model_name": row["model_name"],
+        "temperature": row["temperature"],
+        "seed": row["seed"],
         "queue_task_id": row["queue_task_id"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],

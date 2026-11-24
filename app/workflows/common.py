@@ -25,7 +25,14 @@ class WorkflowRunError(RuntimeError):
         self.error = str(message)
 
 
-def create_run(product_id: int, workflow: str, model_name: str | None) -> int:
+def create_run(
+    product_id: int,
+    workflow: str,
+    model_name: str | None,
+    *,
+    temperature: float = 0.0,
+    seed: int = 42,
+) -> int:
     conn = db.connect()
     try:
         if db.get_product(conn, product_id) is None:
@@ -35,6 +42,8 @@ def create_run(product_id: int, workflow: str, model_name: str | None) -> int:
             product_id=product_id,
             workflow=workflow,
             model_name=model_name,
+            temperature=temperature,
+            seed=seed,
         )
     finally:
         conn.close()
@@ -137,6 +146,8 @@ def workflow_run_payload(row) -> dict[str, Any]:
         "result": result,
         "error": row["error"],
         "model_name": row["model_name"],
+        "temperature": row["temperature"],
+        "seed": row["seed"],
         "queue_task_id": row["queue_task_id"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],

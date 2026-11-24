@@ -135,6 +135,8 @@ def test_classification_receives_only_reply_text_and_stores_result(db_path, monk
     assert body["label"] == "meeting_request"
     assert body["confidence"] == pytest.approx(0.91)
     assert body["model_name"] == "reply-test-model"
+    assert body["temperature"] == 0.0
+    assert body["seed"] == 42
     assert body["created_at"] and body["updated_at"]
     assert "reply_text" not in body
     assert _get("/api/replies/R001/classification").json() == body
@@ -142,7 +144,11 @@ def test_classification_receives_only_reply_text_and_stores_result(db_path, monk
     assert len(seen) == 1
     payload = seen[0]
     assert payload["format"] == reply_workflow.ReplyClassification.model_json_schema()
-    assert payload["options"]["num_ctx"] == reply_workflow.NUM_CTX
+    assert payload["options"] == {
+        "temperature": 0.0,
+        "seed": 42,
+        "num_ctx": reply_workflow.NUM_CTX,
+    }
     prompt = payload["messages"][-1]["content"]
     assert reply_text in prompt
     assert "not now" in prompt

@@ -109,6 +109,8 @@ def reply_classification_payload(reply_id: str) -> dict[str, Any]:
                 "confidence": None,
                 "rationale": None,
                 "model_name": None,
+                "temperature": None,
+                "seed": None,
                 "error": None,
                 "queue_task_id": None,
                 "created_at": None,
@@ -121,6 +123,8 @@ def reply_classification_payload(reply_id: str) -> dict[str, Any]:
             "confidence": row["confidence"],
             "rationale": row["rationale"],
             "model_name": row["model_name"],
+            "temperature": row["temperature"],
+            "seed": row["seed"],
             "error": row["error"],
             "queue_task_id": row["queue_task_id"],
             "created_at": row["created_at"],
@@ -134,7 +138,13 @@ def _start(reply_id: str, model_name: str) -> None:
     conn = db.connect()
     try:
         try:
-            db.start_reply_classification(conn, reply_id=reply_id, model_name=model_name)
+            db.start_reply_classification(
+                conn,
+                reply_id=reply_id,
+                model_name=model_name,
+                temperature=llm_client.DEFAULT_TEMPERATURE,
+                seed=llm_client.DEFAULT_SEED,
+            )
         except LookupError as exc:
             raise ReplyNotFound(str(exc)) from exc
     finally:

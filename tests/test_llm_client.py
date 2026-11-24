@@ -79,7 +79,11 @@ def test_options_schema_think_stripping_and_inference_log(db_path, monkeypatch):
     assert seen["payload"]["think"] is False
     assert seen["payload"]["format"] == TinyAnswer.model_json_schema()
     assert seen["payload"]["model"] == "qwen3:4b"
-    assert seen["payload"]["options"] == {"temperature": 0.2, "num_ctx": 2048}
+    assert seen["payload"]["options"] == {
+        "temperature": 0.0,
+        "seed": 42,
+        "num_ctx": 2048,
+    }
     rows = inference_rows()
     assert len(rows) == 1
     assert rows[0]["task"] == "test-structured"
@@ -89,6 +93,8 @@ def test_options_schema_think_stripping_and_inference_log(db_path, monkeypatch):
     assert rows[0]["eval_tokens"] == 4
     assert rows[0]["seconds"] == pytest.approx(0.025)
     assert rows[0]["load_seconds"] == pytest.approx(5.0)
+    assert rows[0]["temperature"] == 0.0
+    assert rows[0]["seed"] == 42
     assert rows[0]["status"] == "ok"
 
 
@@ -134,7 +140,11 @@ def test_prompt_near_context_limit_warns_and_format_is_optional(db_path, monkeyp
     use_mock_transport(monkeypatch, handler)
     assert llm_client.chat("Say hi.", model="qwen3:4b", num_ctx=10) == "short reply"
     assert "format" not in seen["payload"]
-    assert seen["payload"]["options"] == {"temperature": 0.2, "num_ctx": 10}
+    assert seen["payload"]["options"] == {
+        "temperature": 0.0,
+        "seed": 42,
+        "num_ctx": 10,
+    }
     assert "at least 90%" in caplog.text
     assert inference_rows()[0]["load_seconds"] is None
 
