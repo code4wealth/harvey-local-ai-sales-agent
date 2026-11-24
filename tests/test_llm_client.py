@@ -82,6 +82,7 @@ def test_options_schema_think_stripping_and_inference_log(db_path, monkeypatch):
     assert seen["payload"]["options"] == {
         "temperature": 0.0,
         "seed": 42,
+        "repeat_penalty": 1.0,
         "num_ctx": 2048,
     }
     rows = inference_rows()
@@ -95,6 +96,7 @@ def test_options_schema_think_stripping_and_inference_log(db_path, monkeypatch):
     assert rows[0]["load_seconds"] == pytest.approx(5.0)
     assert rows[0]["temperature"] == 0.0
     assert rows[0]["seed"] == 42
+    assert rows[0]["repeat_penalty"] == 1.0
     assert rows[0]["status"] == "ok"
 
 
@@ -143,6 +145,7 @@ def test_prompt_near_context_limit_warns_and_format_is_optional(db_path, monkeyp
     assert seen["payload"]["options"] == {
         "temperature": 0.0,
         "seed": 42,
+        "repeat_penalty": 1.0,
         "num_ctx": 10,
     }
     assert "at least 90%" in caplog.text

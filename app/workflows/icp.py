@@ -318,6 +318,7 @@ def submit_icp(product_id: int, *, model: str | None = None) -> int:
         model,
         temperature=llm_client.DEFAULT_TEMPERATURE,
         seed=llm_client.DEFAULT_SEED,
+        repeat_penalty=llm_client.DEFAULT_REPEAT_PENALTY,
     )
     model_name = model
     try:

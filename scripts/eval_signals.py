@@ -313,7 +313,7 @@ def _read_inference_diagnostics(run_id: int | None) -> list[dict[str, Any]]:
     try:
         rows = conn.execute(
             "SELECT model, prompt_tokens, eval_tokens, seconds, load_seconds, "
-            "temperature, seed, status, created_at "
+            "temperature, seed, repeat_penalty, status, created_at "
             "FROM inference_log WHERE task = ? ORDER BY id",
             (f"signals:{int(run_id)}",),
         ).fetchall()
@@ -409,6 +409,7 @@ def _case_result(
         filtered_count = max(0, parsed_count - len(kept))
     filtered_count = int(filtered_count or 0)
     model_none = _model_none_count(payload, diagnostics)
+    quote_retries = int(payload.get("quote_retries", 0) or 0) if payload else 0
     inference = _read_inference_diagnostics(int(payload["id"])) if payload else []
     removed_lines = diagnostics.get("removed_lines") or []
     raw_replies = diagnostics.get("raw_replies") or []
@@ -423,6 +424,7 @@ def _case_result(
             "parsed_signal_count": parsed_count,
             "parsed_output_count": int(isinstance(parsed, list)),
             "signals_returned_then_filtered": filtered_count,
+            "quote_retries": quote_retries,
             "model_none_count": model_none,
             "drop_counts": drops,
             "removed_line_count": len(removed_lines),
@@ -433,7 +435,8 @@ def _case_result(
         }
         print(
             f"{prospect_id} passed_count={int(passed)} kept_signal_count={len(kept)} "
-            f"model_none_count={model_none} filtered_signal_count={filtered_count} "
+            f"quote_retries={quote_retries} model_none_count={model_none} "
+            f"filtered_signal_count={filtered_count} "
             f"drop_counts={json.dumps(drops, sort_keys=True)} "
             f"failed_count={int(not payload or payload.get('status') != 'succeeded')}"
         )
@@ -450,6 +453,7 @@ def _case_result(
         "model_none_count": model_none,
         "signals_returned": parsed_count if isinstance(parsed, list) else None,
         "signals_returned_then_filtered": filtered_count,
+        "quote_retries": quote_retries,
         "trap_outcome": _trap_outcome(payload, diagnostics) if annotation["trap_types"] else None,
         "error": error,
         "inference": inference,
@@ -467,7 +471,8 @@ def _case_result(
     expected = ",".join(annotation["expected_types"]) or ("none" if annotation["trap_types"] else "fit-only")
     print(
         f"{prospect_id} case_type={annotation['case_type']} expected={expected} "
-        f"kept={','.join(kept_types) or 'none'} model_none={model_none} "
+        f"kept={','.join(kept_types) or 'none'} quote_retries={quote_retries} "
+        f"model_none={model_none} "
         f"{'PASS' if passed else 'FAIL'}"
         + (f" error={error}" if error else "")
     )
@@ -562,7 +567,9 @@ def run_evaluation(
     print(
         f"Run config: mode={'held-out' if held_out else 'development'} model={model_name} "
         f"think=false temperature={llm_client.DEFAULT_TEMPERATURE:g} "
-        f"seed={llm_client.DEFAULT_SEED} num_ctx={signal_workflow.NUM_CTX} "
+        f"seed={llm_client.DEFAULT_SEED} "
+        f"repeat_penalty={llm_client.DEFAULT_REPEAT_PENALTY:g} "
+        f"num_ctx={signal_workflow.NUM_CTX} "
         f"prompt_sha256={current_prompt_hash}"
         + (f" frozen_sha256={frozen_hash}" if frozen_hash else "")
     )
@@ -638,6 +645,11 @@ def run_evaluation(
         for prospect_id in results
     }
     model_none_runs = sum(model_none_counts.values())
+    quote_retries_total = sum(
+        int(payload.get("quote_retries", 0) or 0)
+        for payload in results.values()
+        if payload is not None
+    )
     signals_returned = sum(
         int(diagnostics.get("signals_returned", 0) or 0)
         for diagnostics in diagnostics_by_id.values()
@@ -655,6 +667,7 @@ def run_evaluation(
         f"Model empty-list outputs: {model_none_runs}/{successful_runs} successful runs"
     )
     print(f"Signals returned then filtered: {signals_filtered} (returned={signals_returned})")
+    print(f"Quote verification retries: {quote_retries_total}")
     print(
         "Aggregate verification drops: "
         + ", ".join(f"{key}={aggregate_drops[key]}" for key in DROP_KEYS)
@@ -688,6 +701,7 @@ def run_evaluation(
             "think": False,
             "temperature": llm_client.DEFAULT_TEMPERATURE,
             "seed": llm_client.DEFAULT_SEED,
+            "repeat_penalty": llm_client.DEFAULT_REPEAT_PENALTY,
             "num_ctx": signal_workflow.NUM_CTX,
             "signal_prompt_sha256": current_prompt_hash,
             "frozen_signal_prompt_sha256": frozen_hash,
@@ -698,6 +712,7 @@ def run_evaluation(
             "total": len(rows_by_id),
             "successful_runs": successful_runs,
             "model_none_runs": model_none_runs,
+            "quote_retries": quote_retries_total,
             "signals_returned": signals_returned,
             "signals_returned_then_filtered": signals_filtered,
             "aggregate_drop_counts": dict(aggregate_drops),

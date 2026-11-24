@@ -162,6 +162,8 @@ def test_signal_api_validates_schema_uses_only_clean_page_and_persists_exact_rem
     assert body["model_name"] == "signal-test-model"
     assert body["temperature"] == 0.0
     assert body["seed"] == 42
+    assert body["repeat_penalty"] == 1.0
+    assert body["quote_retries"] == 0
     assert body["prospect_id"] == prospect_id
     assert body["product_id"] == product_id
     assert body["signals"] == [
@@ -193,6 +195,7 @@ def test_signal_api_validates_schema_uses_only_clean_page_and_persists_exact_rem
     assert payload["options"] == {
         "temperature": 0.0,
         "seed": 42,
+        "repeat_penalty": 1.0,
         "num_ctx": signal_workflow.NUM_CTX,
     }
     prompt = payload["messages"][-1]["content"]
@@ -287,6 +290,56 @@ def test_signal_schema_failures_retry_twice_and_then_succeed(db_path, monkeypatc
         conn.close()
 
 
+def test_glitched_quote_retries_and_keeps_the_clean_attempt(db_path, monkeypatch, tmp_path):
+    monkeypatch.setenv("DEFAULT_MODEL", "signal-quote-retry-model")
+    quote = "The observatory installed a new infrared telescope this spring."
+    _, prospect_id = _new_prospect(db_path, monkeypatch, tmp_path, quote)
+    outputs = iter(
+        [
+            _model_output(
+                [{"type": "tech_change", "evidence": quote.replace("telescope", "telescopx"), "about_company": True}]
+            ),
+            _model_output(
+                [{"type": "tech_change", "evidence": quote, "about_company": True}]
+            ),
+        ]
+    )
+    prompts = []
+
+    def handler(request):
+        prompts.append(json.loads(request.content)["messages"][-1]["content"])
+        return _chat_response(next(outputs))
+
+    _use_mock_transport(monkeypatch, handler)
+    response = _post(f"/api/prospects/{prospect_id}/signals")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["quote_retries"] == 1
+    assert body["signals"] == [
+        {"type": "tech_change", "evidence": quote, "about_company": True}
+    ]
+    assert body["drop_counts"]["quote"] == 0
+    assert len(prompts) == 2
+    assert prompts[0] == prompts[1]
+    conn = db.connect()
+    try:
+        run = db.get_signal_run(conn, body["id"])
+        assert run["quote_retries"] == 1
+        stored = conn.execute(
+            "SELECT evidence FROM signals WHERE signal_run_id = ?", (body["id"],)
+        ).fetchall()
+        assert [row["evidence"] for row in stored] == [quote]
+        inference = conn.execute(
+            "SELECT repeat_penalty FROM inference_log WHERE task = ? ORDER BY id",
+            (f"signals:{body['id']}",),
+        ).fetchall()
+        assert [row["repeat_penalty"] for row in inference] == [1.0, 1.0]
+    finally:
+        conn.close()
+
+
 def test_fabricated_evidence_is_dropped_by_quote_verification(db_path, monkeypatch, tmp_path):
     monkeypatch.setenv("DEFAULT_MODEL", "signal-quote-model")
     _, prospect_id = _new_prospect(
@@ -316,6 +369,7 @@ def test_fabricated_evidence_is_dropped_by_quote_verification(db_path, monkeypat
     body = response.json()
     assert body["signals"] == []
     assert body["drop_counts"]["quote"] == 1
+    assert body["quote_retries"] == 2
     conn = db.connect()
     try:
         assert conn.execute("SELECT COUNT(*) FROM signals").fetchone()[0] == 0

@@ -22,7 +22,9 @@ hard-coded to the loopback Ollama endpoint. There is no cloud fallback.
 
 - Product and prospect records are isolated by `product_id`.
 - Local profile and ICP workflows use stored product information. Signal
-  extraction uses the explicitly stored local prospect page.
+  extraction uses the explicitly stored local prospect page. Failed quote
+  verification triggers up to two same-prompt retries; the attempt with the
+  most verified signals is persisted, with evidence quotes left untouched.
 - `GET /api/products/{product_id}/ranking` is deterministic. It uses the
   product's stored ICP, local page text, and only validated signals from each
   prospect's latest successful signal run. A later failed run is reported but
@@ -33,7 +35,7 @@ hard-coded to the loopback Ollama endpoint. There is no cloud fallback.
   Drafts are stored in `draft_runs`, never sent; no-verified-evidence cases
   are persisted as skipped without an inference call.
 - All AI inference uses `app/llm_client.py` and records model, local host,
-  token counts, latency, temperature, seed, and status in `inference_log`.
+  token counts, latency, temperature, seed, repeat penalty, and status in `inference_log`.
 
 ## Determinism and failure handling
 

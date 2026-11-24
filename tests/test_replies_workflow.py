@@ -147,6 +147,7 @@ def test_classification_receives_only_reply_text_and_stores_result(db_path, monk
     assert payload["options"] == {
         "temperature": 0.0,
         "seed": 42,
+        "repeat_penalty": 1.0,
         "num_ctx": reply_workflow.NUM_CTX,
     }
     prompt = payload["messages"][-1]["content"]

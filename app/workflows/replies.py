@@ -111,6 +111,7 @@ def reply_classification_payload(reply_id: str) -> dict[str, Any]:
                 "model_name": None,
                 "temperature": None,
                 "seed": None,
+                "repeat_penalty": None,
                 "error": None,
                 "queue_task_id": None,
                 "created_at": None,
@@ -125,6 +126,7 @@ def reply_classification_payload(reply_id: str) -> dict[str, Any]:
             "model_name": row["model_name"],
             "temperature": row["temperature"],
             "seed": row["seed"],
+            "repeat_penalty": row["repeat_penalty"],
             "error": row["error"],
             "queue_task_id": row["queue_task_id"],
             "created_at": row["created_at"],
@@ -144,6 +146,7 @@ def _start(reply_id: str, model_name: str) -> None:
                 model_name=model_name,
                 temperature=llm_client.DEFAULT_TEMPERATURE,
                 seed=llm_client.DEFAULT_SEED,
+                repeat_penalty=llm_client.DEFAULT_REPEAT_PENALTY,
             )
         except LookupError as exc:
             raise ReplyNotFound(str(exc)) from exc

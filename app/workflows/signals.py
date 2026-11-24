@@ -441,27 +441,77 @@ def execute_signal_run(
     finally:
         conn.close()
 
-    # generate_json cleans the model reply with llm_client.clean_reply(), parses JSON,
-    # and applies Pydantic validation before returning. on_raw runs before cleanup.
-    generated = llm_client.generate_json(
-        build_signal_prompt(submitted_text),
-        SignalExtraction,
-        model=model_name,
-        task=f"signals:{run_id}",
-        retries=2,
-        num_ctx=NUM_CTX,
-        on_raw=on_raw,
-    )
-    if not isinstance(generated, SignalExtraction):
-        raise TypeError("signal generator returned an unexpected schema type")
+    # Keep build_signal_prompt unchanged: quote retries reuse the exact same
+    # prompt template so its frozen SHA-256 remains stable.
+    signal_prompt = build_signal_prompt(submitted_text)
+    conn = db.connect()
+    try:
+        existing_run = db.get_signal_run(conn, run_id)
+        quote_retries = int(existing_run["quote_retries"] or 0) if existing_run else 0
+    finally:
+        conn.close()
 
+    best_generated: SignalExtraction | None = None
+    best_kept: list[ProspectSignal] = []
+    best_drop_counts: dict[str, int] = {}
+    best_drop_details: list[dict[str, Any]] = []
+    while True:
+        try:
+            candidate = llm_client.generate_json(
+                signal_prompt,
+                SignalExtraction,
+                model=model_name,
+                task=f"signals:{run_id}",
+                retries=2,
+                num_ctx=NUM_CTX,
+                on_raw=on_raw,
+            )
+        except llm_client.InvalidJsonResponse:
+            if best_generated is None:
+                raise
+            # Keep the best schema-valid attempt if a later quote retry cannot
+            # produce a valid structured response.
+            break
+        if not isinstance(candidate, SignalExtraction):
+            raise TypeError("signal generator returned an unexpected schema type")
+
+        candidate_kept, candidate_drops, candidate_details = _kept_signals(
+            submitted_text, candidate.signals
+        )
+        if best_generated is None or len(candidate_kept) >= len(best_kept):
+            # Prefer a later attempt on ties, so a clean retry supersedes an
+            # equally-sized earlier result containing one or more bad quotes.
+            best_generated = candidate
+            best_kept = candidate_kept
+            best_drop_counts = candidate_drops
+            best_drop_details = candidate_details
+
+        if candidate_drops["quote"] == 0 or quote_retries >= 2:
+            break
+        quote_retries += 1
+        conn = db.connect()
+        try:
+            db.update_signal_run(
+                conn,
+                run_id,
+                status="running",
+                model_name=model_name,
+                quote_retries=quote_retries,
+            )
+        finally:
+            conn.close()
+
+    if best_generated is None:
+        raise RuntimeError("signal extraction produced no schema-valid attempt")
+    generated = best_generated
+    kept = best_kept
+    drop_counts = best_drop_counts
+    drop_details = best_drop_details
     parsed_signals = [signal.model_dump(mode="json") for signal in generated.signals]
     if diagnostics is not None:
         diagnostics["parsed_signals"] = parsed_signals
         diagnostics["signals_returned"] = len(parsed_signals)
-
-    kept, drop_counts, drop_details = _kept_signals(submitted_text, generated.signals)
-    if diagnostics is not None:
+        diagnostics["quote_retries"] = quote_retries
         diagnostics["signals_kept"] = len(kept)
         diagnostics["signals_returned_then_filtered"] = len(drop_details)
         diagnostics["drop_counts"] = drop_counts
@@ -478,6 +528,7 @@ def execute_signal_run(
             drop_counts=drop_counts,
             removed_content=removed_content,
             model_name=model_name,
+            quote_retries=quote_retries,
         )
     finally:
         conn.close()
@@ -536,6 +587,7 @@ def submit_signals(
                 model_name=model,
                 temperature=llm_client.DEFAULT_TEMPERATURE,
                 seed=llm_client.DEFAULT_SEED,
+                repeat_penalty=llm_client.DEFAULT_REPEAT_PENALTY,
             )
         except LookupError as exc:
             raise prospects.ProspectNotFound(str(exc)) from exc
@@ -650,6 +702,8 @@ def signal_run_payload(row) -> dict[str, Any]:
         "model_name": row["model_name"],
         "temperature": row["temperature"],
         "seed": row["seed"],
+        "repeat_penalty": row["repeat_penalty"],
+        "quote_retries": int(row["quote_retries"]),
         "queue_task_id": row["queue_task_id"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],

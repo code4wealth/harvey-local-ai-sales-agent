@@ -163,6 +163,7 @@ def test_profile_api_uses_json_schema_cleans_reply_and_persists_model(db_path, m
     assert prompt_payload["options"] == {
         "temperature": 0.0,
         "seed": 42,
+        "repeat_penalty": 1.0,
         "num_ctx": profile.NUM_CTX,
     }
     prompt = prompt_payload["messages"][-1]["content"]

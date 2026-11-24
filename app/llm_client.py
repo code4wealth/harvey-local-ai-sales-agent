@@ -29,6 +29,7 @@ OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_NUM_CTX = 4096
 DEFAULT_TEMPERATURE = 0.0
 DEFAULT_SEED = 42
+DEFAULT_REPEAT_PENALTY = 1.0
 
 logger = logging.getLogger("harvey.llm")
 DEFAULT_TIMEOUT = 180.0
@@ -180,6 +181,7 @@ def _write_inference_log(
             status=status,
             temperature=DEFAULT_TEMPERATURE,
             seed=DEFAULT_SEED,
+            repeat_penalty=DEFAULT_REPEAT_PENALTY,
         )
     finally:
         conn.close()
@@ -272,6 +274,7 @@ def _chat(
         "options": {
             "temperature": DEFAULT_TEMPERATURE,
             "seed": DEFAULT_SEED,
+            "repeat_penalty": DEFAULT_REPEAT_PENALTY,
             "num_ctx": num_ctx,
         },
     }

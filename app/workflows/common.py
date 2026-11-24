@@ -32,6 +32,7 @@ def create_run(
     *,
     temperature: float = 0.0,
     seed: int = 42,
+    repeat_penalty: float = 1.0,
 ) -> int:
     conn = db.connect()
     try:
@@ -44,6 +45,7 @@ def create_run(
             model_name=model_name,
             temperature=temperature,
             seed=seed,
+            repeat_penalty=repeat_penalty,
         )
     finally:
         conn.close()
@@ -148,6 +150,7 @@ def workflow_run_payload(row) -> dict[str, Any]:
         "model_name": row["model_name"],
         "temperature": row["temperature"],
         "seed": row["seed"],
+        "repeat_penalty": row["repeat_penalty"],
         "queue_task_id": row["queue_task_id"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],

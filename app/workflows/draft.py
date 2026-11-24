@@ -222,6 +222,7 @@ def draft_run_payload(row) -> dict[str, Any]:
         "model_name": row["model_name"],
         "temperature": row["temperature"],
         "seed": row["seed"],
+        "repeat_penalty": row["repeat_penalty"],
         "business_profile_id": row["business_profile_id"],
         "signal_run_id": row["signal_run_id"],
         "queue_task_id": row["queue_task_id"],
@@ -267,6 +268,7 @@ def latest_draft_payload(product_id: int, prospect_id: int) -> dict[str, Any]:
             "model_name": None,
             "temperature": None,
             "seed": None,
+            "repeat_penalty": None,
             "business_profile_id": None,
             "signal_run_id": None,
             "queue_task_id": None,
@@ -374,6 +376,7 @@ def submit_draft(
             model_name=None if not verified_signals else model,
             temperature=llm_client.DEFAULT_TEMPERATURE,
             seed=llm_client.DEFAULT_SEED,
+            repeat_penalty=llm_client.DEFAULT_REPEAT_PENALTY,
         )
         if not verified_signals:
             db.update_draft_run(conn, run_id, status="skipped", error=NO_EVIDENCE)

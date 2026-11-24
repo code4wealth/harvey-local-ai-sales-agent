@@ -29,9 +29,12 @@ def test_schema_initializes_all_phase_tables_idempotently(db_path):
         for table in (
             "workflow_runs", "signal_runs", "reply_classifications", "inference_log", "draft_runs"
         ):
-            assert {"temperature", "seed"} <= {
+            assert {"temperature", "seed", "repeat_penalty"} <= {
                 row[1] for row in conn.execute(f"PRAGMA table_info({table})")
             }
+        assert "quote_retries" in {
+            row[1] for row in conn.execute("PRAGMA table_info(signal_runs)")
+        }
     finally:
         conn.close()
 

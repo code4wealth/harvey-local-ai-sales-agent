@@ -365,6 +365,7 @@ def run_evaluation(
             "think": False,
             "temperature": llm_client.DEFAULT_TEMPERATURE,
             "seed": llm_client.DEFAULT_SEED,
+            "repeat_penalty": llm_client.DEFAULT_REPEAT_PENALTY,
             "num_ctx": reply_workflow.NUM_CTX,
             "reply_prompt_sha256": current_prompt_hash,
             "frozen_reply_prompt_sha256": frozen_hash,

@@ -91,6 +91,8 @@ CREATE TABLE IF NOT EXISTS signal_runs (
     model_name             TEXT,
     temperature            REAL NOT NULL DEFAULT 0.0,
     seed                   INTEGER NOT NULL DEFAULT 42,
+    repeat_penalty         REAL NOT NULL DEFAULT 1.0,
+    quote_retries          INTEGER NOT NULL DEFAULT 0 CHECK (quote_retries >= 0),
     signals_json           TEXT,
     drop_counts_json       TEXT,
     removed_content_json   TEXT,
@@ -166,6 +168,7 @@ CREATE TABLE IF NOT EXISTS reply_classifications (
     model_name   TEXT,
     temperature  REAL NOT NULL DEFAULT 0.0,
     seed         INTEGER NOT NULL DEFAULT 42,
+    repeat_penalty REAL NOT NULL DEFAULT 1.0,
     error        TEXT,
     queue_task_id INTEGER,
     created_at   TEXT NOT NULL,
@@ -185,6 +188,7 @@ CREATE TABLE IF NOT EXISTS inference_log (
     load_seconds  REAL,
     temperature   REAL NOT NULL DEFAULT 0.0,
     seed          INTEGER NOT NULL DEFAULT 42,
+    repeat_penalty REAL NOT NULL DEFAULT 1.0,
     status        TEXT NOT NULL DEFAULT 'ok'
                   CHECK (status IN ('ok', 'error:unavailable', 'error:timeout', 'error:http', 'error:invalid_json')),
     created_at    TEXT NOT NULL
@@ -233,6 +237,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     model_name     TEXT,
     temperature    REAL NOT NULL DEFAULT 0.0,
     seed           INTEGER NOT NULL DEFAULT 42,
+    repeat_penalty REAL NOT NULL DEFAULT 1.0,
     result_json    TEXT,
     error          TEXT,
     queue_task_id  INTEGER,
@@ -256,6 +261,7 @@ CREATE TABLE IF NOT EXISTS draft_runs (
     model_name          TEXT,
     temperature         REAL NOT NULL DEFAULT 0.0,
     seed                INTEGER NOT NULL DEFAULT 42,
+    repeat_penalty      REAL NOT NULL DEFAULT 1.0,
     queue_task_id       INTEGER,
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL
@@ -349,6 +355,17 @@ def init_db(conn: sqlite3.Connection) -> None:
             )
         if "seed" not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN seed INTEGER NOT NULL DEFAULT 42")
+        if "repeat_penalty" not in columns:
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN repeat_penalty REAL NOT NULL DEFAULT 1.0"
+            )
+
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(signal_runs)")}
+    if "quote_retries" not in columns:
+        conn.execute(
+            "ALTER TABLE signal_runs ADD COLUMN quote_retries INTEGER NOT NULL DEFAULT 0 "
+            "CHECK (quote_retries >= 0)"
+        )
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(inference_log)")}
     if "status" not in columns:
@@ -403,6 +420,7 @@ def start_reply_classification(
     model_name: str,
     temperature: float = 0.0,
     seed: int = 42,
+    repeat_penalty: float = 1.0,
 ) -> None:
     reply_id = str(reply_id).strip()
     if get_sample_reply(conn, reply_id) is None:
@@ -410,13 +428,22 @@ def start_reply_classification(
     now = utcnow()
     conn.execute(
         "INSERT INTO reply_classifications "
-        "(reply_id, status, model_name, temperature, seed, created_at, updated_at) "
-        "VALUES (?, 'running', ?, ?, ?, ?, ?) "
+        "(reply_id, status, model_name, temperature, seed, repeat_penalty, created_at, updated_at) "
+        "VALUES (?, 'running', ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(reply_id) DO UPDATE SET status = 'running', label = NULL, "
         "confidence = NULL, rationale = NULL, model_name = excluded.model_name, "
         "temperature = excluded.temperature, seed = excluded.seed, "
+        "repeat_penalty = excluded.repeat_penalty, "
         "error = NULL, queue_task_id = NULL, updated_at = excluded.updated_at",
-        (reply_id, str(model_name), float(temperature), int(seed), now, now),
+        (
+            reply_id,
+            str(model_name),
+            float(temperature),
+            int(seed),
+            float(repeat_penalty),
+            now,
+            now,
+        ),
     )
     conn.commit()
 
@@ -488,14 +515,15 @@ def log_inference(
     status: str = "ok",
     temperature: float = 0.0,
     seed: int = 42,
+    repeat_penalty: float = 1.0,
 ) -> int:
     if status not in INFERENCE_STATUSES:
         raise ValueError(f"invalid inference status: {status!r}")
     cur = conn.execute(
         "INSERT INTO inference_log "
         "(task, model, host, prompt_tokens, eval_tokens, seconds, load_seconds, "
-        "temperature, seed, status, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "temperature, seed, repeat_penalty, status, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             task,
             model,
@@ -506,6 +534,7 @@ def log_inference(
             float(load_seconds) if load_seconds is not None else None,
             float(temperature),
             int(seed),
+            float(repeat_penalty),
             status,
             utcnow(),
         ),
@@ -560,15 +589,25 @@ def create_workflow_run(
     model_name: str | None,
     temperature: float = 0.0,
     seed: int = 42,
+    repeat_penalty: float = 1.0,
 ) -> int:
     if workflow not in {"profile", "icp"}:
         raise ValueError(f"invalid workflow: {workflow!r}")
     now = utcnow()
     cur = conn.execute(
         "INSERT INTO workflow_runs "
-        "(product_id, workflow, status, model_name, temperature, seed, created_at, updated_at) "
-        "VALUES (?, ?, 'running', ?, ?, ?, ?, ?)",
-        (int(product_id), workflow, model_name, float(temperature), int(seed), now, now),
+        "(product_id, workflow, status, model_name, temperature, seed, repeat_penalty, created_at, updated_at) "
+        "VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?)",
+        (
+            int(product_id),
+            workflow,
+            model_name,
+            float(temperature),
+            int(seed),
+            float(repeat_penalty),
+            now,
+            now,
+        ),
     )
     conn.commit()
     return int(cur.lastrowid)
@@ -698,6 +737,7 @@ def create_signal_run(
     model_name: str | None,
     temperature: float = 0.0,
     seed: int = 42,
+    repeat_penalty: float = 1.0,
 ) -> int:
     prospect = get_prospect(conn, prospect_id)
     if prospect is None:
@@ -705,14 +745,15 @@ def create_signal_run(
     now = utcnow()
     cur = conn.execute(
         "INSERT INTO signal_runs "
-        "(prospect_id, product_id, status, model_name, temperature, seed, created_at, updated_at) "
-        "VALUES (?, ?, 'running', ?, ?, ?, ?, ?)",
+        "(prospect_id, product_id, status, model_name, temperature, seed, repeat_penalty, created_at, updated_at) "
+        "VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?)",
         (
             int(prospect_id),
             int(prospect["product_id"]),
             model_name,
             float(temperature),
             int(seed),
+            float(repeat_penalty),
             now,
             now,
         ),
@@ -741,14 +782,26 @@ def update_signal_run(
     error: str | None = None,
     model_name: str | None = None,
     queue_task_id: int | None = None,
+    quote_retries: int | None = None,
 ) -> None:
     if status not in {"queued", "running", "succeeded", "failed"}:
         raise ValueError(f"invalid signal run status: {status!r}")
+    if quote_retries is not None and int(quote_retries) < 0:
+        raise ValueError("quote_retries must be non-negative")
     cur = conn.execute(
         "UPDATE signal_runs SET status = ?, error = ?, "
         "model_name = COALESCE(?, model_name), "
-        "queue_task_id = COALESCE(?, queue_task_id), updated_at = ? WHERE id = ?",
-        (status, error, model_name, queue_task_id, utcnow(), int(run_id)),
+        "queue_task_id = COALESCE(?, queue_task_id), "
+        "quote_retries = COALESCE(?, quote_retries), updated_at = ? WHERE id = ?",
+        (
+            status,
+            error,
+            model_name,
+            queue_task_id,
+            int(quote_retries) if quote_retries is not None else None,
+            utcnow(),
+            int(run_id),
+        ),
     )
     if cur.rowcount != 1:
         raise ValueError(f"signal run {run_id} not found")
@@ -780,12 +833,15 @@ def save_signal_run(
     drop_counts: dict[str, int],
     removed_content: dict[str, Any],
     model_name: str,
+    quote_retries: int = 0,
 ) -> None:
     result_json = json.dumps(signals, ensure_ascii=False, sort_keys=True, allow_nan=False)
     drop_json = json.dumps(drop_counts, ensure_ascii=False, sort_keys=True, allow_nan=False)
     removed_json = json.dumps(
         removed_content, ensure_ascii=False, sort_keys=True, allow_nan=False
     )
+    if int(quote_retries) < 0:
+        raise ValueError("quote_retries must be non-negative")
     run = get_signal_run(conn, run_id)
     if (
         run is None
@@ -817,13 +873,14 @@ def save_signal_run(
         cur = conn.execute(
             "UPDATE signal_runs SET status = 'succeeded', signals_json = ?, "
             "drop_counts_json = ?, removed_content_json = ?, error = NULL, "
-            "model_name = ?, queue_task_id = NULL, updated_at = ? "
+            "model_name = ?, quote_retries = ?, queue_task_id = NULL, updated_at = ? "
             "WHERE id = ? AND prospect_id = ? AND product_id = ?",
             (
                 result_json,
                 drop_json,
                 removed_json,
                 model_name,
+                int(quote_retries),
                 now,
                 int(run_id),
                 int(prospect_id),
@@ -848,6 +905,7 @@ def create_draft_run(
     model_name: str | None,
     temperature: float = 0.0,
     seed: int = 42,
+    repeat_penalty: float = 1.0,
 ) -> int:
     product = get_product(conn, product_id)
     prospect = get_prospect(conn, prospect_id)
@@ -875,8 +933,8 @@ def create_draft_run(
     cur = conn.execute(
         "INSERT INTO draft_runs "
         "(product_id, prospect_id, business_profile_id, signal_run_id, status, model_name, "
-        "temperature, seed, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)",
+        "temperature, seed, repeat_penalty, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)",
         (
             int(product_id),
             int(prospect_id),
@@ -885,6 +943,7 @@ def create_draft_run(
             model_name,
             float(temperature),
             int(seed),
+            float(repeat_penalty),
             now,
             now,
         ),

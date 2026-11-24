@@ -5,7 +5,7 @@
 Completes the product-specific deterministic ranking and workflow roadmap on the
 active Arena branch:
 
-- Keeps the inference boundary local to Ollama; deterministic temperature/seed
+- Keeps the inference boundary local to Ollama; deterministic temperature/seed/repeat-penalty
   defaults and exact product-name profile-summary validation are in place.
 - Keeps reply ground truth isolated in `data/eval/reply_labels.csv`; runtime
   reply records and prompts contain text only.
