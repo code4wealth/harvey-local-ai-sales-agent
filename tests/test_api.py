@@ -9,6 +9,34 @@ from app import db, llm_client, main as main_module, prospects
 from app.main import app
 
 
+def test_startup_marks_interrupted_workflow_runs_failed(db_path):
+    conn = db.connect()
+    try:
+        product_id = db.create_product(conn, name="Interrupted profile")
+        run_id = db.create_workflow_run(
+            conn,
+            product_id=product_id,
+            workflow="profile",
+            model_name="qwen3:4b",
+        )
+    finally:
+        conn.close()
+
+    async def start_and_stop():
+        async with main_module.lifespan(app):
+            pass
+
+    asyncio.run(start_and_stop())
+    conn = db.connect()
+    try:
+        run = db.get_workflow_run(conn, run_id)
+        assert run["status"] == "failed"
+        assert run["result_json"] is None
+        assert "interrupted" in run["error"]
+    finally:
+        conn.close()
+
+
 def test_system_routes_report_status_and_hardware(db_path, monkeypatch):
     def ollama_handler(request):
         assert request.url.path == "/api/tags"

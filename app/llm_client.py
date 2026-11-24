@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -33,8 +34,20 @@ DEFAULT_SEED = 42
 DEFAULT_REPEAT_PENALTY = 1.0
 
 logger = logging.getLogger("harvey.llm")
-DEFAULT_TIMEOUT = 180.0
+DEFAULT_TIMEOUT = 120.0
 UP_TIMEOUT = 5.0
+
+
+def _resolve_timeout(timeout: float | None = None) -> float:
+    """Read the configurable local Ollama request timeout in seconds."""
+    raw = os.environ.get("OLLAMA_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT)) if timeout is None else timeout
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("OLLAMA_TIMEOUT_SECONDS must be a positive number of seconds") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError("OLLAMA_TIMEOUT_SECONDS must be a positive number of seconds")
+    return value
 
 
 class OllamaError(Exception):
@@ -446,7 +459,7 @@ def chat(
     task: str = "manual",
     format: dict | None = None,
     system: str | None = None,
-    timeout: float = DEFAULT_TIMEOUT,
+    timeout: float | None = None,
     num_ctx: int = DEFAULT_NUM_CTX,
 ) -> str:
     """Make one non-streaming local Ollama chat call and return its content.
@@ -464,7 +477,7 @@ def chat(
         task=task,
         format=format,
         system=system,
-        timeout=timeout,
+        timeout=_resolve_timeout(timeout),
         num_ctx=num_ctx,
     ).content
 
@@ -475,7 +488,7 @@ def generate(
     model: str | None = None,
     task: str = "manual",
     system: str | None = None,
-    timeout: float = DEFAULT_TIMEOUT,
+    timeout: float | None = None,
     num_ctx: int = DEFAULT_NUM_CTX,
 ) -> str:
     """Plain-text generation convenience wrapper around :func:`chat`."""
@@ -554,7 +567,7 @@ def generate_json(
     task: str = "manual",
     system: str | None = None,
     retries: int = 2,
-    timeout: float = DEFAULT_TIMEOUT,
+    timeout: float | None = None,
     num_ctx: int = DEFAULT_NUM_CTX,
     base_seed: int = DEFAULT_SEED,
     attempt_offset: int = 0,
@@ -580,6 +593,7 @@ def generate_json(
         raise ValueError("retries must be non-negative")
     if attempt_offset < 0:
         raise ValueError("attempt_offset must be non-negative")
+    timeout = _resolve_timeout(timeout)
 
     last_error: Exception | None = None
     last_value: Any = None

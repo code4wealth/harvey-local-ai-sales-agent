@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import sqlite3
@@ -27,12 +28,17 @@ from app.workflows import draft as draft_workflow
 from app.workflows import problem_statement as problem_statement_workflow
 from app.workflows import signals as signal_workflow
 
+logger = logging.getLogger("harvey.main")
+
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     conn = db.connect()
     try:
         db.init_db(conn)
+        interrupted_runs = db.fail_interrupted_workflow_runs(conn)
+        if interrupted_runs:
+            logger.warning("marked %d interrupted workflow run(s) as failed", interrupted_runs)
     finally:
         conn.close()
 
@@ -174,7 +180,21 @@ def _post_workflow(product_id: int, *, submit) -> JSONResponse:
     except workflow_common.WorkflowRunError as exc:
         payload = _workflow_run_response(exc.run_id)
         return JSONResponse(status_code=502, content=payload)
-    return JSONResponse(status_code=200, content=_workflow_run_response(run_id))
+    payload = _workflow_run_response(run_id)
+    status_code = 202 if payload["status"] in {"queued", "running"} else 200
+    return JSONResponse(status_code=status_code, content=payload)
+
+
+@app.get("/api/workflow-runs/{run_id}", tags=["workflows"])
+def api_get_workflow_run(run_id: int) -> dict:
+    conn = db.connect()
+    try:
+        row = db.get_workflow_run(conn, run_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="workflow run not found")
+        return workflow_common.workflow_run_payload(row)
+    finally:
+        conn.close()
 
 
 def _get_workflow(product_id: int, workflow: str) -> dict:

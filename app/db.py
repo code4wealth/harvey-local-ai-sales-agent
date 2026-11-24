@@ -697,6 +697,18 @@ def get_workflow_run(conn: sqlite3.Connection, run_id: int) -> sqlite3.Row | Non
     return conn.execute("SELECT * FROM workflow_runs WHERE id = ?", (int(run_id),)).fetchone()
 
 
+def fail_interrupted_workflow_runs(conn: sqlite3.Connection) -> int:
+    """Mark workflow runs abandoned by a previous process as terminal failures."""
+    cur = conn.execute(
+        "UPDATE workflow_runs SET status = 'failed', result_json = NULL, "
+        "error = 'interrupted: application restarted before workflow completed', "
+        "updated_at = ? WHERE status = 'running'",
+        (utcnow(),),
+    )
+    conn.commit()
+    return int(cur.rowcount)
+
+
 def latest_workflow_run(
     conn: sqlite3.Connection, *, product_id: int, workflow: str
 ) -> sqlite3.Row | None:

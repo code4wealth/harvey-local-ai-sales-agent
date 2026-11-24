@@ -97,13 +97,38 @@ def _use_mock_transport(monkeypatch, handler) -> None:
     monkeypatch.setattr(llm_client, "_client", factory)
 
 
-def _post(path: str) -> httpx.Response:
+def _post_raw(path: str) -> httpx.Response:
     async def request():
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             return await client.post(path)
 
     return asyncio.run(request())
+
+
+def _post(path: str) -> httpx.Response:
+    response = _post_raw(path)
+    if not path.endswith("/profile") or response.status_code != 202:
+        return response
+
+    # Workflow unit tests drive the same queued worker synchronously so each
+    # test can inspect a terminal API result without waiting for a daemon thread.
+    import app.queue_worker as queue_worker
+
+    previous_probe = queue_worker.ollama_up
+    register_workflow_handlers()
+    queue_worker.ollama_up = lambda: True
+    try:
+        QueueWorker().run_once()
+    finally:
+        queue_worker.ollama_up = previous_probe
+    run_id = response.json()["id"]
+    final = _get(f"/api/workflow-runs/{run_id}").json()
+    if final["status"] == "succeeded":
+        return httpx.Response(200, json=final)
+    if final["status"] == "failed":
+        return httpx.Response(502, json=final)
+    return httpx.Response(202, json=final)
 
 
 def _get(path: str) -> httpx.Response:
@@ -195,6 +220,36 @@ def test_profile_api_uses_json_schema_cleans_reply_and_persists_model(db_path, m
     get_response = _get(f"/api/products/{product_id}/profile")
     assert get_response.status_code == 200
     assert get_response.json() == body
+
+
+def test_profile_post_returns_pollable_run_then_worker_completes_with_mocked_ollama(
+    db_path, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("DEFAULT_MODEL", "pollable-profile-model")
+    company_info = tmp_path / "pollable-profile.md"
+    company_info.write_text(BAKERY_DOC, encoding="utf-8")
+    product_id = _create_product("Pollable profile", company_info)
+    _use_mock_transport(
+        monkeypatch,
+        lambda request: _chat_response(_profile_json(PROFILE_BAKERY_NO_NAME)),
+    )
+
+    response = _post_raw(f"/api/products/{product_id}/profile")
+    assert response.status_code == 202
+    queued = response.json()
+    assert queued["status"] == "queued"
+    assert queued["result"] is None
+    assert _get(f"/api/workflow-runs/{queued['id']}").json() == queued
+
+    import app.queue_worker as queue_worker
+
+    monkeypatch.setattr(queue_worker, "ollama_up", lambda: True)
+    register_workflow_handlers()
+    assert QueueWorker().run_once() == 1
+    completed = _get(f"/api/workflow-runs/{queued['id']}").json()
+    assert completed["status"] == "succeeded"
+    assert completed["result"] == PROFILE_BAKERY_NO_NAME
+    assert completed["model_name"] == "pollable-profile-model"
 
 
 def test_profile_accepts_grounded_summary_with_a_legitimate_colon(

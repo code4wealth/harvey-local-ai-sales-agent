@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +21,7 @@ NUM_CTX = 4096
 NOT_STATED = "not stated"
 GENERAL_GROUNDING_THRESHOLD = 0.60
 PAIN_POINT_GROUNDING_THRESHOLD = 0.80
+logger = logging.getLogger("harvey.workflow.profile")
 
 _CONTENT_WORD = re.compile(r"[a-z0-9]+", re.IGNORECASE)
 _STOP_WORDS = frozenset(
@@ -280,7 +283,7 @@ def execute_profile_run(product_id: int, run_id: int, model_name: str) -> Busine
 
 
 def submit_profile(product_id: int, *, model: str | None = None) -> int:
-    """Run a profile immediately, queueing the same task if Ollama is unavailable."""
+    """Persist and enqueue a profile run; the queue worker performs inference."""
     run_id = common.create_run(
         product_id,
         "profile",
@@ -292,32 +295,30 @@ def submit_profile(product_id: int, *, model: str | None = None) -> int:
     model_name = model
     try:
         model_name = llm_client.resolve_model_name(model)
-        execute_profile_run(product_id, run_id, model_name)
+        task_id = common.queue_run(
+            run_id=run_id,
+            product_id=product_id,
+            workflow="profile",
+            task_type=TASK_TYPE,
+            model_name=model_name,
+            error="Waiting for the local Ollama worker",
+        )
+        logger.info(
+            "profile workflow queued run_id=%s product_id=%s task_id=%s model=%s seed=%s temperature=%s",
+            run_id,
+            product_id,
+            task_id,
+            model_name,
+            llm_client.DEFAULT_SEED,
+            llm_client.DEFAULT_TEMPERATURE,
+        )
         return run_id
-    except llm_client.OllamaUnavailable as exc:
-        if not model_name:
-            error = f"{type(exc).__name__}: {exc}; no model name was resolved for replay"
-            common.set_run_failure(run_id, error, model_name)
-            raise common.WorkflowRunError(run_id, error) from exc
-        try:
-            task_id = common.queue_run(
-                run_id=run_id,
-                product_id=product_id,
-                workflow="profile",
-                task_type=TASK_TYPE,
-                model_name=model_name,
-                error=f"{type(exc).__name__}: {exc}",
-            )
-        except Exception as queue_error:
-            error = f"{type(exc).__name__}: {exc}; queueing failed: {queue_error}"
-            common.set_run_failure(run_id, error, model_name)
-            raise common.WorkflowRunError(run_id, error) from queue_error
-        exc.workflow_run_id = run_id
-        exc.queue_task_id = task_id
-        raise
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
-        common.set_run_failure(run_id, error, model_name)
+        try:
+            common.set_run_failure(run_id, error, model_name)
+        except Exception:
+            logger.exception("could not persist profile queue failure run_id=%s", run_id)
         raise common.WorkflowRunError(run_id, error) from exc
 
 
@@ -325,12 +326,26 @@ def _handle_queued_profile(payload: dict[str, Any]) -> None:
     try:
         product_id = int(payload["product_id"])
         run_id = int(payload["workflow_run_id"])
-        model_name = str(payload["model_name"]).strip()
     except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError("workflow.profile requires product_id, workflow_run_id, and model_name") from exc
-    if not model_name:
-        raise ValueError("workflow.profile task has no model_name")
+        raise ValueError("workflow.profile requires product_id and workflow_run_id") from exc
+
+    model_name = str(payload.get("model_name") or "").strip()
+    started = time.monotonic()
+    run_payload: dict[str, Any] | None = None
     try:
+        run_payload = common.read_run_payload(run_id)
+        if run_payload["product_id"] != product_id or run_payload["workflow"] != "profile":
+            raise ValueError("workflow.profile task does not match its stored workflow run")
+        if not model_name:
+            raise ValueError("workflow.profile task has no model_name")
+        logger.info(
+            "profile workflow started run_id=%s product_id=%s model=%s seed=%s temperature=%s",
+            run_id,
+            product_id,
+            model_name,
+            run_payload["seed"],
+            run_payload["temperature"],
+        )
         execute_profile_run(product_id, run_id, model_name)
     except llm_client.OllamaUnavailable as exc:
         common.update_run(
@@ -340,9 +355,38 @@ def _handle_queued_profile(payload: dict[str, Any]) -> None:
             model_name=model_name,
         )
         raise
-    except Exception as exc:
-        common.set_run_failure(run_id, f"{type(exc).__name__}: {exc}", model_name)
+    except BaseException as exc:
+        error = f"{type(exc).__name__}: {exc}"
+        try:
+            common.set_run_failure(run_id, error, model_name)
+        except Exception:
+            logger.exception("could not persist profile failure run_id=%s", run_id)
         raise
+    finally:
+        final_status = "unknown"
+        try:
+            final_payload = common.read_run_payload(run_id)
+            final_status = str(final_payload["status"])
+            if final_status == "running":
+                common.set_run_failure(
+                    run_id,
+                    "RuntimeError: profile run exited without a terminal status",
+                    model_name,
+                )
+                final_status = "failed"
+                final_payload = common.read_run_payload(run_id)
+            logger.info(
+                "profile workflow ended run_id=%s product_id=%s status=%s duration_seconds=%.3f model=%s seed=%s temperature=%s",
+                run_id,
+                product_id,
+                final_status,
+                time.monotonic() - started,
+                model_name or final_payload["model_name"],
+                final_payload["seed"],
+                final_payload["temperature"],
+            )
+        except Exception:
+            logger.exception("could not finalize/log profile run status run_id=%s", run_id)
 
 
 def register_profile_handler() -> None:

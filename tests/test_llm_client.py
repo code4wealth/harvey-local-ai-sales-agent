@@ -47,6 +47,39 @@ def test_environment_cannot_override_local_ollama_url(monkeypatch):
         client.close()
 
 
+def test_ollama_timeout_seconds_environment_setting_is_used(db_path, monkeypatch):
+    monkeypatch.setenv("OLLAMA_TIMEOUT_SECONDS", "17.5")
+    seen_timeouts = []
+
+    def factory(timeout):
+        seen_timeouts.append(timeout)
+        return httpx.Client(
+            base_url=llm_client.OLLAMA_URL,
+            timeout=timeout,
+            trust_env=False,
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(
+                    200, json={"message": {"content": '{"answer":"ok"}'}}
+                )
+            ),
+        )
+
+    monkeypatch.setattr(llm_client, "_client", factory)
+    result = llm_client.generate_json(
+        "Return an answer.", TinyAnswer, model="qwen3:4b", retries=0
+    )
+    assert result.answer == "ok"
+    assert seen_timeouts == [17.5]
+    assert llm_client.DEFAULT_TIMEOUT == 120.0
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "not-a-number"])
+def test_invalid_ollama_timeout_configuration_is_rejected(monkeypatch, value):
+    monkeypatch.setenv("OLLAMA_TIMEOUT_SECONDS", value)
+    with pytest.raises(ValueError, match="OLLAMA_TIMEOUT_SECONDS"):
+        llm_client._resolve_timeout()
+
+
 def test_options_schema_think_stripping_and_inference_log(db_path, monkeypatch):
     seen = {}
 
