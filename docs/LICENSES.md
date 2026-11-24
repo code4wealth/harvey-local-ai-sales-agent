@@ -1,20 +1,22 @@
 # Licence and version inventory
 
-Python versions and licence fields below are from `importlib.metadata` in the
-repository sandbox (`License-Expression` where present, otherwise `License`).
-They describe that sandbox, not the target Windows laptop.
-The Ollama executable is unavailable in this environment, so `ollama --version`
-and `ollama list` could not run. No model-card licence was available locally.
-Unverified items are marked explicitly; no licence is inferred for them.
+Python package versions and licence fields already recorded below came from
+`importlib.metadata` in the repository sandbox (`License-Expression` where
+present, otherwise `License`); they describe that sandbox, not the target
+laptop. No files were present under `test_evidence/offline/` for this update.
+The command-output block supplied with the request contained a placeholder, not
+captured output, for `ollama --version`, `ollama list`,
+`ollama show qwen3:4b --license`, and `pip show sentence-transformers`. Those
+values therefore remain `not run`; no version or licence has been inferred.
 
 ## Models and runtime
 
 | Component | Version / identifier | Licence | Role / evidence |
 |---|---|---|---|
 | Harvey Local AI Sales Agent | `0.1.0` (`pyproject.toml`) | `AGPL-3.0-only` | Application; `LICENSE` and upstream `NOTICE` are retained. |
-| Ollama | not run — executable unavailable | not run — local distribution metadata unavailable | Local model server; the app targets loopback only. |
-| Qwen3 | `qwen3:4b` tag; local model listing not run | verify at model card; not run | Local text generation model; model card was not readable in this environment. |
-| `sentence-transformers/all-MiniLM-L6-v2` | not run — model not locally available | verify at model card; not run | Local embedding model; no model-card metadata was available locally. |
+| Ollama | not run — no `ollama --version` output supplied | not run — no local licence output supplied | Local model server; the app targets loopback only. |
+| Qwen3 | `qwen3:4b` tag specified for the demo; installed tag not run | not run — no `ollama show qwen3:4b --license` output supplied | Local text generation model; local installation and model-card licence remain unverified. |
+| `sentence-transformers/all-MiniLM-L6-v2` | not run — no local model/version evidence supplied | not run — no model-card licence evidence supplied | Local embedding model; model files must be cached before use. |
 
 ## Python distributions
 
@@ -27,7 +29,7 @@ Unverified items are marked explicitly; no licence is inferred for them.
 | `starlette` | `1.10.0` | BSD-3-Clause | FastAPI's ASGI/web dependency. |
 | `beautifulsoup4` | `4.15.0` | MIT License | Declared dependency; HTML parsing. |
 | `pytest` | `8.4.2` | MIT | Declared development/test dependency. |
-| `sentence-transformers` | not run — not installed | not run — no local package metadata | Declared dependency for offline local embeddings; its model files must be cached before use. |
+| `sentence-transformers` | not run — no `pip show sentence-transformers` output supplied | not run — no package metadata supplied | Declared dependency for offline local embeddings; its model files must be cached before use. |
 | `huggingface-hub` | not run — not installed | not run — no local package metadata | Not installed in this sandbox; its transitive role/licence must be confirmed after dependency installation. |
 | `numpy` | not run — not installed | not run — no local package metadata | Not installed in this sandbox; may be part of the embedding runtime. |
 | `transformers` | not run — not installed | not run — no local package metadata | Not installed in this sandbox; may be part of the embedding runtime. |

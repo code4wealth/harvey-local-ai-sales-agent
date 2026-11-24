@@ -34,6 +34,7 @@ Ollama endpoint. Structured responses are validated, retried at most twice,
 and logged. Read `docs/WORKFLOWS.md` for contracts, `docs/HARDWARE.md` for
 recommendations, `docs/FAILURE_HANDLING.md` for outage recovery,
 `docs/NETWORK_AUDIT.md` for the outbound-client inventory,
+`docs/COST_AND_DEPENDENCIES.md` for service costs and network needs,
 `docs/LICENSES.md` for the audited licence/version inventory, and
 `docs/KNOWN_LIMITATIONS.md` for heuristic and model-evaluation caveats.
 

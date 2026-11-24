@@ -9,6 +9,13 @@ influencer score. Other modifiers, unusual title spellings, abbreviations,
 regional conventions, and genuine role equivalences may still be misclassified.
 No external title dictionary or LLM is consulted.
 
+## Stored-page research and crawling
+
+Research uses locally stored page content; BeautifulSoup is the only HTML
+parser in use. Scrapy and Playwright are not used. The application does not
+perform fresh page crawling or browser automation, so newly collected page
+content must be supplied separately.
+
 ## Local page embeddings
 
 MiniLM-L6 has a model `max_seq_length` of 256 word pieces and silently truncates

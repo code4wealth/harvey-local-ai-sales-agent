@@ -32,7 +32,8 @@ ollama pull qwen3:4b
 ```text
 RESULT: Reported live configuration: qwen3:4b, temperature 0, seed 42,
 repeat_penalty 1.0, retry temperature 0.2, Windows laptop, about 18 tokens/s.
-Ollama version, model-list output, and local service status: not run.
+Ollama version, model-list output, and local service status: not run; no actual
+command output was supplied for `ollama --version` or `ollama list`.
 ```
 
 ## 2. Create an isolated demo database and start the API
@@ -162,7 +163,8 @@ model demonstration and do not rerun either held-out evaluator.
 
 ```text
 RESULT: Historical release-pass verification — make verify passed (156 tests);
-git diff --check passed. Current Phase 2 verification: Filled after offline acceptance run.
+git diff --check passed. Current verification — make verify passed (165 tests);
+git diff --check passed. These are mocked/source checks, not live-model proof.
 ```
 
 ## Offline acceptance test
@@ -222,14 +224,21 @@ directory. The script's maximum recovery wait is configurable with
 
 ### Offline acceptance results
 
+No files were present under `test_evidence/offline/` when this update was made.
+The command-output block in the request contained a placeholder rather than
+captured outputs, so Ollama version/model/license and installed
+`sentence-transformers` metadata remain unverified. No values were inferred.
+
 | Check | Status | Evidence / result |
 |---|---|---|
 | `make verify` for the current implementation | passed — 165 tests; corpus validation and no-cloud scan passed. | Mocked/source checks, not live-model proof. |
 | `git diff --check` | passed. | No whitespace errors reported. |
-| PowerShell script execution | not run — `pwsh`/`powershell` unavailable in the sandbox. Filled after offline acceptance run. | Script syntax and real Windows networking behavior remain to be verified on the target laptop. |
-| Ollama version, installed model list, and live status | not run — `ollama` executable unavailable (`ollama: command not found`). Filled after offline acceptance run. | No Ollama/Qwen3 version, installed-model, or live-inference claim is made. |
-| Offline acceptance against the local database/API | not run — `data/harvey.db`, a live API, and Ollama were unavailable in the sandbox. Filled after offline acceptance run. | No timestamped acceptance result exists yet. |
-| Ollama-down / recovery acceptance | not run — requires the user's running API and a manual stop/start of local Ollama. Filled after offline acceptance run. | Do not treat mocked queue tests as a live outage test. |
+| PowerShell script execution | not run — no PowerShell result is present in `test_evidence/offline/`. | Script syntax and real Windows networking behavior remain to be verified on the target laptop. |
+| Ollama version, installed model list, and live status | not run — no `ollama --version` / `ollama list` output was supplied. | No Ollama/Qwen3 version, installed-model, or live-inference claim is made. |
+| Qwen3 licence metadata | not run — no `ollama show qwen3:4b --license` output was supplied. | Licence remains unverified; see `docs/LICENSES.md`. |
+| `sentence-transformers` package metadata | not run — no `pip show sentence-transformers` output was supplied. | Installed version and licence remain unverified; see `docs/LICENSES.md`. |
+| Offline acceptance against the local database/API | not run — no files were present in `test_evidence/offline/`. | No timestamped acceptance result exists yet. |
+| Ollama-down / recovery acceptance | not run — no files were present in `test_evidence/offline/`. | Do not treat mocked queue tests as a live outage test. |
 | User's internet-off test | not run by instruction. | Run manually on the target machine; keep its result separate from these local-only scripts. |
 
 ### Unresolved limitations
