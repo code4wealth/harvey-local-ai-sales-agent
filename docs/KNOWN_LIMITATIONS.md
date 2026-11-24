@@ -1,13 +1,29 @@
 # Known limitations
 
-## Research and verification scope
+## Research, tests, and verification scope
 
 Research reads only prospect page text already stored locally; the app does not
-fetch fresh web pages or crawl prospects. Automated tests use mocked Ollama
-responses, fake embeddings, and isolated local fixtures. `make verify` validates
-source boundaries and deterministic/mock behavior, but it does not prove live
-Ollama quality, Windows/PowerShell execution, Wi-Fi-off behavior, or a real
-Ollama outage/recovery. Those remain target-machine acceptance checks.
+fetch fresh web pages or crawl prospects. Workflow tests replace Ollama HTTP
+responses with mocks; embedding tests use fake models. `make verify` validates
+source boundaries and deterministic/mock behavior without making a real model
+request. It does not establish live Ollama quality, Windows/PowerShell
+execution, Wi-Fi-off behavior, or outage/recovery against a running Ollama
+server.
+
+No fresh real-hardware run or performance measurement was performed for this
+verification. Hardware-tier unit tests supply fake RAM/VRAM values to the pure
+selection rule; they do not detect or benchmark a physical machine. The
+historical operator-reported Windows laptop results below are prior observations,
+not a new hardware run or evidence for the current model setup.
+
+The duplicate-product database merge is covered only by a synthetic SQLite
+fixture in `tests/test_db.py::test_init_db_merges_casefold_duplicate_products_and_repoints_all_records`.
+No real user database was migrated or merged in this verification. Treat the
+fixture result as migration logic coverage, not confirmation against existing
+production databases.
+
+Windows/PowerShell execution, actual hardware behavior, fresh web research, and
+real Ollama inference/outage-recovery remain target-machine acceptance checks.
 
 ## Deterministic title fit
 
