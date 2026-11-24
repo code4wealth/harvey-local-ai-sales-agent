@@ -20,16 +20,25 @@ from app.llm_client import OllamaUnavailable  # noqa: E402
 from app.workflows import common, icp, profile  # noqa: E402
 
 
-def _metrics(task: str) -> tuple[int, float]:
+def _metrics(task: str) -> tuple[int, float, list[dict[str, Any]]]:
     conn = db.connect()
     try:
         rows = conn.execute(
-            "SELECT eval_tokens, seconds FROM inference_log WHERE task = ? ORDER BY id",
+            "SELECT eval_tokens, seconds, temperature, seed, repeat_penalty "
+            "FROM inference_log WHERE task = ? ORDER BY id",
             (task,),
         ).fetchall()
         eval_count = sum(int(row["eval_tokens"]) for row in rows)
         model_seconds = sum(float(row["seconds"]) for row in rows)
-        return eval_count, model_seconds
+        attempt_options = [
+            {
+                "temperature": row["temperature"],
+                "seed": row["seed"],
+                "repeat_penalty": row["repeat_penalty"],
+            }
+            for row in rows
+        ]
+        return eval_count, model_seconds, attempt_options
     finally:
         conn.close()
 
@@ -90,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     task = f"{args.workflow}:{run_id}"
-    eval_count, model_seconds = _metrics(task)
+    eval_count, model_seconds, attempt_options = _metrics(task)
     tokens_per_second = eval_count / model_seconds if model_seconds > 0 else None
     evidence: dict[str, Any] = {
         "workflow": args.workflow,
@@ -102,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
         "temperature": run["temperature"],
         "seed": run["seed"],
         "repeat_penalty": run["repeat_penalty"],
+        "inference_attempt_options": attempt_options,
         "created_at": run["created_at"],
         "updated_at": run["updated_at"],
         "error": run["error"] or raised_error,

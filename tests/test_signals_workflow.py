@@ -305,9 +305,12 @@ def test_glitched_quote_retries_and_keeps_the_clean_attempt(db_path, monkeypatch
         ]
     )
     prompts = []
+    options_sent = []
 
     def handler(request):
-        prompts.append(json.loads(request.content)["messages"][-1]["content"])
+        payload = json.loads(request.content)
+        prompts.append(payload["messages"][-1]["content"])
+        options_sent.append(payload["options"])
         return _chat_response(next(outputs))
 
     _use_mock_transport(monkeypatch, handler)
@@ -323,6 +326,9 @@ def test_glitched_quote_retries_and_keeps_the_clean_attempt(db_path, monkeypatch
     assert body["drop_counts"]["quote"] == 0
     assert len(prompts) == 2
     assert prompts[0] == prompts[1]
+    assert [options["seed"] for options in options_sent] == [42, 43]
+    assert [options["temperature"] for options in options_sent] == [0.0, 0.2]
+    assert all(options["repeat_penalty"] == 1.0 for options in options_sent)
     conn = db.connect()
     try:
         run = db.get_signal_run(conn, body["id"])
@@ -332,10 +338,14 @@ def test_glitched_quote_retries_and_keeps_the_clean_attempt(db_path, monkeypatch
         ).fetchall()
         assert [row["evidence"] for row in stored] == [quote]
         inference = conn.execute(
-            "SELECT repeat_penalty FROM inference_log WHERE task = ? ORDER BY id",
+            "SELECT temperature, seed, repeat_penalty FROM inference_log "
+            "WHERE task = ? ORDER BY id",
             (f"signals:{body['id']}",),
         ).fetchall()
-        assert [row["repeat_penalty"] for row in inference] == [1.0, 1.0]
+        assert [tuple(row) for row in inference] == [
+            (0.0, 42, 1.0),
+            (0.2, 43, 1.0),
+        ]
     finally:
         conn.close()
 
@@ -373,6 +383,11 @@ def test_fabricated_evidence_is_dropped_by_quote_verification(db_path, monkeypat
     conn = db.connect()
     try:
         assert conn.execute("SELECT COUNT(*) FROM signals").fetchone()[0] == 0
+        attempts = conn.execute(
+            "SELECT seed, temperature FROM inference_log WHERE task = ? ORDER BY id",
+            (f"signals:{body['id']}",),
+        ).fetchall()
+        assert [tuple(row) for row in attempts] == [(42, 0.0), (43, 0.2), (44, 0.2)]
     finally:
         conn.close()
 

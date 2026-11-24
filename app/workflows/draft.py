@@ -95,12 +95,39 @@ def validate_draft_evidence(
         if isinstance(signal.get("evidence"), str)
     }
     if not draft.evidence_used:
-        raise ValueError("evidence_used must include at least one verified signal")
-    for evidence in draft.evidence_used:
+        raise llm_client.ValidationFailure(
+            "evidence_used must include at least one verified signal",
+            details=[
+                {
+                    "field": "evidence_used",
+                    "check": "must include at least one exact stored verified signal",
+                    "value": draft.evidence_used,
+                }
+            ],
+        )
+    for index, evidence in enumerate(draft.evidence_used):
         if evidence not in allowed:
-            raise ValueError("evidence_used contains text not present in stored verified signals")
+            raise llm_client.ValidationFailure(
+                "evidence_used contains text not present in stored verified signals",
+                details=[
+                    {
+                        "field": f"evidence_used[{index}]",
+                        "check": "must exactly match a stored verified signal",
+                        "value": evidence,
+                    }
+                ],
+            )
         if evidence not in draft.body:
-            raise ValueError("every evidence_used string must appear verbatim in the body")
+            raise llm_client.ValidationFailure(
+                "every evidence_used string must appear verbatim in the body",
+                details=[
+                    {
+                        "field": f"evidence_used[{index}]",
+                        "check": "must appear verbatim in body",
+                        "value": evidence,
+                    }
+                ],
+            )
 
 
 def _clean_verified_signals(rows) -> list[dict[str, Any]]:

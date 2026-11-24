@@ -238,12 +238,15 @@ def test_profile_rejects_mangled_product_name_on_all_retries(db_path, monkeypatc
     }
     prompts = []
     model_outputs = []
+    options_sent = []
     calls = 0
 
     def handler(request):
         nonlocal calls
         calls += 1
-        prompts.append(json.loads(request.content)["messages"][-1]["content"])
+        payload = json.loads(request.content)
+        prompts.append(payload["messages"][-1]["content"])
+        options_sent.append(payload["options"])
         output = _profile_json(mangled_profile)
         model_outputs.append(output)
         return _chat_response(output)
@@ -253,6 +256,9 @@ def test_profile_rejects_mangled_product_name_on_all_retries(db_path, monkeypatc
 
     assert response.status_code == 502
     assert calls == 3
+    assert [options["seed"] for options in options_sent] == [42, 43, 44]
+    assert [options["temperature"] for options in options_sent] == [0.0, 0.2, 0.2]
+    assert all(options["repeat_penalty"] == 1.0 for options in options_sent)
     assert json.loads(model_outputs[0])["summary"] == "RelayC: A browser-based workspace..."
     assert "The summary must start with the exact product name RelayCue." not in prompts[0]
     assert "The summary must start with the exact product name RelayCue." in prompts[1]
@@ -261,17 +267,30 @@ def test_profile_rejects_mangled_product_name_on_all_retries(db_path, monkeypatc
     assert body["status"] == "failed"
     assert body["result"] is None
     assert "InvalidJsonResponse" in body["error"]
+    assert "summary must start with the exact product name" in body["error"]
+    assert 'value="RelayC: A browser-based workspace..."' in body["error"]
     conn = db.connect()
     try:
         assert conn.execute("SELECT COUNT(*) FROM business_profiles").fetchone()[0] == 0
         run = conn.execute(
-            "SELECT status, result_json, error, temperature, seed FROM workflow_runs"
+            "SELECT status, result_json, error, temperature, seed, repeat_penalty FROM workflow_runs"
         ).fetchone()
         assert run["status"] == "failed"
         assert run["result_json"] is None
         assert "InvalidJsonResponse" in run["error"]
+        assert "summary must start with the exact product name" in run["error"]
+        assert 'value="RelayC: A browser-based workspace..."' in run["error"]
         assert run["temperature"] == 0.0
         assert run["seed"] == 42
+        assert run["repeat_penalty"] == 1.0
+        attempt_options = conn.execute(
+            "SELECT temperature, seed, repeat_penalty FROM inference_log ORDER BY id"
+        ).fetchall()
+        assert [tuple(row) for row in attempt_options] == [
+            (0.0, 42, 1.0),
+            (0.2, 43, 1.0),
+            (0.2, 44, 1.0),
+        ]
     finally:
         conn.close()
 
@@ -483,6 +502,46 @@ def test_icp_grounding_failure_retries_once_and_uses_profile_fields(db_path, mon
     assert "not_for" in prompts[0]
     assert "Your previous answer was invalid:" in prompts[1]
     assert "restates the product or its features" in prompts[1]
+
+
+def test_icp_grounding_failure_stores_field_check_and_value(db_path, monkeypatch, tmp_path):
+    monkeypatch.setenv("DEFAULT_MODEL", "icp-specific-failure-model")
+    product_id = _create_product("ICP diagnostic", tmp_path / "unused.md")
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO business_profiles (product_id, profile_json, model_name, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (product_id, json.dumps(PROFILE_BAKERY), "profile-model", db.utcnow()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    invalid_icp = dict(ICP_BAKERY)
+    invalid_icp["trigger_events"] = ["seasonal menu"]
+
+    def handler(_request):
+        return _chat_response(json.dumps(invalid_icp))
+
+    _use_mock_transport(monkeypatch, handler)
+    response = _post(f"/api/products/{product_id}/icp")
+
+    assert response.status_code == 502
+    body = response.json()
+    assert body["status"] == "failed"
+    assert "InvalidJsonResponse" in body["error"]
+    assert "trigger_events[0]" in body["error"]
+    assert "restates the product or its features" in body["error"]
+    assert 'value="seasonal menu"' in body["error"]
+    conn = db.connect()
+    try:
+        run = conn.execute("SELECT status, error FROM workflow_runs").fetchone()
+        assert run["status"] == "failed"
+        assert "trigger_events[0]" in run["error"]
+        assert 'value="seasonal menu"' in run["error"]
+    finally:
+        conn.close()
 
 
 def test_invalid_generation_is_stored_and_returned_without_default_output(

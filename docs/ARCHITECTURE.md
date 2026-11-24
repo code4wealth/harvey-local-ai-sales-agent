@@ -34,15 +34,18 @@ hard-coded to the loopback Ollama endpoint. There is no cloud fallback.
 - Draft generation uses only a stored profile and verified signal evidence.
   Drafts are stored in `draft_runs`, never sent; no-verified-evidence cases
   are persisted as skipped without an inference call.
-- All AI inference uses `app/llm_client.py` and records model, local host,
-  token counts, latency, temperature, seed, repeat penalty, and status in `inference_log`.
+- All AI inference uses `app/llm_client.py`. Each `inference_log` row records
+  model, local host, token counts, latency, the actual temperature/seed/repeat
+  penalty for that request, and status.
 
 ## Determinism and failure handling
 
-Structured inference requests use temperature `0`, seed `42`, explicit context
-budgets, JSON-schema mode, and Pydantic validation. Workflow validators can
-reject schema-valid but ungrounded output and receive the same maximum of two
-retries. `think=false` is always set by the Ollama client.
+The first inference request uses temperature `0` and seed `42`; validation
+retries use temperature `0.2` and increment the seed for each request. Every
+request uses repeat penalty `1.0`, explicit context budgets, JSON-schema mode,
+and Pydantic validation. Workflow validators can reject schema-valid but
+ungrounded output and receive the same maximum of two retries. `think=false`
+is always set by the Ollama client.
 
 The persistent queue worker replays LLM-dependent tasks after Ollama recovers.
 Connection failures become `OllamaUnavailable` and are queued; timeouts remain

@@ -245,6 +245,9 @@ def test_draft_retries_unsupported_or_nonverbatim_evidence_then_persists_failure
     assert result["body"] is None
     assert result["evidence_used"] is None
     assert "InvalidJsonResponse" in result["error"]
+    assert "evidence_used[0]" in result["error"]
+    assert "must exactly match a stored verified signal" in result["error"]
+    assert 'value="Another invented quote."' in result["error"]
     assert calls == 3
     assert "previous answer was invalid" in prompts[1]
     assert "previous answer was invalid" in prompts[2]

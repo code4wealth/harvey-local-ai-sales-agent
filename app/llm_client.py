@@ -28,6 +28,7 @@ from app import db as _db
 OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_NUM_CTX = 4096
 DEFAULT_TEMPERATURE = 0.0
+RETRY_TEMPERATURE = 0.2
 DEFAULT_SEED = 42
 DEFAULT_REPEAT_PENALTY = 1.0
 
@@ -58,6 +59,18 @@ class ModelNotPulled(OllamaResponseError):
 
 class InvalidJsonResponse(OllamaResponseError):
     """The model did not return JSON matching the requested schema after retries."""
+
+
+class ValidationFailure(ValueError):
+    """A custom workflow check failure with extra, persistence-only diagnostics.
+
+    The exception string remains the retry feedback sent to the model. ``details``
+    enriches only the terminal stored error, leaving prompt text unchanged.
+    """
+
+    def __init__(self, message: str, *, details: list[dict[str, Any]] | None = None):
+        super().__init__(message)
+        self.details = [dict(item) for item in (details or [])]
 
 
 @dataclass(frozen=True)
@@ -165,6 +178,8 @@ def _write_inference_log(
     seconds: float,
     status: str,
     load_seconds: float | None = None,
+    temperature: float = DEFAULT_TEMPERATURE,
+    seed: int = DEFAULT_SEED,
 ) -> int:
     """Persist one request row. Success-path write errors intentionally propagate."""
     conn = _db.connect()
@@ -179,8 +194,8 @@ def _write_inference_log(
             seconds=seconds,
             load_seconds=load_seconds,
             status=status,
-            temperature=DEFAULT_TEMPERATURE,
-            seed=DEFAULT_SEED,
+            temperature=temperature,
+            seed=seed,
             repeat_penalty=DEFAULT_REPEAT_PENALTY,
         )
     finally:
@@ -196,6 +211,8 @@ def _write_error_log_best_effort(
     seconds: float,
     status: str,
     load_seconds: float | None = None,
+    temperature: float = DEFAULT_TEMPERATURE,
+    seed: int = DEFAULT_SEED,
 ) -> int | None:
     try:
         return _write_inference_log(
@@ -206,6 +223,8 @@ def _write_error_log_best_effort(
             seconds=seconds,
             load_seconds=load_seconds,
             status=status,
+            temperature=temperature,
+            seed=seed,
         )
     except Exception:
         logger.exception("could not write inference_log error row: task=%s status=%s", task, status)
@@ -258,6 +277,8 @@ def _chat(
     system: str | None,
     timeout: float,
     num_ctx: int,
+    temperature: float = DEFAULT_TEMPERATURE,
+    seed: int = DEFAULT_SEED,
     on_raw: Callable[[str], None] | None = None,
 ) -> _ChatResult:
     if num_ctx <= 0:
@@ -272,8 +293,8 @@ def _chat(
         "stream": False,
         "think": False,
         "options": {
-            "temperature": DEFAULT_TEMPERATURE,
-            "seed": DEFAULT_SEED,
+            "temperature": temperature,
+            "seed": seed,
             "repeat_penalty": DEFAULT_REPEAT_PENALTY,
             "num_ctx": num_ctx,
         },
@@ -294,6 +315,8 @@ def _chat(
             eval_tokens=0,
             seconds=elapsed,
             status="error:unavailable",
+            temperature=temperature,
+            seed=seed,
         )
         raise _unavailable(exc) from exc
     except httpx.TimeoutException as exc:
@@ -305,6 +328,8 @@ def _chat(
             eval_tokens=0,
             seconds=elapsed,
             status="error:timeout",
+            temperature=temperature,
+            seed=seed,
         )
         raise _timed_out(resolved_model, timeout, exc) from exc
 
@@ -317,6 +342,8 @@ def _chat(
             eval_tokens=0,
             seconds=wall_seconds,
             status="error:http",
+            temperature=temperature,
+            seed=seed,
         )
         raise ModelNotPulled(
             f"Model {resolved_model!r} is not pulled. Run: ollama pull {resolved_model}"
@@ -329,6 +356,8 @@ def _chat(
             eval_tokens=0,
             seconds=wall_seconds,
             status="error:http",
+            temperature=temperature,
+            seed=seed,
         )
         raise OllamaResponseError(
             f"Ollama returned HTTP {response.status_code}: {response.text[:300]}"
@@ -343,6 +372,8 @@ def _chat(
             eval_tokens=0,
             seconds=wall_seconds,
             status="error:invalid_json",
+            temperature=temperature,
+            seed=seed,
         )
         raise OllamaResponseError(f"Ollama returned a non-JSON body: {exc}") from exc
 
@@ -363,6 +394,8 @@ def _chat(
             eval_tokens=eval_tokens,
             seconds=seconds,
             status="error:invalid_json",
+            temperature=temperature,
+            seed=seed,
         )
         raise OllamaResponseError("Ollama /api/chat response must be a JSON object")
     message = body.get("message")
@@ -388,6 +421,8 @@ def _chat(
             seconds=seconds,
             status="ok",
             load_seconds=load_seconds,
+            temperature=temperature,
+            seed=seed,
         )
     else:
         log_id = _write_error_log_best_effort(
@@ -398,6 +433,8 @@ def _chat(
             seconds=seconds,
             status=initial_status,
             load_seconds=load_seconds,
+            temperature=temperature,
+            seed=seed,
         )
     return _ChatResult(content=content, log_id=log_id)
 
@@ -470,6 +507,45 @@ def _extract_json(text: str) -> Any:
     raise ValueError("no JSON object or array found in model output")
 
 
+def _format_diagnostic_value(value: Any, *, limit: int = 600) -> str:
+    if isinstance(value, BaseModel):
+        value = value.model_dump(mode="json")
+    try:
+        rendered = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        rendered = repr(value)
+    if len(rendered) > limit:
+        return rendered[: limit - 3] + "..."
+    return rendered
+
+
+def _validation_diagnostic(
+    error: Exception, *, parsed_value: Any, invalid_output: str
+) -> str:
+    if isinstance(error, ValidationFailure) and error.details:
+        reasons = []
+        for detail in error.details:
+            field = str(detail.get("field", "<unknown>"))
+            check = str(detail.get("check", str(error)))
+            value = _format_diagnostic_value(detail.get("value"))
+            reasons.append(f"{field}: {check}; value={value}")
+        return f"{error}; " + " | ".join(reasons)
+
+    if isinstance(error, ValidationError):
+        reasons = []
+        for detail in error.errors(include_url=False):
+            path = ".".join(str(part) for part in detail.get("loc", ())) or "<root>"
+            message = str(detail.get("msg", "validation failed"))
+            value = _format_diagnostic_value(detail.get("input"))
+            reasons.append(f"{path}: {message}; value={value}")
+        if reasons:
+            return "; ".join(reasons)
+
+    if parsed_value is not None:
+        return f"{error}; value={_format_diagnostic_value(parsed_value)}"
+    return f"{error}; invalid_output={_format_diagnostic_value(invalid_output)}"
+
+
 def generate_json(
     prompt: str,
     schema: type[BaseModel],
@@ -480,21 +556,48 @@ def generate_json(
     retries: int = 2,
     timeout: float = DEFAULT_TIMEOUT,
     num_ctx: int = DEFAULT_NUM_CTX,
+    base_seed: int = DEFAULT_SEED,
+    attempt_offset: int = 0,
     post_validate: Callable[[BaseModel], None] | None = None,
     retry_instruction: str | None = None,
+    on_attempt_options: Callable[[dict[str, Any]], None] | None = None,
     on_raw: Callable[[str], None] | None = None,
 ) -> BaseModel:
     """Generate structured output and validate it with Pydantic.
 
-    ``retries=2`` means up to three total inference calls. Each retry includes
-    the previous schema or ``post_validate`` error. Transport/response failures
-    propagate immediately so callers can queue or report the task instead of
-    hot-looping. If supplied, ``retry_instruction`` is appended to every retry
-    after a validation failure, and ``on_raw`` receives each reply before cleanup.
+    ``retries=2`` means up to three total inference calls. The first request
+    uses temperature 0 and ``base_seed + attempt_offset``; retries use
+    temperature 0.2 and increment the seed for each request. ``attempt_offset``
+    lets a multi-stage workflow continue the same seed/temperature sequence.
+    Each validation retry includes the previous schema or ``post_validate``
+    error. Transport/response failures propagate immediately so callers can
+    queue or report the task instead of hot-looping. If supplied,
+    ``retry_instruction`` is appended to every retry after a validation failure,
+    ``on_attempt_options`` receives the options before each request, and
+    ``on_raw`` receives each reply before cleanup.
     """
+    if retries < 0:
+        raise ValueError("retries must be non-negative")
+    if attempt_offset < 0:
+        raise ValueError("attempt_offset must be non-negative")
+
     last_error: Exception | None = None
+    last_value: Any = None
+    last_output = ""
     retry_prompt = prompt
     for attempt in range(retries + 1):
+        request_number = attempt_offset + attempt
+        attempt_seed = int(base_seed) + request_number
+        attempt_temperature = (
+            DEFAULT_TEMPERATURE if request_number == 0 else RETRY_TEMPERATURE
+        )
+        options = {
+            "temperature": attempt_temperature,
+            "seed": attempt_seed,
+            "repeat_penalty": DEFAULT_REPEAT_PENALTY,
+        }
+        if on_attempt_options is not None:
+            on_attempt_options(dict(options))
         result = _chat(
             retry_prompt,
             model=model,
@@ -503,23 +606,28 @@ def generate_json(
             system=system,
             timeout=timeout,
             num_ctx=num_ctx,
+            temperature=attempt_temperature,
+            seed=attempt_seed,
             on_raw=on_raw,
         )
+        candidate_value: Any = None
         try:
-            value = schema.model_validate(_extract_json(result.content))
+            candidate_value = schema.model_validate(_extract_json(result.content))
             if post_validate is not None:
-                post_validate(value)
-            return value
+                post_validate(candidate_value)
+            return candidate_value
         except (ValueError, ValidationError) as exc:
             last_error = exc
+            last_value = candidate_value
+            last_output = result.content
             _mark_error_log_best_effort(
                 result.log_id, task=task, status="error:invalid_json"
             )
             logger.warning(
                 "generate_json task=%s attempt %d/%d returned invalid output (%s)",
                 task,
-                attempt + 1,
-                retries + 1,
+                request_number + 1,
+                attempt_offset + retries + 1,
                 type(exc).__name__,
             )
             retry_prompt = (
@@ -529,7 +637,14 @@ def generate_json(
             )
             if retry_instruction:
                 retry_prompt += f"\n{retry_instruction}"
-    reason = type(last_error).__name__ if last_error is not None else "unknown validation error"
-    raise InvalidJsonResponse(
-        f"Model did not return valid {schema.__name__} after {retries + 1} attempts ({reason})"
+    reason = (
+        _validation_diagnostic(
+            last_error, parsed_value=last_value, invalid_output=last_output
+        )
+        if last_error is not None
+        else "unknown validation error"
     )
+    raise InvalidJsonResponse(
+        f"Model did not return valid {schema.__name__} after {retries + 1} attempts; "
+        f"last validation failure: {reason}"
+    ) from last_error

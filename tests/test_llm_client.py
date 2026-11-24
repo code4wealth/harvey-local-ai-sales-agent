@@ -164,11 +164,14 @@ def test_ollama_up_uses_tags_and_returns_online(monkeypatch):
     assert paths == ["/api/tags"]
 
 
-def test_invalid_json_retries_twice_with_validation_error_and_status(db_path, monkeypatch):
+def test_invalid_json_retries_twice_with_distinct_options_and_status(db_path, monkeypatch):
     prompts = []
+    options_sent = []
 
     def handler(request):
-        prompts.append(json.loads(request.content)["messages"][-1]["content"])
+        payload = json.loads(request.content)
+        prompts.append(payload["messages"][-1]["content"])
+        options_sent.append(payload["options"])
         return httpx.Response(200, json={"message": {"content": "not valid json"}})
 
     use_mock_transport(monkeypatch, handler)
@@ -177,12 +180,21 @@ def test_invalid_json_retries_twice_with_validation_error_and_status(db_path, mo
             "Return JSON.", TinyAnswer, model="qwen3:4b", task="retry-test", retries=2
         )
     assert len(prompts) == 3
+    assert [options["seed"] for options in options_sent] == [42, 43, 44]
+    assert len({options["seed"] for options in options_sent}) == 3
+    assert [options["temperature"] for options in options_sent] == [0.0, 0.2, 0.2]
+    assert all(options["repeat_penalty"] == 1.0 for options in options_sent)
     assert prompts[0] == "Return JSON."
     assert "Your previous answer was invalid:" in prompts[1]
     assert "matching the schema" in prompts[2]
     rows = inference_rows()
     assert len(rows) == 3
     assert all(row["status"] == "error:invalid_json" for row in rows)
+    assert [(row["temperature"], row["seed"], row["repeat_penalty"]) for row in rows] == [
+        (0.0, 42, 1.0),
+        (0.2, 43, 1.0),
+        (0.2, 44, 1.0),
+    ]
 
 
 @pytest.mark.parametrize(

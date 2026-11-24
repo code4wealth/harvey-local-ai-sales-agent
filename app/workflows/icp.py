@@ -126,6 +126,7 @@ def _check_list_field(
     items: list[str],
     support: list[str],
     issues: list[str],
+    details: list[dict[str, Any]],
 ) -> None:
     support_words = _content_words(" ".join(support))
     for index, item in enumerate(items):
@@ -133,12 +134,26 @@ def _check_list_field(
             continue
         if not item.strip():
             issues.append(f"{field_name}[{index}] is empty; use an empty list or 'not stated'")
+            details.append(
+                {
+                    "field": f"{field_name}[{index}]",
+                    "check": "must be non-empty or the list must use 'not stated'",
+                    "value": item,
+                }
+            )
             continue
         coverage = _word_coverage(item, support_words)
         if coverage < ICP_GROUNDING_THRESHOLD:
             issues.append(
                 f"{field_name}[{index}] has {coverage:.0%} profile-word overlap; "
                 f"requires at least {ICP_GROUNDING_THRESHOLD:.0%}"
+            )
+            details.append(
+                {
+                    "field": f"{field_name}[{index}]",
+                    "check": f"has {coverage:.0%} profile-word overlap; requires at least {ICP_GROUNDING_THRESHOLD:.0%}",
+                    "value": item,
+                }
             )
 
 
@@ -152,6 +167,7 @@ def validate_icp_grounding(
         raise TypeError("ICP grounding requires a BusinessProfile source")
 
     issues: list[str] = []
+    validation_details: list[dict[str, Any]] = []
     _check_list_field(
         field_name="industries",
         items=icp.industries,
@@ -159,18 +175,21 @@ def validate_icp_grounding(
             profile, "summary", "value_proposition", "typical_team_size", "working_situation"
         ),
         issues=issues,
+        details=validation_details,
     )
     _check_list_field(
         field_name="buyer_titles",
         items=icp.buyer_titles,
         support=_profile_items(profile, "typical_buyer"),
         issues=issues,
+        details=validation_details,
     )
     _check_list_field(
         field_name="pain_points",
         items=icp.pain_points,
         support=_profile_items(profile, "pain_points_solved", "working_situation"),
         issues=issues,
+        details=validation_details,
     )
     trigger_support = _profile_items(
         profile, "summary", "typical_team_size", "working_situation"
@@ -180,6 +199,7 @@ def validate_icp_grounding(
         items=icp.trigger_events,
         support=trigger_support,
         issues=issues,
+        details=validation_details,
     )
     disqualifier_support = _profile_items(profile, "not_for")
     _check_list_field(
@@ -187,6 +207,7 @@ def validate_icp_grounding(
         items=icp.disqualifiers,
         support=disqualifier_support,
         issues=issues,
+        details=validation_details,
     )
 
     numeric_basis = {int(value) for value in re.findall(r"\b\d+\b", profile.typical_team_size)}
@@ -197,6 +218,13 @@ def validate_icp_grounding(
         if bound_value is not None and bound_value not in numeric_basis:
             issues.append(
                 f"company_size.{bound_name}={bound_value} is not stated in typical_team_size"
+            )
+            validation_details.append(
+                {
+                    "field": f"company_size.{bound_name}",
+                    "check": f"must be stated numerically in typical_team_size={profile.typical_team_size!r}",
+                    "value": bound_value,
+                }
             )
 
     product_words = _content_words(
@@ -213,11 +241,25 @@ def validate_icp_grounding(
                 issues.append(
                     f"{field_name}[{index}] restates the product or its features instead of a buyer condition"
                 )
+                validation_details.append(
+                    {
+                        "field": f"{field_name}[{index}]",
+                        "check": "restates the product or its features instead of a buyer condition",
+                        "value": item,
+                    }
+                )
             if field_name == "trigger_events":
                 event_match = _TRIGGER_EVENT.search(item)
                 if event_match is None:
                     issues.append(
                         f"trigger_events[{index}] must describe a concrete external organizational event"
+                    )
+                    validation_details.append(
+                        {
+                            "field": f"trigger_events[{index}]",
+                            "check": "must describe a concrete external organizational event",
+                            "value": item,
+                        }
                     )
                 else:
                     action = _canonical_word(event_match.group(0))
@@ -226,9 +268,19 @@ def validate_icp_grounding(
                         issues.append(
                             f"trigger_events[{index}] uses an event action not stated in the profile"
                         )
+                        validation_details.append(
+                            {
+                                "field": f"trigger_events[{index}]",
+                                "check": f"event action {event_match.group(0)!r} is not stated in profile context",
+                                "value": item,
+                            }
+                        )
 
     if issues:
-        raise ValueError("ICP grounding failed: " + "; ".join(issues))
+        raise llm_client.ValidationFailure(
+            "ICP grounding failed: " + "; ".join(issues),
+            details=validation_details,
+        )
 
 
 def build_icp_prompt(stored_profile: str) -> str:

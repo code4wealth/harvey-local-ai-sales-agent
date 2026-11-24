@@ -448,8 +448,18 @@ def execute_signal_run(
     try:
         existing_run = db.get_signal_run(conn, run_id)
         quote_retries = int(existing_run["quote_retries"] or 0) if existing_run else 0
+        attempts_used = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM inference_log WHERE task = ?",
+                (f"signals:{run_id}",),
+            ).fetchone()[0]
+        )
     finally:
         conn.close()
+
+    def record_attempt_options(_options: dict[str, Any]) -> None:
+        nonlocal attempts_used
+        attempts_used += 1
 
     best_generated: SignalExtraction | None = None
     best_kept: list[ProspectSignal] = []
@@ -464,6 +474,8 @@ def execute_signal_run(
                 task=f"signals:{run_id}",
                 retries=2,
                 num_ctx=NUM_CTX,
+                attempt_offset=attempts_used,
+                on_attempt_options=record_attempt_options,
                 on_raw=on_raw,
             )
         except llm_client.InvalidJsonResponse:

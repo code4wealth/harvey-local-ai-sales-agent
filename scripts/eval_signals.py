@@ -569,6 +569,7 @@ def run_evaluation(
         f"think=false temperature={llm_client.DEFAULT_TEMPERATURE:g} "
         f"seed={llm_client.DEFAULT_SEED} "
         f"repeat_penalty={llm_client.DEFAULT_REPEAT_PENALTY:g} "
+        f"retry_temperature={llm_client.RETRY_TEMPERATURE:g} "
         f"num_ctx={signal_workflow.NUM_CTX} "
         f"prompt_sha256={current_prompt_hash}"
         + (f" frozen_sha256={frozen_hash}" if frozen_hash else "")
@@ -702,6 +703,7 @@ def run_evaluation(
             "temperature": llm_client.DEFAULT_TEMPERATURE,
             "seed": llm_client.DEFAULT_SEED,
             "repeat_penalty": llm_client.DEFAULT_REPEAT_PENALTY,
+            "retry_temperature": llm_client.RETRY_TEMPERATURE,
             "num_ctx": signal_workflow.NUM_CTX,
             "signal_prompt_sha256": current_prompt_hash,
             "frozen_signal_prompt_sha256": frozen_hash,

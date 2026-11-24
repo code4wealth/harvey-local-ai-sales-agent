@@ -109,6 +109,7 @@ def validate_profile_grounding(
         raise TypeError("profile grounding requires the stored product name")
     source_words = _content_words(document)
     issues: list[str] = []
+    validation_details: list[dict[str, Any]] = []
     name_suffix = (
         profile.summary[len(product_name) : len(product_name) + 1]
         if profile.summary.startswith(product_name)
@@ -120,6 +121,13 @@ def validate_profile_grounding(
         issues.append(
             f"summary must start with the exact product name {product_name!r} "
             "followed by a space or punctuation"
+        )
+        validation_details.append(
+            {
+                "field": "summary",
+                "check": f"must start with exact product name {product_name!r} followed by a space or punctuation",
+                "value": profile.summary,
+            }
         )
     fields = (
         "summary",
@@ -153,8 +161,18 @@ def validate_profile_grounding(
                     f"{location} has {coverage:.0%} content-word overlap; "
                     f"requires at least {threshold:.0%}"
                 )
+                validation_details.append(
+                    {
+                        "field": location,
+                        "check": f"has {coverage:.0%} content-word overlap; requires at least {threshold:.0%}",
+                        "value": statement,
+                    }
+                )
     if issues:
-        raise ValueError("profile grounding failed: " + "; ".join(issues))
+        raise llm_client.ValidationFailure(
+            "profile grounding failed: " + "; ".join(issues),
+            details=validation_details,
+        )
 
 
 def validate_stored_profile(value: Any) -> BusinessProfile:

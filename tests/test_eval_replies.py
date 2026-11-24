@@ -98,6 +98,7 @@ def test_development_evaluation_defaults_to_36_and_saves_redacted_metrics(
     assert report["run_config"]["temperature"] == 0.0
     assert report["run_config"]["seed"] == 42
     assert report["run_config"]["repeat_penalty"] == 1.0
+    assert report["run_config"]["retry_temperature"] == 0.2
     assert report["run_config"]["reply_prompt_sha256"] == eval_replies.reply_prompt_hash()
     assert report["run_config"]["frozen_reply_prompt_sha256"] is None
     assert report["overall_accuracy"] == {
