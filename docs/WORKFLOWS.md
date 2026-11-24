@@ -192,9 +192,11 @@ Implemented:
 5. **Outreach draft:** `POST` / `GET
    /api/products/{product_id}/prospects/{prospect_id}/draft`. The prompt uses
    only the product's stored business profile and valid signals from the
-   latest successful signal run. Every evidence item must be a verbatim stored
-   signal quote and must appear verbatim in the body. Invalid drafts retry
-   twice; persistent failure is returned and stored. With no verified signal,
+   latest successful signal run. The draft uses one or two 4-to-15-word spans,
+   each a substring of verified signal evidence for this prospect after case
+   and whitespace normalization only and quoted verbatim inside double quotes in
+   the body; no other prospect claims are allowed. Invalid drafts retry twice;
+   persistent failure is returned and stored. With no verified signal,
    the workflow skips the model and persists `no verified evidence`. Drafts are
    local records only; no send API exists.
 6. **Scoring and ranking:** deterministic; see the formula above and the

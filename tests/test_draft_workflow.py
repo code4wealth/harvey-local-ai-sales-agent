@@ -24,6 +24,7 @@ PROFILE = {
     "not_for": ["not stated"],
 }
 QUOTE = "The team hired five support specialists this month."
+QUOTE_SPAN = "The team hired five support specialists"
 
 
 def _post(path: str) -> httpx.Response:
@@ -144,9 +145,9 @@ def test_draft_uses_only_profile_and_verified_signals_and_is_never_sent(
     payloads = []
     calls = 0
     draft = {
-        "subject": "A thought about shift handoffs",
-        "body": f"I noticed this update: {QUOTE} RelayCue helps teams coordinate service handoffs.",
-        "evidence_used": [QUOTE],
+        "subject": "A brief note",
+        "body": f'"{QUOTE_SPAN}"',
+        "evidence_used": [QUOTE_SPAN],
     }
 
     def handler(request):
@@ -168,7 +169,7 @@ def test_draft_uses_only_profile_and_verified_signals_and_is_never_sent(
     assert result["prospect_id"] == prospect_id
     assert result["subject"] == draft["subject"]
     assert result["body"] == draft["body"]
-    assert result["evidence_used"] == [QUOTE]
+    assert result["evidence_used"] == [QUOTE_SPAN]
     assert result["model_name"] == "draft-test-model"
     assert result["temperature"] == 0.0
     assert result["seed"] == 42
@@ -178,6 +179,10 @@ def test_draft_uses_only_profile_and_verified_signals_and_is_never_sent(
     assert len(payloads) == 1
     payload = payloads[0]
     assert payload["format"] == draft_workflow.OutreachDraft.model_json_schema()
+    evidence_schema = payload["format"]["properties"]["evidence_used"]
+    assert evidence_schema["minItems"] == 1
+    assert evidence_schema["maxItems"] == 2
+    assert evidence_schema["items"]["pattern"] == draft_workflow.EVIDENCE_SPAN_PATTERN
     assert payload["options"] == {
         "temperature": 0.0,
         "seed": 42,
@@ -187,6 +192,12 @@ def test_draft_uses_only_profile_and_verified_signals_and_is_never_sent(
     prompt = payload["messages"][-1]["content"]
     assert "RelayCue: A local workspace" in prompt
     assert QUOTE in prompt
+    assert "Pick one verified signal" in prompt
+    assert "4-to-15-word phrases" in prompt
+    assert "inside double quotation marks in the body" in prompt
+    assert "Claim nothing else about the prospect" in prompt
+    assert prompt.count('"evidence_used":') == 1
+    assert "A brass sundial faces the lunar archive." in prompt
     assert "Private stored product" not in prompt
     assert "Private stored prospect" not in prompt
     assert "Private Contact" not in prompt
@@ -199,40 +210,64 @@ def test_draft_uses_only_profile_and_verified_signals_and_is_never_sent(
         assert saved["status"] == "succeeded"
         assert saved["subject"] == draft["subject"]
         assert saved["body"] == draft["body"]
-        assert json.loads(saved["evidence_used_json"]) == [QUOTE]
+        assert json.loads(saved["evidence_used_json"]) == [QUOTE_SPAN]
         assert conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0] == 0
     finally:
         conn.close()
 
 
-def test_draft_retries_unsupported_or_nonverbatim_evidence_then_persists_failure(
-    db_path, monkeypatch
-):
+def test_draft_evidence_validation_normalizes_only_case_and_whitespace():
+    draft = draft_workflow.OutreachDraft.model_validate(
+        {
+            "subject": "A brief note",
+            "body": '"the   team hired five support specialists"',
+            "evidence_used": [QUOTE_SPAN],
+        }
+    )
+    draft_workflow.validate_draft_evidence(draft, [_verified_signal()])
+
+
+def test_draft_evidence_validation_requires_double_quotes():
+    draft = draft_workflow.OutreachDraft.model_validate(
+        {
+            "subject": "A brief note",
+            "body": QUOTE_SPAN,
+            "evidence_used": [QUOTE_SPAN],
+        }
+    )
+    with pytest.raises(llm_client.ValidationFailure, match="enclosed in double quotes"):
+        draft_workflow.validate_draft_evidence(draft, [_verified_signal()])
+
+
+def test_draft_retries_invalid_spans_and_persists_failure(db_path, monkeypatch):
     product_id, prospect_id, _ = _create_case(db_path, signals=[_verified_signal()])
     outputs = [
         {
             "subject": "Unsupported evidence",
-            "body": "This mentions a fictional funding round.",
+            "body": '"A fictional funding round happened."',
             "evidence_used": ["A fictional funding round happened."],
         },
         {
-            "subject": "Evidence missing from body",
-            "body": "A brief note about the team.",
-            "evidence_used": [QUOTE],
+            "subject": "Paraphrased evidence",
+            "body": "The organization added five support specialists.",
+            "evidence_used": [QUOTE_SPAN],
         },
         {
-            "subject": "Still unsupported",
-            "body": "The evidence does not appear here.",
-            "evidence_used": ["Another invented quote."],
+            "subject": "Too-short evidence",
+            "body": '"hired five support"',
+            "evidence_used": ["hired five support"],
         },
     ]
     prompts = []
+    options = []
     calls = 0
 
     def handler(request):
         nonlocal calls
         calls += 1
-        prompts.append(json.loads(request.content)["messages"][-1]["content"])
+        payload = json.loads(request.content)
+        prompts.append(payload["messages"][-1]["content"])
+        options.append(payload["options"])
         return _response(outputs[calls - 1])
 
     _use_mock_transport(monkeypatch, handler)
@@ -246,9 +281,12 @@ def test_draft_retries_unsupported_or_nonverbatim_evidence_then_persists_failure
     assert result["evidence_used"] is None
     assert "InvalidJsonResponse" in result["error"]
     assert "evidence_used[0]" in result["error"]
-    assert "must exactly match a stored verified signal" in result["error"]
-    assert 'value="Another invented quote."' in result["error"]
+    assert "between 4 and 15 words" in result["error"]
     assert calls == 3
+    assert [item["seed"] for item in options] == [42, 43, 44]
+    assert [item["temperature"] for item in options] == [0.0, 0.2, 0.2]
+    assert "evidence_used contains text not present in stored verified signals" in prompts[1]
+    assert "must appear verbatim in the body" in prompts[2]
     assert "previous answer was invalid" in prompts[1]
     assert "previous answer was invalid" in prompts[2]
     assert _get(f"/api/products/{product_id}/prospects/{prospect_id}/draft").json() == result
@@ -258,6 +296,7 @@ def test_draft_retries_unsupported_or_nonverbatim_evidence_then_persists_failure
         row = db.get_draft_run(conn, result["id"])
         assert row["status"] == "failed"
         assert row["subject"] is None and row["body"] is None
+        assert "between 4 and 15 words" in row["error"]
     finally:
         conn.close()
 
@@ -341,9 +380,9 @@ def test_unavailable_ollama_queues_and_worker_replays_draft(db_path, monkeypatch
         conn.close()
 
     healthy_draft = {
-        "subject": "Support for the new team",
-        "body": f"I saw this update: {QUOTE}",
-        "evidence_used": [QUOTE],
+        "subject": "A brief note",
+        "body": f'"{QUOTE_SPAN}"',
+        "evidence_used": [QUOTE_SPAN],
     }
     _use_mock_transport(monkeypatch, lambda _request: _response(healthy_draft))
     import app.queue_worker as queue_worker
