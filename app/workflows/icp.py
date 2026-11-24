@@ -68,9 +68,9 @@ ICP_EXAMPLE = {
     "industries": ["independent bookstores"],
     "company_size": {"min": None, "max": None},
     "buyer_titles": ["shop owner"],
-    "pain_points": ["seasonal inventory planning"],
-    "trigger_events": ["opening a new storefront"],
-    "disqualifiers": ["organizations without a retail shop"],
+    "pain_points": ["inventory planning"],
+    "trigger_events": ["not stated"],
+    "disqualifiers": ["not stated"],
 }
 
 
@@ -303,16 +303,19 @@ def build_icp_prompt(stored_profile: str) -> str:
     example = json.dumps(ICP_EXAMPLE, ensure_ascii=False, separators=(",", ":"))
     return (
         "Create an ideal-customer profile using only facts supported by the stored business profile. "
-        "Use typical_buyer for buyer_titles, typical_team_size for company_size, "
-        "pain_points_solved and working_situation for pain_points, and not_for for disqualifiers. "
-        "Every non-empty item must be grounded in those profile fields. Do not invent industries, "
-        "sizes, titles, pains, events, or exclusions. If a list field is unsupported, use [] or "
-        "[\"not stated\"]. Set both company_size bounds to null unless numeric size is stated in "
-        "typical_team_size. A trigger event must be a concrete external organizational change "
+        "Use typical_buyer for buyer_titles and typical_team_size for company_size. "
+        "Every non-empty item must be grounded in the matching profile fields. "
+        "pain_points: use the profile's pain_points_solved and working_situation wording; "
+        "do not add a new pain. "
+        "trigger_events: if the profile does not describe an event, return [\"not stated\"]; "
+        "never invent one. Otherwise, use only a concrete external organizational change "
         "explicitly supported by the profile; do not restate the product, a feature, or the normal "
-        "working situation as an event. Disqualifiers must come from not_for; do not restate the "
-        "product or exclude organizations merely because they do not use it. Return only JSON "
-        "matching the schema.\n"
+        "working situation as an event. "
+        "disqualifiers: copy only not_for items verbatim; never write a condition about lacking "
+        "the product. "
+        "Do not invent industries, sizes, titles, pains, events, or exclusions. If any other list "
+        "field is unsupported, use [] or [\"not stated\"]. Set both company_size bounds to null "
+        "unless numeric size is stated in typical_team_size. Return only JSON matching the schema.\n"
         f"Example JSON (fictional bookstore; format only): {example}\n"
         f"Stored business profile:\n{stored_profile[:MAX_DOCUMENT_CHARS]}"
     )

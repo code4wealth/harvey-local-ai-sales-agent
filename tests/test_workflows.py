@@ -588,6 +588,20 @@ def test_icp_grounding_failure_retries_once_and_uses_profile_fields(db_path, mon
     assert "typical_team_size" in prompts[0]
     assert "working_situation" in prompts[0]
     assert "not_for" in prompts[0]
+    assert (
+        'trigger_events: if the profile does not describe an event, return ["not stated"]; '
+        "never invent one."
+    ) in prompts[0]
+    assert (
+        "disqualifiers: copy only not_for items verbatim; never write a condition about lacking "
+        "the product."
+    ) in prompts[0]
+    assert (
+        "pain_points: use the profile's pain_points_solved and working_situation wording; "
+        "do not add a new pain."
+    ) in prompts[0]
+    assert "fictional bookstore" in prompts[0]
+    assert "RelayCue" not in prompts[0] and "FieldNest" not in prompts[0]
     assert "Your previous answer was invalid:" in prompts[1]
     assert "restates the product or its features" in prompts[1]
 
