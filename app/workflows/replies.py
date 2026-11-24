@@ -209,8 +209,9 @@ def execute_reply_classification(reply_id: str, model_name: str) -> ReplyClassif
         ReplyClassification,
         model=model_name,
         task=f"reply-classification:{reply_id}",
-        retries=2,
+        retries=1,
         num_ctx=NUM_CTX,
+        retry_instruction="Use only the stored reply text, return one allowed label, and keep confidence within 0.0 to 1.0.",
     )
     if not isinstance(result, ReplyClassification):
         raise TypeError("reply classifier returned an unexpected schema type")

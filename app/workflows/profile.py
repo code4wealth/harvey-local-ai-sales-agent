@@ -274,8 +274,9 @@ def execute_profile_run(product_id: int, run_id: int, model_name: str) -> Busine
         BusinessProfile,
         model=model_name,
         task=f"profile:{run_id}",
-        retries=2,
+        retries=1,
         num_ctx=NUM_CTX,
+        retry_instruction="Use only the supplied company-info file; keep every field supported and remove invented claims.",
         post_validate=lambda result: validate_profile_grounding(
             result, document, product_name
         ),

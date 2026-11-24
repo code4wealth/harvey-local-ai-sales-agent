@@ -223,7 +223,7 @@ def test_classifier_failure_is_persisted_without_a_default_label(db_path, monkey
     assert body["label"] is None
     assert body["confidence"] is None
     assert "InvalidJsonResponse" in body["error"]
-    assert len(calls) == 3
+    assert len(calls) == 2
     assert _get("/api/replies/R003/classification").json() == body
 
 

@@ -330,7 +330,6 @@ def test_problem_statement_retries_invalid_evidence_then_persists_failure(db_pat
             "statement": "A growing organization added new staff this month.",
             "evidence": [EVIDENCE_SPAN],
         },
-        {"statement": STATEMENT, "evidence": ["hired five support"]},
     ]
     prompts = []
     options = []
@@ -351,12 +350,12 @@ def test_problem_statement_retries_invalid_evidence_then_persists_failure(db_pat
     assert result["evidence"] is None
     assert "InvalidJsonResponse" in result["error"]
     assert "evidence[0]" in result["error"]
-    assert len(options) == 3
-    assert [value["seed"] for value in options] == [42, 43, 44]
-    assert [value["temperature"] for value in options] == [0.0, 0.2, 0.2]
+    assert len(options) == 2
+    assert [value["seed"] for value in options] == [42, 43]
+    assert [value["temperature"] for value in options] == [0.0, 0.2]
     assert "previous answer was invalid" in prompts[1]
-    assert "previous answer was invalid" in prompts[2]
-    assert "must appear verbatim in the statement" in prompts[2]
+    assert "This is the only retry." in prompts[1]
+    assert "every evidence span must exactly match a verified signal" in prompts[1]
     assert _get(_path(product_id, prospect_id)).json() == result
 
     conn = db.connect()
@@ -365,7 +364,7 @@ def test_problem_statement_retries_invalid_evidence_then_persists_failure(db_pat
         assert row["status"] == "failed"
         assert row["statement"] == ""
         assert row["evidence_json"] is None
-        assert row["seed"] == 44
+        assert row["seed"] == 43
         assert row["temperature"] == 0.2
     finally:
         conn.close()

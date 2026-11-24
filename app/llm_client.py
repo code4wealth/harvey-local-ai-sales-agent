@@ -584,7 +584,7 @@ def generate_json(
     model: str | None = None,
     task: str = "manual",
     system: str | None = None,
-    retries: int = 2,
+    retries: int = 1,
     timeout: float | None = None,
     num_ctx: int = DEFAULT_NUM_CTX,
     base_seed: int = DEFAULT_SEED,
@@ -596,19 +596,20 @@ def generate_json(
 ) -> BaseModel:
     """Generate structured output and validate it with Pydantic.
 
-    ``retries=2`` means up to three total inference calls. The first request
-    uses temperature 0 and ``base_seed + attempt_offset``; retries use
-    temperature 0.2 and increment the seed for each request. ``attempt_offset``
-    lets a multi-stage workflow continue the same seed/temperature sequence.
-    Each validation retry includes the previous schema or ``post_validate``
-    error. Transport/response failures propagate immediately so callers can
-    queue or report the task instead of hot-looping. If supplied,
-    ``retry_instruction`` is appended to every retry after a validation failure,
-    ``on_attempt_options`` receives the options before each request, and
-    ``on_raw`` receives each reply before cleanup.
+    ``retries=1`` means one initial inference plus at most one validation retry.
+    The first request uses temperature 0 and ``base_seed + attempt_offset``;
+    the retry uses temperature 0.2 and the next seed. ``attempt_offset`` lets a
+    multi-stage workflow continue the same seed/temperature sequence. The retry
+    prompt includes the previous schema or ``post_validate`` error and stricter
+    instructions to check every constraint and source claim. Transport/response
+    failures propagate immediately so callers can queue or report the task
+    instead of hot-looping. If supplied, ``retry_instruction`` adds
+    workflow-specific constraints to the single retry; ``on_attempt_options``
+    receives the options before each request, and ``on_raw`` receives each
+    reply before cleanup.
     """
-    if retries < 0:
-        raise ValueError("retries must be non-negative")
+    if retries < 0 or retries > 1:
+        raise ValueError("retries must be 0 or 1; at most one validation retry is allowed")
     if attempt_offset < 0:
         raise ValueError("attempt_offset must be non-negative")
     timeout = _resolve_timeout(timeout)
@@ -665,10 +666,13 @@ def generate_json(
             retry_prompt = (
                 prompt
                 + f"\n\nYour previous answer was invalid: {last_error}. "
-                "Return only valid JSON matching the schema."
+                "This is the only retry. Correct the reported issue, follow every schema field, "
+                "allowed value, range, and validation constraint exactly, and re-check every "
+                "factual claim against the supplied source data. Do not invent or paraphrase "
+                "source facts. Return only valid JSON matching the schema."
             )
             if retry_instruction:
-                retry_prompt += f"\n{retry_instruction}"
+                retry_prompt += f"\nAdditional workflow checks: {retry_instruction}"
     reason = (
         _validation_diagnostic(
             last_error, parsed_value=last_value, invalid_output=last_output

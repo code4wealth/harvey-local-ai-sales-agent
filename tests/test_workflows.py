@@ -356,7 +356,7 @@ def test_profile_grounding_failure_retries_with_feedback_before_persisting(db_pa
         ),
     ],
 )
-def test_profile_rejects_product_name_or_near_variant_on_all_retries(
+def test_profile_rejects_product_name_or_near_variant_after_one_retry(
     db_path, monkeypatch, tmp_path, summary, expected_check, offending_text
 ):
     monkeypatch.setenv("DEFAULT_MODEL", "product-name-check-model")
@@ -392,12 +392,13 @@ def test_profile_rejects_product_name_or_near_variant_on_all_retries(
     response = _post(f"/api/products/{product_id}/profile")
 
     assert response.status_code == 502
-    assert calls == 3
-    assert [options["seed"] for options in options_sent] == [42, 43, 44]
-    assert [options["temperature"] for options in options_sent] == [0.0, 0.2, 0.2]
+    assert calls == 2
+    assert [options["seed"] for options in options_sent] == [42, 43]
+    assert [options["temperature"] for options in options_sent] == [0.0, 0.2]
     assert all(options["repeat_penalty"] == 1.0 for options in options_sent)
     assert "without using the product name" in prompts[0]
     assert "must not contain the product name" in prompts[1]
+    assert "This is the only retry." in prompts[1]
     body = response.json()
     assert body["status"] == "failed"
     assert body["result"] is None
@@ -423,7 +424,6 @@ def test_profile_rejects_product_name_or_near_variant_on_all_retries(
         assert [tuple(row) for row in attempt_options] == [
             (0.0, 42, 1.0),
             (0.2, 43, 1.0),
-            (0.2, 44, 1.0),
         ]
     finally:
         conn.close()
@@ -454,9 +454,9 @@ def test_profile_rejects_ungrounded_stray_token_and_persists_failure(
     response = _post(f"/api/products/{product_id}/profile")
 
     assert response.status_code == 502
-    assert calls == 3
-    assert [options["seed"] for options in options_sent] == [42, 43, 44]
-    assert [options["temperature"] for options in options_sent] == [0.0, 0.2, 0.2]
+    assert calls == 2
+    assert [options["seed"] for options in options_sent] == [42, 43]
+    assert [options["temperature"] for options in options_sent] == [0.0, 0.2]
     body = response.json()
     assert body["status"] == "failed"
     assert "key_features[0]" in body["error"]
@@ -474,7 +474,6 @@ def test_profile_rejects_ungrounded_stray_token_and_persists_failure(
         assert [tuple(row) for row in attempts] == [
             (0.0, 42, 1.0),
             (0.2, 43, 1.0),
-            (0.2, 44, 1.0),
         ]
     finally:
         conn.close()
@@ -488,9 +487,7 @@ def test_workflow_retries_invalid_json_and_validates_before_saving(db_path, monk
         "Bakery", company_info, test_root=tmp_path, monkeypatch=monkeypatch
     )
     prompts = []
-    replies = iter(
-        ["not json", json.dumps({"summary": "required fields are missing"}), _profile_json(PROFILE_BAKERY_NO_NAME)]
-    )
+    replies = iter(["not json", _profile_json(PROFILE_BAKERY_NO_NAME)])
 
     def handler(request):
         payload = json.loads(request.content)
@@ -502,16 +499,14 @@ def test_workflow_retries_invalid_json_and_validates_before_saving(db_path, monk
 
     assert response.status_code == 200
     assert response.json()["result"] == PROFILE_BAKERY_NO_NAME
-    assert len(prompts) == 3
+    assert len(prompts) == 2
     assert "Your previous answer was invalid:" in prompts[1]
     assert "matching the schema" in prompts[1]
-    assert "Your previous answer was invalid:" in prompts[2]
+    assert "This is the only retry." in prompts[1]
     conn = db.connect()
     try:
         rows = conn.execute("SELECT status FROM inference_log ORDER BY id").fetchall()
-        assert [row["status"] for row in rows] == [
-            "error:invalid_json", "error:invalid_json", "ok"
-        ]
+        assert [row["status"] for row in rows] == ["error:invalid_json", "ok"]
         assert conn.execute("SELECT COUNT(*) FROM business_profiles").fetchone()[0] == 1
     finally:
         conn.close()
@@ -779,8 +774,8 @@ def test_icp_rejects_ungrounded_stray_token_and_retries_with_changed_seed(
     response = _post(f"/api/products/{product_id}/icp")
 
     assert response.status_code == 502
-    assert [options["seed"] for options in options_sent] == [42, 43, 44]
-    assert [options["temperature"] for options in options_sent] == [0.0, 0.2, 0.2]
+    assert [options["seed"] for options in options_sent] == [42, 43]
+    assert [options["temperature"] for options in options_sent] == [0.0, 0.2]
     body = response.json()
     assert "industries[0]" in body["error"]
     assert "repeated-token artifact" in body["error"]
@@ -847,7 +842,7 @@ def test_invalid_generation_is_stored_and_returned_without_default_output(
     assert body["result"] is None
     assert "InvalidJsonResponse" in body["error"]
     assert body["model_name"] == "failure-test-model"
-    assert calls == 3
+    assert calls == 2
 
     get_response = _get(f"/api/products/{product_id}/profile")
     assert get_response.status_code == 200

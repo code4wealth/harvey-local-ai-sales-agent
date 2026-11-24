@@ -484,8 +484,9 @@ def execute_problem_statement_run(
         GeneratedProblemStatement,
         model=model_name,
         task=f"problem_statement:{run_id}",
-        retries=2,
+        retries=1,
         num_ctx=NUM_CTX,
+        retry_instruction="Use only stored profile and ICP context; every evidence span must exactly match a verified signal and the statement.",
         post_validate=lambda result: validate_problem_statement_evidence(
             result, verified_signals
         ),

@@ -367,8 +367,9 @@ def execute_icp_run(product_id: int, run_id: int, model_name: str) -> IdealCusto
         IdealCustomerProfile,
         model=model_name,
         task=f"icp:{run_id}",
-        retries=2,
+        retries=1,
         num_ctx=NUM_CTX,
+        retry_instruction="Use only the stored profile; remove unsupported ICP claims and keep numeric bounds within the stated team size.",
         post_validate=lambda result: validate_icp_grounding(result, stored_profile),
     )
     if not isinstance(generated, IdealCustomerProfile):
