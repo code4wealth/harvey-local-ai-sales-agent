@@ -161,5 +161,84 @@ These checks use tests and mocked Ollama responses; they do not count as a live
 model demonstration and do not rerun either held-out evaluator.
 
 ```text
-RESULT: make verify — passed (156 tests); git diff --check — passed.
+RESULT: Historical release-pass verification — make verify passed (156 tests);
+git diff --check passed. Current Phase 2 verification: Filled after offline acceptance run.
 ```
+
+## Offline acceptance test
+
+These PowerShell scripts use only the local Harvey API over a loopback HTTP
+connection. They do not call `pip`, `git`, or an external network service, and
+they do not include response text, page text, reply text, rationale, or model
+output in their evidence files. Evidence contains timestamps, statuses, counts,
+model/settings/hash metadata, error classes, and record IDs only. Files are
+written to `test_evidence/offline/` and ignored by Git.
+
+### Prepare the local demo data
+
+On the target Windows laptop, start Ollama with the intended local model already
+pulled, configure the API to use the local demo database, and start the API as
+shown above. Ensure the DB has RelayCue and FieldNest products with their local
+company-info paths, imported `SAMPLE_relaycue.csv` and `SAMPLE_fieldnest.csv`
+prospects with local page paths, and the imported sample reply `R001`. No web
+page is fetched by these scripts. IDs are resolved from the local API; pass an
+explicit `-ProfileProductId`, `-FirstIcpProductId`, or `-SecondIcpProductId`
+only when you need to select a different record.
+
+### Run acceptance with Ollama available
+
+From PowerShell in the repository root, with the API and Ollama running:
+
+```powershell
+.\scripts\offline_acceptance.ps1
+```
+
+The script checks API/hardware/status fields and the dashboard route at `/`,
+resolves product IDs, runs profile and ICP workflows, extracts signals for up to
+three stored-page RelayCue
+prospects, checks deterministic rankings for both products, creates an unsent
+draft, classifies `R001`, and checks the reported Ollama host and established
+API-process peers. It prints `[PASS]` or `[FAIL]` per step and writes a
+second-resolution timestamped `acceptance-*.json` evidence file. You can
+increase the signal sample with `-SignalLimit` or adjust the workflow wait with
+`-WaitSeconds`.
+
+### Check outage, deterministic ranking, and retry
+
+With the Harvey API left running, stop Ollama before starting this script. It
+will prompt you to confirm the outage and later prompt you to start Ollama
+again. It tests an AI signal request, persisted queued status/error and IDs,
+ranking during the outage, queue counts, a worker wake request, and completion
+of the same queued signal run after recovery:
+
+```powershell
+.\scripts\ollama_down_check.ps1
+```
+
+If Ollama was already stopped, use `-OllamaAlreadyStopped`. It writes a
+second-resolution timestamped `ollama-down-*.json` file under the same evidence
+directory. The script's maximum recovery wait is configurable with
+`-WaitSeconds`.
+
+### Offline acceptance results
+
+| Check | Status | Evidence / result |
+|---|---|---|
+| `make verify` for the current implementation | passed — 165 tests; corpus validation and no-cloud scan passed. | Mocked/source checks, not live-model proof. |
+| `git diff --check` | passed. | No whitespace errors reported. |
+| PowerShell script execution | not run — `pwsh`/`powershell` unavailable in the sandbox. Filled after offline acceptance run. | Script syntax and real Windows networking behavior remain to be verified on the target laptop. |
+| Ollama version, installed model list, and live status | not run — `ollama` executable unavailable (`ollama: command not found`). Filled after offline acceptance run. | No Ollama/Qwen3 version, installed-model, or live-inference claim is made. |
+| Offline acceptance against the local database/API | not run — `data/harvey.db`, a live API, and Ollama were unavailable in the sandbox. Filled after offline acceptance run. | No timestamped acceptance result exists yet. |
+| Ollama-down / recovery acceptance | not run — requires the user's running API and a manual stop/start of local Ollama. Filled after offline acceptance run. | Do not treat mocked queue tests as a live outage test. |
+| User's internet-off test | not run by instruction. | Run manually on the target machine; keep its result separate from these local-only scripts. |
+
+### Unresolved limitations
+
+The acceptance scripts have not been executed in PowerShell here. Runtime
+behavior on the target Windows build, the `Get-NetTCPConnection` permission
+requirements, the locally imported sample data, and live Ollama queue recovery
+remain user verification items. Hardware GPU detection currently reports
+NVIDIA VRAM via `nvidia-smi` only. Exact Ollama/model-card metadata and licence
+metadata for embedding/transitive packages remain unavailable; see
+`docs/LICENSES.md`. Static source scans and mocks are not a substitute for the
+manual internet-off test, which remains unrun.

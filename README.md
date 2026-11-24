@@ -31,8 +31,11 @@ service.
 
 All model calls pass through `app/llm_client.py`, which is fixed to the local
 Ollama endpoint. Structured responses are validated, retried at most twice,
-and logged. Read `docs/WORKFLOWS.md` for contracts and `docs/KNOWN_LIMITATIONS.md`
-for heuristic and model-evaluation caveats.
+and logged. Read `docs/WORKFLOWS.md` for contracts, `docs/HARDWARE.md` for
+recommendations, `docs/FAILURE_HANDLING.md` for outage recovery,
+`docs/NETWORK_AUDIT.md` for the outbound-client inventory,
+`docs/LICENSES.md` for the audited licence/version inventory, and
+`docs/KNOWN_LIMITATIONS.md` for heuristic and model-evaluation caveats.
 
 ## Quickstart
 
@@ -65,8 +68,9 @@ it does not run Ollama or either held-out evaluator. The reply evaluator writes
 redacted JSON reports beneath `test_evidence/real_run/`. It reports aggregate
 metrics and misclassified IDs only, never reply text or rationale. See
 `docs/DEMO.md` for ordered local demo commands and the reported live-run
-snapshot; unavailable run outputs are marked `not run`, and unreported outcomes
-are marked `not supplied`.
+snapshot. The offline acceptance procedure is in
+`docs/DEMO.md#offline-acceptance-test`; unavailable outputs are marked `not run`
+and unreported outcomes are marked `not supplied`.
 
 ## Reported live-run snapshot
 
@@ -124,10 +128,12 @@ No held-out reply or page text is included here.
 - `GET /api/products/{id}/ranking`
 - `POST` / `GET /api/products/{id}/prospects/{prospect_id}/draft`
 - `POST` / `GET /api/replies/{reply_id}/classification`
+- `GET /api/hardware` and `GET /api/status`
+- `POST /api/queue/retry` (wakes the local queue worker)
 
 The draft endpoint creates an unsent draft only. Email transmission is out of
 scope.
 
 ## Licence
 
-AGPL-3.0-only. See `LICENSE`, `NOTICE`, and `docs/MODELS_AND_LICENCES.md`.
+AGPL-3.0-only. See `LICENSE`, `NOTICE`, and `docs/LICENSES.md` (with model notes in `docs/MODELS_AND_LICENCES.md`).

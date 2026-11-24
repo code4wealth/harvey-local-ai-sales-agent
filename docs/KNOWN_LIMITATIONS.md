@@ -19,12 +19,11 @@ context. An individual unusually long token can also exceed the approximate
 character target before the model's token limit is applied.
 
 The embedding model is loaded lazily. A failed model load is not cached, so a
-later request tries loading again; when the model is not cached and the machine
-is offline, repeated requests can incur model-hub timeouts before scoring falls
-back to a partial result. This repeated-load behavior is accepted. Set
-`HF_HUB_OFFLINE` in the shell before starting Python if an offline load is
-intended; changing it after importing the embedding/model libraries may be too
-late for their network configuration.
+later request tries loading again. The loader sets `HF_HUB_OFFLINE=1` and
+`TRANSFORMERS_OFFLINE=1` before importing the model library. If model files are
+not cached, loading fails locally and ranking falls back to its existing partial
+result; the app does not download them from a model hub. Pre-cache the model
+before starting the offline application.
 
 ## Profile and ICP grounding heuristics
 

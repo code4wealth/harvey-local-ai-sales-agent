@@ -56,8 +56,8 @@ retained as context. See `docs/WORKFLOWS.md` for detailed data contracts.
 - [x] Product create/list, product-scoped CSV import, prospect listing/detail, and local UTF-8 page-text storage/loading; no URL fetching (deterministic)
 - [x] Atomic CSV import with validated optional fields and local page-path containment (deterministic)
 - [x] Add production `app/embeddings.py` using cached local `all-MiniLM-L6-v2`; vector BLOB encoding is versioned; unit tests use a test-only model stub (mocked)
-- [x] Add `scripts/smoke_embeddings.py` for first download and later `HF_HUB_OFFLINE=1` checks (script implementation tested with the test-only model stub)
-- [x] Real embeddings smoke passed online and offline on Windows, Python 3.12.16; offline run used `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`, with Wi-Fi on for both runs (operator-provided output: `test_evidence/real_run/smoke_embeddings.txt`)
+- [x] Add `scripts/smoke_embeddings.py` to report the cached local model's sequence limit and vector dimension (script implementation tested with the test-only model stub)
+- [x] Historical operator-reported embeddings smoke on Windows, Python 3.12.16; the reported offline run used `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`, with Wi-Fi on for both runs (`test_evidence/real_run/smoke_embeddings.txt`). Current code always forces both offline flags before loading; this historical smoke was not rerun for the current task.
 - [x] Quote verification normalizes NFKC, straightens curly quotes/dashes, collapses whitespace, lowercases, requires at least 8 normalized characters and 2 words, retains only normalized source substrings, and returns the drop count (deterministic)
 - [x] Excel CSV files open as `utf-8-sig`; row errors are reported before any insert, and the import is atomic (deterministic)
 - [x] Prospect page loading rejects absolute paths and `..` components on both POSIX and Windows; local files stay under `data/prospect_pages/` (deterministic)

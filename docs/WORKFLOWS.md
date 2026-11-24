@@ -45,15 +45,13 @@ workflow milestones; prompt tuning and live results remain operator-owned.
   longer inputs. `embed_long_text` splits page text on whitespace into chunks
   of about 800 characters, embeds at most six chunks, averages their vectors,
   and renormalizes the result. Text beyond six chunks is omitted.
-- First run `python scripts/smoke_embeddings.py` while the model can be
-  downloaded; it reports `max_seq_length` and vector dimension. After the model
-  is cached, run with `HF_HUB_OFFLINE=1` to check offline load and inference.
-  Set offline variables in the shell before starting Python (before importing
-  the embeddings library). On Windows PowerShell use
-  `$env:HF_HUB_OFFLINE='1'; python scripts/smoke_embeddings.py`; in Command
-  Prompt use `set HF_HUB_OFFLINE=1 && python scripts/smoke_embeddings.py`.
-  Failed model loads are not cached, so a later call will try loading again.
-  No embedding output is fabricated when the model is absent.
+- The application sets both `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`
+  inside the lazy loader before importing the model library. Cache the model
+  files separately before starting the application; the AI path never downloads
+  them. `python scripts/smoke_embeddings.py` reports `max_seq_length` and vector
+  dimension only when the model is already available locally. Missing files
+  raise `EmbeddingModelUnavailable`, and no embedding output is fabricated.
+  Failed model loads are not cached, so a later call retries the local load.
 
 ## Quote verification — deterministic
 
