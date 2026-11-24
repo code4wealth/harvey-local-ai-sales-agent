@@ -11,6 +11,18 @@ def test_tiering_from_fake_ram_and_vram_values():
     assert hardware.recommend(None, None) == (hardware.TIER_LOW, "qwen3:1.7b")
 
 
+def test_standard_laptop_tier_recommendation():
+    assert hardware.recommend(8, None) == (hardware.TIER_LAPTOP, "qwen3:4b")
+    assert hardware.recommend(15.9, 5.9) == (hardware.TIER_LAPTOP, "qwen3:4b")
+    assert hardware.recommended_num_ctx_for_tier(hardware.TIER_LAPTOP) == 4096
+
+
+def test_high_performance_tier_recommendation():
+    assert hardware.recommend(32, None) == (hardware.TIER_HIGH, "qwen3:14b")
+    assert hardware.recommend(8, 12) == (hardware.TIER_HIGH, "qwen3:14b")
+    assert hardware.recommended_num_ctx_for_tier(hardware.TIER_HIGH) == 8192
+
+
 def test_context_budget_is_keyed_to_hardware_tier():
     assert hardware.recommended_num_ctx_for_tier(hardware.TIER_HIGH) == 8192
     assert hardware.recommended_num_ctx_for_tier(hardware.TIER_PLUS) == 4096
