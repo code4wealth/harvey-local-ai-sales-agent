@@ -153,6 +153,16 @@ def test_classification_receives_only_reply_text_and_stores_result(db_path, monk
     prompt = payload["messages"][-1]["content"]
     assert reply_text in prompt
     assert "not now" in prompt
+    assert "question: asks a specific question about how the product works" in prompt
+    assert "willingness to see material or talk is interested" in prompt
+    assert "wrong_person: says the sender is not the right contact or does not own the topic" in prompt
+    assert "a polite decline with referral is still wrong_person" in prompt
+    assert "an automatic away message is out_of_office" in prompt
+    assert "other: anything that fits no other label" in prompt
+    assert "confusion about why the message arrived" in prompt
+    assert "a misdirected or shared mailbox" in prompt
+    assert "or an unclear reply" in prompt
+    assert prompt.count('{\"label\":') == 1
     assert "alternate-contact referral" in prompt
     assert "politely or directly asks" in prompt
     assert "R001" not in prompt
