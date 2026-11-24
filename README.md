@@ -64,8 +64,25 @@ python scripts/eval_replies.py --model qwen3:4b --held-out       # gated; requir
 it does not run Ollama or either held-out evaluator. The reply evaluator writes
 redacted JSON reports beneath `test_evidence/real_run/`. It reports aggregate
 metrics and misclassified IDs only, never reply text or rationale. See
-`docs/DEMO.md` for ordered local demo commands and explicit placeholders for
-results that still require a live local run.
+`docs/DEMO.md` for ordered local demo commands and the reported live-run
+snapshot; result fields without supplied values are marked `not run`.
+
+## Reported live-run snapshot
+
+Reported configuration: `qwen3:4b`, temperature `0`, seed `42`,
+`repeat_penalty=1.0`, Windows laptop, about 18 tokens/s. Missing result values
+are marked `not run`; a supplied run count is recorded separately.
+
+- Signals, development: summary lines — not run.
+- Signals, held-out: 12 pages, one run; summary lines — not run.
+- Replies, development (36): per-label accuracy — not run; per-difficulty
+  accuracy — not run.
+- Replies, held-out (24, one run): per-label accuracy — not run;
+  per-difficulty accuracy — not run.
+- Profile and ICP: both products produced filled, different ICPs; company size
+  was null for both.
+
+No held-out reply or page text is included here.
 
 ## API highlights
 

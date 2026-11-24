@@ -1,9 +1,10 @@
 # Local demo runbook
 
 This runbook is for a real local Ollama demonstration. The commands are listed
-in execution order but have **not** been run for the current workflow changes.
-Do not present mocked tests as live-model evidence. Fill each `RESULT` line only
-after the corresponding live command completes.
+in execution order; not every command output is present in the supplied run
+record. Missing result values are marked `not run`, and supplied held-out run
+counts are recorded separately. Do not present mocked tests as live-model
+evidence or include held-out reply/page text.
 
 ## 1. Install and start local Ollama
 
@@ -29,7 +30,7 @@ ollama pull qwen3:4b
 ```
 
 ```text
-RESULT: fill after live run — record Ollama version, model list, and local service status.
+RESULT: Reported live configuration: qwen3:4b, temperature 0, seed 42, repeat_penalty 1.0, Windows laptop, about 18 tokens/s. Ollama version, model-list output, and local service status: not run.
 ```
 
 ## 2. Create an isolated demo database and start the API
@@ -49,7 +50,7 @@ All AI inference is routed to local Ollama at `127.0.0.1:11434`; this
 application has no cloud fallback.
 
 ```text
-RESULT: fill after live run — record the actual reply-import count and API startup result.
+RESULT: Reply-import count and API startup output: not run.
 ```
 
 ## 3. Create a product, import prospects, and run its profile and ICP
@@ -73,7 +74,7 @@ Check the corresponding `GET` endpoint after the worker retries. The commands
 use only fictional SAMPLE product/prospect data.
 
 ```text
-RESULT: fill after live run — record product ID, prospect import counts, profile/ICP statuses, and any queued retries.
+RESULT: Both products produced filled, different ICPs; company size was null for both. Product IDs, prospect import counts, and queued-retry counts: not run.
 ```
 
 ## 4. Inspect ranking, signals, and an unsent draft
@@ -93,7 +94,7 @@ made. Ranking remains deterministic and reports missing components rather than
 inventing inputs.
 
 ```text
-RESULT: fill after live run — record signal-run status, ranking status/tier, and draft status. Do not claim email was sent.
+RESULT: Signals development summary lines: not run. Signals held-out: 12 pages, one run; summary lines: not run. Signal-run status, ranking status/tier, and draft status: not run.
 ```
 
 ## 5. Classify one sample reply and run the development evaluator
@@ -107,14 +108,15 @@ python scripts/eval_replies.py --model qwen3:4b
 The evaluator defaults to the 36 development replies and stores a redacted
 report under `test_evidence/real_run/`. Reports contain aggregate metrics,
 confusion counts, and misclassified IDs only; they do not contain reply text or
-rationale. **Do not run the held-out evaluator as part of this demo.** The
-held-out split is reserved and requires a matching frozen reply-prompt hash.
+rationale. **Do not rerun the held-out evaluator as part of this demo.** The
+supplied run record says the 24-example held-out reply set was run once; the
+held-out evaluator remains gated by a matching frozen reply-prompt hash.
 
 ```text
-RESULT: fill after live run — record the actual development accuracy, per-label/per-difficulty metrics, report path, and duration.
+RESULT: Replies development (36): per-label and per-difficulty accuracy, report path, and duration — not run. Replies held-out (24, one run): per-label and per-difficulty accuracy — not run.
 ```
 
-## 6. Verify implementation without running a live or held-out evaluation
+## 6. Verify implementation without rerunning live or held-out evaluations
 
 ```bash
 make verify
@@ -122,8 +124,8 @@ git diff --check
 ```
 
 These checks use tests and mocked Ollama responses; they do not count as a live
-model demonstration. No held-out evaluation is authorized by this runbook.
+model demonstration and do not rerun either held-out evaluator.
 
 ```text
-RESULT: fill after live run — record command exit codes and test count.
+RESULT: make verify — passed (152 tests); git diff --check — passed.
 ```
