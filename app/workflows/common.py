@@ -3,9 +3,36 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+import re
+from typing import Any, Iterator
 
 from app import db
+
+
+_STRAY_TOKEN_ARTIFACT = re.compile(r"(\w+): \1")
+
+
+def iter_string_fields(value: Any, path: str = "") -> Iterator[tuple[str, str]]:
+    """Yield every string leaf and its dotted/indexed field path."""
+    if isinstance(value, str):
+        if path:
+            yield path, value
+    elif isinstance(value, dict):
+        for field_name, nested in value.items():
+            child_path = f"{path}.{field_name}" if path else str(field_name)
+            yield from iter_string_fields(nested, child_path)
+    elif isinstance(value, (list, tuple)):
+        for index, nested in enumerate(value):
+            yield from iter_string_fields(nested, f"{path}[{index}]")
+
+
+def ungrounded_stray_token_matches(text: str, source_document: str) -> list[str]:
+    """Return repeated-word artifacts whose exact matched text is not sourced."""
+    return [
+        match.group(0)
+        for match in _STRAY_TOKEN_ARTIFACT.finditer(text)
+        if match.group(0) not in source_document
+    ]
 
 
 class ProductNotFound(LookupError):

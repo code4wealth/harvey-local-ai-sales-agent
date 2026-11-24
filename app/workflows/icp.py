@@ -168,6 +168,22 @@ def validate_icp_grounding(
 
     issues: list[str] = []
     validation_details: list[dict[str, Any]] = []
+    source_document = "\n".join(
+        value for _, value in common.iter_string_fields(profile.model_dump(mode="python"))
+    )
+    for field_path, field_value in common.iter_string_fields(
+        icp.model_dump(mode="python")
+    ):
+        for matched_text in common.ungrounded_stray_token_matches(
+            field_value, source_document
+        ):
+            check = (
+                f"contains repeated-token artifact {matched_text!r} not found in source profile"
+            )
+            issues.append(f"{field_path} {check}")
+            validation_details.append(
+                {"field": field_path, "check": check, "value": matched_text}
+            )
     _check_list_field(
         field_name="industries",
         items=icp.industries,

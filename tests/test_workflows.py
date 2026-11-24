@@ -153,6 +153,7 @@ def test_profile_api_uses_json_schema_cleans_reply_and_persists_model(db_path, m
     body = response.json()
     assert body["status"] == "succeeded"
     assert body["result"] == PROFILE_BAKERY
+    assert body["result"]["summary"].startswith("Bakery: ")
     assert body["model_name"] == "sample-test-model"
     assert body["temperature"] == 0.0
     assert body["seed"] == 42
@@ -287,6 +288,55 @@ def test_profile_rejects_mangled_product_name_on_all_retries(db_path, monkeypatc
             "SELECT temperature, seed, repeat_penalty FROM inference_log ORDER BY id"
         ).fetchall()
         assert [tuple(row) for row in attempt_options] == [
+            (0.0, 42, 1.0),
+            (0.2, 43, 1.0),
+            (0.2, 44, 1.0),
+        ]
+    finally:
+        conn.close()
+
+
+def test_profile_rejects_ungrounded_stray_token_and_persists_failure(
+    db_path, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("DEFAULT_MODEL", "profile-stray-token-model")
+    company_info = tmp_path / "stray-token.md"
+    company_info.write_text(BAKERY_DOC, encoding="utf-8")
+    product_id = _create_product("Bakery", company_info)
+    invalid_profile = dict(PROFILE_BAKERY)
+    invalid_profile["key_features"] = ["B2: B2B software", "pre-order pickup"]
+    options_sent = []
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        payload = json.loads(request.content)
+        options_sent.append(payload["options"])
+        return _chat_response(_profile_json(invalid_profile))
+
+    _use_mock_transport(monkeypatch, handler)
+    response = _post(f"/api/products/{product_id}/profile")
+
+    assert response.status_code == 502
+    assert calls == 3
+    assert [options["seed"] for options in options_sent] == [42, 43, 44]
+    assert [options["temperature"] for options in options_sent] == [0.0, 0.2, 0.2]
+    body = response.json()
+    assert body["status"] == "failed"
+    assert "key_features[0]" in body["error"]
+    assert "repeated-token artifact" in body["error"]
+    assert 'value="B2: B2"' in body["error"]
+    conn = db.connect()
+    try:
+        run = conn.execute("SELECT status, error FROM workflow_runs").fetchone()
+        assert run["status"] == "failed"
+        assert "key_features[0]" in run["error"]
+        assert 'value="B2: B2"' in run["error"]
+        attempts = conn.execute(
+            "SELECT temperature, seed, repeat_penalty FROM inference_log ORDER BY id"
+        ).fetchall()
+        assert [tuple(row) for row in attempts] == [
             (0.0, 42, 1.0),
             (0.2, 43, 1.0),
             (0.2, 44, 1.0),
@@ -544,6 +594,77 @@ def test_icp_grounding_failure_stores_field_check_and_value(db_path, monkeypatch
         conn.close()
 
 
+def test_icp_rejects_ungrounded_stray_token_and_retries_with_changed_seed(
+    db_path, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("DEFAULT_MODEL", "icp-stray-token-model")
+    product_id = _create_product("ICP stray token", tmp_path / "unused.md")
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO business_profiles (product_id, profile_json, model_name, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (product_id, json.dumps(PROFILE_BAKERY), "profile-model", db.utcnow()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    invalid_icp = dict(ICP_BAKERY)
+    invalid_icp["industries"] = ["B2: B2B software"]
+    options_sent = []
+
+    def handler(request):
+        options_sent.append(json.loads(request.content)["options"])
+        return _chat_response(json.dumps(invalid_icp))
+
+    _use_mock_transport(monkeypatch, handler)
+    response = _post(f"/api/products/{product_id}/icp")
+
+    assert response.status_code == 502
+    assert [options["seed"] for options in options_sent] == [42, 43, 44]
+    assert [options["temperature"] for options in options_sent] == [0.0, 0.2, 0.2]
+    body = response.json()
+    assert "industries[0]" in body["error"]
+    assert "repeated-token artifact" in body["error"]
+    assert 'value="B2: B2"' in body["error"]
+    conn = db.connect()
+    try:
+        run = conn.execute("SELECT status, error FROM workflow_runs").fetchone()
+        assert run["status"] == "failed"
+        assert "industries[0]" in run["error"]
+        assert 'value="B2: B2"' in run["error"]
+    finally:
+        conn.close()
+
+
+def test_icp_accepts_a_grounded_string_with_a_legitimate_colon(
+    db_path, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("DEFAULT_MODEL", "icp-colon-model")
+    product_id = _create_product("ICP colon", tmp_path / "unused.md")
+    conn = db.connect()
+    try:
+        conn.execute(
+            "INSERT INTO business_profiles (product_id, profile_json, model_name, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (product_id, json.dumps(PROFILE_BAKERY), "profile-model", db.utcnow()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    valid_icp = dict(ICP_BAKERY)
+    valid_icp["industries"] = ["Bakery: neighborhood retail"]
+    _use_mock_transport(
+        monkeypatch, lambda _request: _chat_response(json.dumps(valid_icp))
+    )
+    response = _post(f"/api/products/{product_id}/icp")
+
+    assert response.status_code == 200
+    assert response.json()["result"]["industries"] == ["Bakery: neighborhood retail"]
+
+
 def test_invalid_generation_is_stored_and_returned_without_default_output(
     db_path, monkeypatch, tmp_path
 ):
@@ -646,6 +767,26 @@ def test_legacy_profile_remains_readable_and_is_not_rewritten(db_path, tmp_path)
         assert persisted == legacy
     finally:
         conn.close()
+
+
+def test_stray_token_text_is_allowed_when_the_exact_match_is_in_its_source():
+    source_phrase = "B2: B2B software"
+    profile_data = dict(PROFILE_BAKERY)
+    profile_data["key_features"] = [source_phrase, "pre-order pickup"]
+    profile.validate_profile_grounding(
+        profile.BusinessProfile.model_validate(profile_data),
+        f"{BAKERY_DOC}\n{source_phrase}",
+        "Bakery",
+    )
+
+    icp_profile_data = dict(PROFILE_BAKERY)
+    icp_profile_data["value_proposition"] = source_phrase
+    grounded_icp = dict(ICP_BAKERY)
+    grounded_icp["industries"] = [source_phrase]
+    icp.validate_icp_grounding(
+        icp.IdealCustomerProfile.model_validate(grounded_icp),
+        profile.BusinessProfile.model_validate(icp_profile_data),
+    )
 
 
 def test_icp_grounding_allows_unsupported_fields_but_rejects_product_restatement():

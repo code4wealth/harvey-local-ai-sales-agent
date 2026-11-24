@@ -350,6 +350,57 @@ def test_glitched_quote_retries_and_keeps_the_clean_attempt(db_path, monkeypatch
         conn.close()
 
 
+def test_stray_token_evidence_triggers_quote_retry_without_repairing_quote(
+    db_path, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("DEFAULT_MODEL", "signal-stray-token-model")
+    source_quote = "The team adopted B2B software for its support queue."
+    artifact_quote = "The team adopted B2: B2B software for its support queue."
+    _, prospect_id = _new_prospect(db_path, monkeypatch, tmp_path, source_quote)
+    artifact = signal_workflow.ProspectSignal.model_validate(
+        {"type": "tech_change", "evidence": artifact_quote, "about_company": True}
+    )
+    kept, drops, details = signal_workflow._kept_signals(source_quote, [artifact])
+    assert kept == []
+    assert drops["quote"] == 1
+    assert details[0]["evidence"] == artifact_quote
+
+    outputs = iter(
+        [
+            _model_output(
+                [{"type": "tech_change", "evidence": artifact_quote, "about_company": True}]
+            ),
+            _model_output(
+                [{"type": "tech_change", "evidence": source_quote, "about_company": True}]
+            ),
+        ]
+    )
+    options_sent = []
+
+    def handler(request):
+        payload = json.loads(request.content)
+        options_sent.append(payload["options"])
+        return _chat_response(next(outputs))
+
+    _use_mock_transport(monkeypatch, handler)
+    response = _post(f"/api/prospects/{prospect_id}/signals")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["quote_retries"] == 1
+    assert [item["evidence"] for item in body["signals"]] == [source_quote]
+    assert [options["seed"] for options in options_sent] == [42, 43]
+    assert [options["temperature"] for options in options_sent] == [0.0, 0.2]
+    conn = db.connect()
+    try:
+        stored = conn.execute(
+            "SELECT evidence FROM signals WHERE signal_run_id = ?", (body["id"],)
+        ).fetchall()
+        assert [row["evidence"] for row in stored] == [source_quote]
+    finally:
+        conn.close()
+
+
 def test_fabricated_evidence_is_dropped_by_quote_verification(db_path, monkeypatch, tmp_path):
     monkeypatch.setenv("DEFAULT_MODEL", "signal-quote-model")
     _, prospect_id = _new_prospect(

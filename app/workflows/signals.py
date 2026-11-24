@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from app import db, llm_client, prospects, scoring
 from app.queue_worker import register_handler
+from app.workflows.common import ungrounded_stray_token_matches
 
 TASK_TYPE = "workflow.signals"
 MAX_PAGE_CHARS = 3000
@@ -355,6 +356,11 @@ def _kept_signals(
         )
 
     for signal in signals:
+        if ungrounded_stray_token_matches(signal.evidence, page_text):
+            # Treat the artifact as a quote-verification failure and let the
+            # existing retry loop ask for a fresh, unmodified quote.
+            drop(signal, "quote")
+            continue
         if id(signal) not in verified_ids:
             normalized_type = signal.type.strip().lower() if isinstance(signal.type, str) else ""
             drop(signal, "type" if normalized_type not in scoring.SIGNAL_WEIGHTS else "quote")

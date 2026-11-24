@@ -110,6 +110,17 @@ def validate_profile_grounding(
     source_words = _content_words(document)
     issues: list[str] = []
     validation_details: list[dict[str, Any]] = []
+    for field_path, field_value in common.iter_string_fields(
+        profile.model_dump(mode="python")
+    ):
+        for matched_text in common.ungrounded_stray_token_matches(field_value, document):
+            check = (
+                f"contains repeated-token artifact {matched_text!r} not found in source document"
+            )
+            issues.append(f"{field_path} {check}")
+            validation_details.append(
+                {"field": field_path, "check": check, "value": matched_text}
+            )
     name_suffix = (
         profile.summary[len(product_name) : len(product_name) + 1]
         if profile.summary.startswith(product_name)
