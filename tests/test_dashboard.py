@@ -30,6 +30,13 @@ def test_root_serves_embedded_local_only_dashboard():
     assert "Retry queued tasks" in html
     assert "id=\"hardware\"" in html
     assert "id=\"traceability\"" in html
+    assert 'data-type="software"' in html
+    assert 'name="page-type" content="software"' in html
+    assert 'name="site-kind" content="software"' in html
+    assert 'id="product-form-status" class="sr-only" role="status"' in html
+    assert 'id="reply-form-status" class="sr-only" role="status"' in html
+    assert 'role="status" aria-live="polite">Waiting for a workflow' in html
+    assert 'form.reset()' in html
     assert "git_commit" in html
     assert "prompt_hashes" in html
     assert "fetch(" in html
@@ -46,24 +53,27 @@ def test_dashboard_controls_are_wired_to_same_origin_workflows_and_status():
 
     html = asyncio.run(request()).text
     expected_bindings = (
-        '$("product-form").onsubmit',
-        'products.onchange=()=>loadProspects()',
+        '$("product-form").onsubmit =',
+        'const form = event.currentTarget;',
+        'formStatus.textContent = "Creating product."',
+        'Reply classification complete.',
+        'products.onchange = () => loadProspects()',
         'await api(`/api/products/${productId()}/prospects`)',
         'document.querySelectorAll("[data-workflow]")',
         'document.querySelectorAll("[data-view-workflow]")',
-        '$("signals").onclick',
-        '$("view-signals").onclick',
-        '$("ranking").onclick',
-        '$("draft").onclick',
-        '$("view-draft").onclick',
-        '$("problem-statement").onclick',
-        '$("view-problem-statement").onclick',
+        '$("signals").onclick =',
+        '$("view-signals").onclick =',
+        '$("ranking").onclick =',
+        '$("draft").onclick =',
+        '$("view-draft").onclick =',
+        '$("problem-statement").onclick =',
+        '$("view-problem-statement").onclick =',
         'problem-statement`',
-        '$("reply-form").onsubmit',
-        '$("retry-queue").onclick',
+        '$("reply-form").onsubmit =',
+        '$("retry-queue").onclick =',
         'run(`/api/products/${productId()}/ranking`)',
-        'run(`/api/replies/${id}/classification`,"POST")',
-        'run("/api/queue/retry","POST")',
+        'run(`/api/replies/${id}/classification`, "POST")',
+        'run("/api/queue/retry", "POST")',
         'Request failed: ${error.message}',
         'latest.seed',
         'latest.model',

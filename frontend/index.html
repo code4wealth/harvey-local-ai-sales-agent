@@ -1,127 +1,640 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-type="software" data-radius="soft" data-buttons="solid">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Harvey · Local sales workspace</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f2ec">
+  <meta name="page-type" content="software">
+  <meta name="site-kind" content="software">
+  <meta name="description" content="A local workspace for product context, prospect research and unsent drafts.">
+  <meta property="og:title" content="Harvey · Prospect workflows">
+  <meta property="og:description" content="A local workspace for product context, prospect research and unsent drafts.">
+  <meta property="og:type" content="website">
+  <title>Harvey · Prospect workspace</title>
   <style>
-    :root{color-scheme:dark;--bg:#101817;--panel:#192321;--line:#34433f;--ink:#edf3ef;--muted:#a8b6ae;--accent:#86d7af}
-    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
-    header,main,footer{max-width:1000px;margin:auto;padding:24px}header{display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--line)}
-    h1,h2,p{margin-top:0}h1{font-size:1.4rem;margin-bottom:2px}h2{font-size:1rem}small,.muted{color:var(--muted)}
-    .service{display:grid;gap:5px;justify-items:end;text-align:right}.service small{max-width:520px;overflow-wrap:anywhere}#retry-queue{width:auto;padding:5px 9px;font-size:.85rem}
-    footer{border-top:1px solid var(--line);overflow-wrap:anywhere}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin:18px 0}
-    section,.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
-    label{display:block;margin:10px 0 4px;color:var(--muted)}input,select,button{font:inherit;color:var(--ink);background:#101817;border:1px solid var(--line);border-radius:7px;padding:9px;width:100%}
-    button{cursor:pointer;background:#263b34}button:hover{border-color:var(--accent)}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.actions button{width:auto}
-    #status{white-space:nowrap;color:var(--accent)}#prospects{display:grid;gap:6px;max-height:320px;overflow:auto}.prospect{text-align:left}
-    pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0b1110;border:1px solid var(--line);border-radius:8px;padding:14px;min-height:90px}
-    @media(max-width:600px){header{align-items:flex-start;flex-direction:column}header,main{padding:16px}}
+    :root{
+      color-scheme:light;
+      --canvas:#f3f2ec;
+      --paper:#fffefa;
+      --paper-soft:#f8f8f2;
+      --ink:#1b2d25;
+      --muted:#43544a;
+      --quiet:#5e6f64;
+      --line:#dce1d8;
+      --line-strong:#c5cec2;
+      --forest:#173b2d;
+      --forest-2:#244f3b;
+      --moss:#dce7ac;
+      --amber:#a9621c;
+      --amber-soft:#f7ead3;
+      --red:#a33d32;
+      --red-soft:#f6e5e1;
+      --blue:#315a70;
+      --radius-xl:22px;
+      --radius-lg:16px;
+      --radius-md:11px;
+      --shadow:0 12px 32px rgba(24,43,33,.055);
+      --focus:#4e7336;
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:auto;scroll-padding-top:24px}
+    body{margin:0;background:var(--canvas);color:var(--ink);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+    button,input,select{font:inherit}
+    button,a,input,select{outline-offset:3px}
+    button{cursor:pointer}
+    button:disabled{cursor:not-allowed;opacity:1;transform:none!important}
+    .button:disabled:not(.button-primary){background:#f3f5f0;color:#5d6d62;border-color:#d5ddd3}
+    .button-primary:disabled{background:#5f786b;color:#fff;border-color:#5f786b}
+    a{color:inherit}
+    .skip-link{position:fixed;z-index:30;top:12px;left:12px;padding:11px 15px;border-radius:8px;background:var(--moss);color:var(--ink);font-weight:700;transform:translateY(-160%);transition:transform .16s ease}
+    .skip-link:focus{transform:translateY(0)}
+    :focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+    .sidebar :focus-visible{outline-color:var(--moss)}
+    .app-shell{min-height:100vh;display:grid;grid-template-columns:248px minmax(0,1fr)}
+    .sidebar{position:sticky;top:0;height:100vh;padding:25px 17px 18px;background:var(--forest);color:#f5f7ed;display:flex;flex-direction:column;gap:35px;z-index:5}
+    .brand{min-height:44px;display:flex;align-items:center;gap:11px;padding:2px 10px;text-decoration:none}
+    .brand-mark{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:var(--moss);color:var(--forest);font:700 20px/1 Georgia,serif;letter-spacing:-.06em}
+    .brand-copy{display:grid;gap:1px}
+    .brand-name{font-size:15px;line-height:1.2;font-weight:750;letter-spacing:.13em}
+    .brand-caption{font-size:11px;color:#c6d5ca;letter-spacing:.02em}
+    .side-label,.eyebrow{margin:0;color:var(--quiet);font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase}
+    .sidebar .side-label{padding:0 12px;color:#adc1b1}
+    .side-nav{display:grid;gap:5px}
+    .side-link{min-height:44px;display:flex;align-items:center;gap:12px;padding:0 12px;border-radius:10px;text-decoration:none;color:#d7e1d8;font-size:13px;font-weight:560;transition:background .16s ease,color .16s ease,transform .16s ease}
+    .side-link:hover,.side-link:focus-visible{background:rgba(255,255,255,.095);color:#fff;transform:translateX(2px)}
+    .side-link[aria-current="page"]{background:rgba(220,231,172,.16);color:#fff}
+    .nav-mark{width:23px;height:23px;display:grid;place-items:center;border:1px solid rgba(230,239,226,.26);border-radius:7px;color:var(--moss);font:700 10px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.02em}
+    .sidebar-bottom{margin-top:auto;padding:15px 12px 4px;border-top:1px solid rgba(230,239,226,.18);display:grid;gap:9px}
+    .local-note{display:flex;align-items:center;gap:9px;font-size:12px;color:#e2eadc}
+    .local-note .dot,.status-dot{width:8px;height:8px;flex:0 0 auto;border-radius:50%;background:#a9c86d;box-shadow:0 0 0 3px rgba(169,200,109,.15)}
+    .local-note small{color:#b8cabc;font-size:11px}
+    .main-area{min-width:0}
+    .main-wrap{width:min(1420px,100%);margin:0 auto;padding:30px clamp(20px,3.2vw,48px) 42px}
+    .topbar{min-height:38px;display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:23px}
+    .topbar-actions{display:flex;align-items:center;gap:9px}
+    .crumb{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12px}
+    .crumb .separator{color:#a5aea4}
+    .local-badge{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid #cad8c4;border-radius:99px;background:#edf3e8;color:#294b37;font-size:11px;font-weight:750;letter-spacing:.075em}
+    .local-badge .status-dot{width:7px;height:7px;box-shadow:none}
+    .intro-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(370px,.92fr);align-items:end;gap:30px;margin-bottom:21px}
+    .intro-copy{max-width:650px}
+    .intro-copy .eyebrow{margin-bottom:9px;color:#53705d}
+    h1,h2,h3,p{margin-top:0}
+    h1{margin-bottom:8px;font:500 clamp(30px,3.2vw,42px)/1.08 Georgia,"Times New Roman",serif;letter-spacing:-.035em;color:#1e3429}
+    .intro-lede{max-width:580px;margin:0;color:var(--muted);font-size:14px;line-height:1.65}
+    .workflow-map{min-height:104px;padding:15px 18px 14px;border:1px solid #d7ded2;border-radius:var(--radius-lg);background:var(--paper);box-shadow:0 4px 18px rgba(28,47,35,.035)}
+    .workflow-map-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:13px}
+    .workflow-map-title{margin:0;color:#627168;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+    .workflow-map-note{color:#68776d;font-size:11px}
+    .workflow-track{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:center;list-style:none;margin:0;padding:0}
+    .workflow-track li{position:relative;min-width:0;display:flex;align-items:center;gap:7px;color:#33483a;font-size:11px;font-weight:650;white-space:nowrap}
+    .workflow-track li:not(:last-child)::after{content:"";height:1px;flex:1;min-width:8px;margin:0 6px;background:#bdcbb7}
+    .step-mark{width:23px;height:23px;flex:0 0 auto;display:grid;place-items:center;border-radius:8px;background:#edf2e5;color:#37543c;font-size:10px;font-weight:800}
+    .workflow-track li:nth-child(3) .step-mark{background:var(--forest);color:#f5f6e9}
+    .status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}
+    .status-card{min-height:92px;display:flex;align-items:center;gap:13px;padding:15px 17px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--paper)}
+    .status-icon{width:37px;height:37px;flex:0 0 auto;display:grid;place-items:center;border-radius:11px;background:#edf1e7;color:var(--forest);font-size:12px;font-weight:800;letter-spacing:.02em}
+    .status-card:nth-child(2) .status-icon{background:#f4eedb;color:#715722}
+    .status-card:nth-child(3) .status-icon{background:#e8eef0;color:#3d5e69}
+    .status-card-label{margin:0 0 2px;color:#5c6b61;font-size:11px;font-weight:650;letter-spacing:.07em;text-transform:uppercase}
+    .status-card-value{margin:0;color:#263b2e;font-size:14px;font-weight:700;line-height:1.35;overflow-wrap:anywhere}
+    .status-card-detail{margin:2px 0 0;color:#66756a;font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+    .status-card-value[data-state="available"]{color:#2f6a3f}
+    .status-card-value[data-state="unavailable"],.status-card-value[data-state="error"]{color:var(--red)}
+    .status-card-value[data-state="slow"]{color:var(--amber)}
+    .main-grid{display:grid;grid-template-columns:minmax(0,1.18fr) minmax(340px,.82fr);gap:18px;align-items:start}
+    .left-stack,.right-stack{display:grid;gap:18px;min-width:0}
+    .panel{min-width:0;border:1px solid var(--line);border-radius:var(--radius-xl);background:var(--paper);box-shadow:var(--shadow)}
+    .panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:21px 22px 15px}
+    .panel-head h2{margin:3px 0 0;font-size:16px;font-weight:720;letter-spacing:-.015em}
+    .panel-head .eyebrow{font-size:10px;color:#748177}
+    .panel-body{padding:0 22px 22px}
+    .product-selector-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px}
+    .field{display:grid;gap:6px;min-width:0}
+    .field label{color:#506158;font-size:12px;font-weight:650}
+    input,select{width:100%;min-height:44px;padding:10px 12px;border:1px solid #cfd7cd;border-radius:9px;background:#fff;color:var(--ink)}
+    input::placeholder{color:#78867d}
+    input:focus,select:focus{border-color:var(--forest);outline:3px solid var(--forest);box-shadow:0 0 0 3px var(--moss)}
+    .button{min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border:1px solid transparent;border-radius:9px;background:#e9eee5;color:#284533;font-size:12px;font-weight:700;text-align:center;transition:background .16s ease,border-color .16s ease,transform .16s ease}
+    .button:hover:not(:disabled){background:#dfe8d9;border-color:#c3d0bd;transform:translateY(-1px)}
+    .button:active:not(:disabled){transform:translateY(1px)}
+    .button-primary{background:var(--forest);color:#fff}
+    .button-primary:hover:not(:disabled){background:#254f3b;border-color:#254f3b}
+    .button-outline{border-color:#cad4c8;background:transparent;color:#294534}
+    .button-outline:hover:not(:disabled){background:#f2f5ee}
+    .button-small{min-height:44px;padding:9px 11px;font-size:11px}
+    .button-full{width:100%}
+    .product-count{min-width:78px;padding:8px 11px;border:1px solid #e0e4dc;border-radius:9px;background:#f7f8f3;text-align:center}
+    .product-count strong{display:block;font:500 20px/1.15 Georgia,serif;color:#294735}
+    .product-count span{display:block;color:#59685e;font-size:10px}
+    .product-tools{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}
+    .product-tools .button{flex:1 1 130px}
+    details.create-product{margin-top:15px;border-top:1px solid #e8ebe5;padding-top:13px}
+    details.create-product summary{min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:10px;color:#33563e;font-size:12px;font-weight:700;cursor:pointer;list-style:none}
+    details.create-product summary::-webkit-details-marker{display:none}
+    details.create-product summary::after{content:"+";width:22px;height:22px;display:grid;place-items:center;border:1px solid #d1dbcd;border-radius:7px;font-size:15px;font-weight:500}
+    details.create-product[open] summary::after{content:"−"}
+    .create-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:12px}
+    .create-grid .field:first-child{grid-column:1/-1}
+    .field-hint{margin:0;color:#6b786f;font-size:11px}
+    .create-submit{grid-column:1/-1;justify-self:start}
+    .count-pill{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:25px;padding:0 7px;border-radius:99px;background:#eff3e9;color:#36513b;font-size:11px;font-weight:750}
+    #prospects{display:grid;gap:7px;max-height:400px;overflow:auto;padding-right:3px}
+    .prospect{width:100%;min-height:61px;display:grid;grid-template-columns:34px minmax(0,1fr) 18px;align-items:center;gap:11px;padding:9px 11px;border:1px solid transparent;border-radius:11px;background:#f8f9f5;color:var(--ink);text-align:left;transition:background .15s ease,border-color .15s ease,transform .15s ease}
+    .prospect:hover{border-color:#d4dfce;background:#f1f5ec;transform:translateX(2px)}
+    .prospect[aria-pressed="true"]{border-color:#9db18c;background:#edf3e7;box-shadow:inset 3px 0 0 #4f754b}
+    .prospect-index{width:31px;height:31px;display:grid;place-items:center;border-radius:9px;background:#e9eee5;color:#48644c;font-size:10px;font-weight:800;font-variant-numeric:tabular-nums}
+    .prospect-copy{min-width:0;display:grid;gap:2px}
+    .prospect-name{overflow:hidden;color:#25382d;font-size:12px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+    .prospect-meta{overflow:hidden;color:#6a786e;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+    .prospect-arrow{color:#7d8b80;font-size:17px;text-align:center}
+    .empty-state{min-height:100px;display:grid;align-content:center;gap:5px;padding:17px;border:1px dashed #cbd5c8;border-radius:12px;background:#fafbf8}
+    .empty-state strong{color:#374d3c;font-size:13px}
+    .empty-state span{max-width:42ch;color:#58685e;font-size:12px}
+    .selection-card{padding:18px;border:1px solid #cbd7c5;border-radius:15px;background:#f5f7ef}
+    .selection-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .selection-placeholder{width:39px;height:39px;display:grid;place-items:center;border-radius:12px;background:#e3ebdc;color:#33523a;font:500 18px/1 Georgia,serif}
+    .selection-company{margin:0 0 3px;font:500 19px/1.25 Georgia,"Times New Roman",serif;color:#20382a;overflow-wrap:anywhere}
+    .selection-title{margin:0;color:#66756b;font-size:12px}
+    .selection-id{display:inline-flex;margin-top:14px;padding:5px 8px;border:1px solid #d8dfd3;border-radius:99px;color:#5c6a61;font-size:10px;font-weight:650;font-variant-numeric:tabular-nums}
+    .action-group{display:grid;gap:10px;margin-top:16px}
+    .action-group + .action-group{padding-top:15px;border-top:1px solid #e6eae2}
+    .action-heading{margin:0;color:#64736a;font-size:10px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
+    .action-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .action-grid .button{min-width:0}
+    .action-grid .button-primary,#ranking,#view-draft{grid-column:1/-1}
+    .helper-line{margin:12px 0 0;color:#68766d;font-size:11px;line-height:1.5}
+    .reply-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:end}
+    .reply-row .button{min-width:146px}
+    .section-note{max-width:58ch;margin:0;color:#68766e;font-size:12px;line-height:1.55}
+    .result-panel{margin-top:18px;overflow:hidden}
+    .result-head{align-items:center}
+    .result-state{display:inline-flex;align-items:center;gap:7px;color:#637168;font-size:11px}
+    .result-state::before{content:"";width:7px;height:7px;border-radius:50%;background:#a8b5a9}
+    pre{min-height:138px;max-height:430px;overflow:auto;margin:0;padding:17px 19px;border:1px solid #26392e;border-radius:12px;background:#182a21;color:#e8f0e4;font:12px/1.65 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;tab-size:2;white-space:pre-wrap;overflow-wrap:anywhere}
+    .output-wrap{padding:0 22px 22px}
+    .footer-bar{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-top:18px;padding-top:15px;border-top:1px solid #d8ded6;color:#536258}
+    .footer-bar p{margin:0;font-size:10px;line-height:1.6;overflow-wrap:anywhere}
+    .footer-bar p:first-child{max-width:75%}
+    .footer-privacy{font-size:10px;font-weight:650;white-space:nowrap}
+    .status-offline .status-dot{background:#d29b56;box-shadow:none}
+    .status-failed .status-dot{background:#c65d4d;box-shadow:none}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    @media(max-width:1120px){
+      .intro-row{grid-template-columns:1fr;gap:17px}
+      .workflow-map{max-width:700px}
+      .main-grid{grid-template-columns:minmax(0,1fr) minmax(300px,.82fr)}
+    }
+    @media(max-width:900px){
+      .app-shell{grid-template-columns:1fr}
+      .sidebar{position:relative;height:auto;min-height:0;padding:14px 18px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px}
+      .brand{padding:0}
+      .side-label,.sidebar-bottom{display:none}
+      .side-nav{display:flex;justify-content:center;gap:4px;overflow-x:auto}
+      .side-link{min-height:44px;padding:0 10px;white-space:nowrap}
+      .nav-mark{display:none}
+      .main-wrap{padding-top:23px}
+    }
+    @media(max-width:680px){
+      .sidebar{grid-template-columns:1fr;gap:11px;padding:13px 16px 9px}
+      .brand{justify-self:start}
+      .side-nav{justify-content:flex-start;padding-bottom:2px}
+      .side-link{min-height:44px;font-size:11px}
+      .main-wrap{padding:19px 14px 28px}
+      .topbar{margin-bottom:17px;align-items:flex-start;flex-wrap:wrap}
+      .topbar-actions{flex-wrap:wrap;justify-content:flex-end}
+      .intro-row{margin-bottom:16px}
+      h1{font-size:34px}
+      .intro-lede{font-size:13px}
+      .workflow-map{padding:13px}
+      .workflow-map-note{display:none}
+      .workflow-track li{display:grid;justify-items:center;gap:5px;white-space:normal;text-align:center;font-size:9px;line-height:1.25}
+      .workflow-track li:not(:last-child)::after{position:absolute;left:calc(50% + 15px);top:11px;width:calc(100% - 30px);margin:0;z-index:0}
+      .step-mark{position:relative;z-index:1}
+      .status-grid{grid-template-columns:1fr;gap:8px;margin-bottom:13px}
+      .status-card{min-height:75px;padding:12px 14px}
+      .status-icon{width:34px;height:34px}
+      .main-grid{grid-template-columns:1fr;gap:13px}
+      .left-stack,.right-stack{gap:13px}
+      .panel{border-radius:17px}
+      .panel-head{padding:17px 16px 13px}
+      .panel-body{padding:0 16px 17px}
+      .product-selector-row{grid-template-columns:minmax(0,1fr) 65px;gap:8px}
+      .product-count{min-width:0;padding:7px 5px}
+      .product-count strong{font-size:18px}
+      .create-grid{grid-template-columns:1fr}
+      .create-grid .field:first-child,.create-submit{grid-column:auto}
+      .create-submit{width:100%}
+      .selection-card{padding:15px}
+      .action-grid{grid-template-columns:1fr}
+      .action-grid .button{padding:10px 12px;font-size:12px}
+      .reply-row{grid-template-columns:1fr}
+      .reply-row .button{width:100%}
+      .output-wrap{padding:0 16px 17px}
+      pre{min-height:115px;padding:14px;font-size:11px}
+      .footer-bar{display:grid;gap:8px}
+      .footer-bar p:first-child{max-width:none}
+    }
+    @media(max-width:360px){
+      .action-grid{grid-template-columns:1fr}
+      .action-grid .button-primary{grid-column:auto}
+      .product-tools{display:grid;grid-template-columns:1fr}
+      .local-badge{font-size:10px}
+    }
+    @media(prefers-reduced-motion:reduce){
+      *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+    }
   </style>
 </head>
 <body>
-  <header>
-    <div><h1>Harvey</h1><small>Local-first sales workspace · drafts are never sent</small></div>
-    <div class="service">
-      <div id="status" role="status">Checking local service…</div>
-      <small id="hardware" role="status">Hardware recommendation: checking…</small>
-      <button id="retry-queue" type="button">Retry queued tasks</button>
-    </div>
-  </header>
-  <main>
-    <div class="grid">
-      <section>
-        <h2>Products</h2>
-        <form id="product-form">
-          <label for="product-name">Product name</label><input id="product-name" required maxlength="200">
-          <label for="docs-path">Local company-info path</label><input id="docs-path" placeholder="data/company_info/relaycue.md">
-          <label for="product-description">Description</label><input id="product-description">
-          <div class="actions"><button>Create product</button></div>
-        </form>
-        <label for="products">Select product</label><select id="products"><option value="">Choose a product</option></select>
-        <div class="actions">
-          <button data-workflow="profile">Generate profile</button><button data-view-workflow="profile">View profile</button>
-          <button data-workflow="icp">Generate ICP</button><button data-view-workflow="icp">View ICP</button>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Workspace navigation">
+      <a class="brand" href="#main-content" aria-label="Harvey workspace home">
+        <span class="brand-mark" aria-hidden="true">H</span>
+        <span class="brand-copy"><span class="brand-name">HARVEY</span><span class="brand-caption">Sales workspace</span></span>
+      </a>
+      <nav class="side-nav" aria-label="Main navigation">
+        <a class="side-link" href="#main-content" aria-current="page"><span class="nav-mark" aria-hidden="true">01</span>Overview</a>
+        <a class="side-link" href="#product-panel"><span class="nav-mark" aria-hidden="true">02</span>Products</a>
+        <a class="side-link" href="#prospect-panel"><span class="nav-mark" aria-hidden="true">03</span>Prospects</a>
+        <a class="side-link" href="#reply-panel"><span class="nav-mark" aria-hidden="true">04</span>Replies</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="local-note"><span class="dot" aria-hidden="true"></span><span>Local-only service</span></div>
+        <small>Inference stays on this machine.</small>
+      </div>
+    </aside>
+
+    <div class="main-area">
+      <main class="main-wrap" id="main-content">
+        <div class="topbar">
+          <div class="crumb"><span>Workspace</span><span class="separator" aria-hidden="true">/</span><span>Overview</span></div>
+          <div class="topbar-actions">
+            <div class="local-badge"><span class="status-dot" aria-hidden="true"></span><span>LOCAL ONLY</span></div>
+            <button class="button button-outline button-small" id="retry-queue" type="button">Retry queued tasks</button>
+          </div>
         </div>
-      </section>
-      <section>
-        <h2>Prospects</h2>
-        <p class="muted">Choose a product to load its stored prospects.</p>
-        <div id="prospects" aria-live="polite"></div>
-        <div class="actions">
-          <button id="signals">Extract signals</button><button id="view-signals">View latest signals</button>
-          <button id="ranking">Refresh ranking</button><button id="draft">Create unsent draft</button>
-          <button id="view-draft">View latest draft</button>
-          <button id="problem-statement">Generate problem statement</button>
-          <button id="view-problem-statement">View latest problem statement</button>
+
+        <section class="intro-row" aria-labelledby="page-title">
+          <div class="intro-copy">
+            <p class="eyebrow">Harvey · Local sales workspace</p>
+            <h1 id="page-title">Prospect workflows</h1>
+            <p class="intro-lede">Use stored product context to research prospects, verify signals and prepare unsent drafts.</p>
+          </div>
+          <div class="workflow-map" role="group" aria-label="Workflow sequence">
+            <div class="workflow-map-top"><p class="workflow-map-title">Workflow sequence</p><span class="workflow-map-note">Stored context to reviewed outreach</span></div>
+            <ol class="workflow-track">
+              <li><span class="step-mark">P</span><span>Profile + ICP</span></li>
+              <li><span class="step-mark">S</span><span>Signals</span></li>
+              <li><span class="step-mark">PS</span><span>Problem</span></li>
+              <li><span class="step-mark">D</span><span>Draft</span></li>
+            </ol>
+          </div>
+        </section>
+
+        <section class="status-grid" aria-label="Local service status">
+          <article class="status-card">
+            <span class="status-icon" aria-hidden="true">AI</span>
+            <div><p class="status-card-label">Local inference</p><p class="status-card-value" id="status" role="status">Checking Ollama…</p><p class="status-card-detail" id="model-detail">Model details load from the local API.</p></div>
+          </article>
+          <article class="status-card">
+            <span class="status-icon" aria-hidden="true">Q</span>
+            <div><p class="status-card-label">Task queue</p><p class="status-card-value" id="queue-count">Checking queue…</p><p class="status-card-detail" id="queue-detail">Queued work stays in the local database.</p></div>
+          </article>
+          <article class="status-card">
+            <span class="status-icon" aria-hidden="true">HW</span>
+            <div><p class="status-card-label">Hardware profile</p><p class="status-card-value" id="hardware" role="status">Checking hardware…</p><p class="status-card-detail" id="hardware-detail">Recommendation loads from this machine.</p></div>
+          </article>
+        </section>
+
+        <div class="main-grid">
+          <div class="left-stack">
+            <section class="panel" id="product-panel" aria-labelledby="product-heading">
+              <div class="panel-head"><div><h2 id="product-heading">Product context</h2></div><span class="product-count"><strong id="product-count">—</strong><span>products</span></span></div>
+              <div class="panel-body">
+                <div class="product-selector-row">
+                  <div class="field"><label for="products">Active product</label><select id="products" aria-describedby="product-help"><option value="">Select a product</option></select><p class="field-hint" id="product-help">Profiles and ICPs are stored per product.</p></div>
+                  <div class="product-count"><strong id="prospect-count">—</strong><span>prospects</span></div>
+                </div>
+                <div class="product-tools">
+                  <button class="button button-outline" data-workflow="profile" type="button" disabled>Generate profile</button>
+                  <button class="button button-outline" data-view-workflow="profile" type="button" disabled>View profile</button>
+                  <button class="button button-outline" data-workflow="icp" type="button" disabled>Generate ICP</button>
+                  <button class="button button-outline" data-view-workflow="icp" type="button" disabled>View ICP</button>
+                </div>
+                <details class="create-product">
+                  <summary>Create a product</summary>
+                  <form id="product-form" class="create-grid">
+                    <div class="field"><label for="product-name">Product name</label><input id="product-name" name="name" required maxlength="200" autocomplete="organization"></div>
+                    <div class="field"><label for="product-description">Description</label><input id="product-description" name="description" maxlength="500"></div>
+                    <div class="field"><label for="docs-path">Local company-info path</label><input id="docs-path" name="docs_path" autocomplete="off"><p class="field-hint">Use a repository-relative file path.</p></div>
+                    <p id="product-form-status" class="sr-only" role="status" aria-live="polite"></p>
+                    <button class="button button-primary create-submit" type="submit">Create product</button>
+                  </form>
+                </details>
+              </div>
+            </section>
+
+            <section class="panel" id="prospect-panel" aria-labelledby="prospect-heading">
+              <div class="panel-head"><div><h2 id="prospect-heading">Prospects</h2></div><span class="count-pill" id="prospect-list-count" aria-label="Prospect count">0</span></div>
+              <div class="panel-body"><p class="section-note" id="prospect-intro">Choose a product to load its stored prospects.</p><div id="prospects" aria-live="polite"><div class="empty-state"><strong>No product selected</strong><span>Select a stored product to see its prospects.</span></div></div></div>
+            </section>
+          </div>
+
+          <div class="right-stack">
+            <section class="panel" aria-labelledby="selected-heading">
+              <div class="panel-head"><div><h2 id="selected-heading">Selected prospect</h2></div></div>
+              <div class="panel-body">
+                <div class="selection-card" id="selection-card" aria-live="polite">
+                  <div class="selection-top"><div><p class="selection-company" id="selected-company">No prospect selected</p><p class="selection-title" id="selected-title">Choose a prospect from the list.</p></div><span class="selection-placeholder" id="selection-mark" aria-hidden="true">—</span></div>
+                  <span class="selection-id" id="selected-id">No record selected</span>
+                </div>
+                <div class="action-group">
+                  <p class="action-heading">Research</p>
+                  <div class="action-grid">
+                    <button class="button button-outline" id="signals" type="button" data-requires-prospect disabled>Extract signals</button>
+                    <button class="button button-outline" id="view-signals" type="button" data-requires-prospect disabled>View latest signals</button>
+                    <button class="button button-outline" id="ranking" type="button" data-requires-product disabled>Refresh ranking</button>
+                  </div>
+                </div>
+                <div class="action-group">
+                  <p class="action-heading">Prepare outreach</p>
+                  <div class="action-grid">
+                    <button class="button button-primary" id="problem-statement" type="button" data-requires-prospect disabled>Generate problem statement</button>
+                    <button class="button button-outline" id="view-problem-statement" type="button" data-requires-prospect disabled>View latest problem statement</button>
+                    <button class="button button-outline" id="draft" type="button" data-requires-prospect disabled>Create unsent draft</button>
+                    <button class="button button-outline" id="view-draft" type="button" data-requires-prospect disabled>View latest draft</button>
+                  </div>
+                  <p class="helper-line">Drafts are saved for review. Harvey never sends them.</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel" id="reply-panel" aria-labelledby="reply-heading">
+              <div class="panel-head"><div><h2 id="reply-heading">Reply classification</h2></div></div>
+              <div class="panel-body">
+                <form id="reply-form" class="reply-row">
+                  <div class="field"><label for="reply-id">Reply ID</label><input id="reply-id" name="reply_id" placeholder="R001" pattern="R[0-9]{3}" required autocomplete="off"></div>
+                  <p id="reply-form-status" class="sr-only" role="status" aria-live="polite"></p>
+                  <button class="button button-outline" type="submit">Classify reply</button>
+                </form>
+                <p class="helper-line">The classifier reads the stored reply. Labels remain separate from model input.</p>
+              </div>
+            </section>
+          </div>
         </div>
-      </section>
+
+        <section class="panel result-panel" id="result-panel" aria-labelledby="result-heading">
+          <div class="panel-head result-head"><div><h2 id="result-heading">Latest result</h2></div><span class="result-state" id="result-status" role="status" aria-live="polite">Waiting for a workflow</span></div>
+          <div class="output-wrap"><pre id="output" aria-live="polite">Choose a product and prospect, then run a workflow. Results appear here.</pre></div>
+        </section>
+
+        <footer class="footer-bar">
+          <p id="traceability" aria-live="polite">Build and inference traceability: checking local API status…</p>
+          <p class="footer-privacy">Local inference · no email sending</p>
+        </footer>
+      </main>
     </div>
-    <section>
-      <h2>Reply classification</h2>
-      <form id="reply-form" class="actions"><input id="reply-id" aria-label="Sample reply ID" placeholder="R001" pattern="R[0-9]{3}" required><button>Classify stored reply</button></form>
-    </section>
-    <section style="margin-top:16px">
-      <h2>Latest API result</h2><pre id="output" aria-live="polite">Select a product to begin. All requests stay on this service origin.</pre>
-    </section>
-  </main>
-  <footer><small id="traceability">Build and inference traceability: checking…</small></footer>
+  </div>
+
   <script>
-    const $=id=>document.getElementById(id), output=$("output"), products=$("products"), prospects=$("prospects");
-    let selectedProspect=null;
-    async function api(url,options={}){
-      const response=await fetch(url,options), text=await response.text();
-      let data;try{data=text?JSON.parse(text):null}catch{data=text}
-      if(!response.ok)throw new Error(`HTTP ${response.status}: ${typeof data==="string"?data:JSON.stringify(data)}`);
+    const $ = id => document.getElementById(id);
+    const output = $("output"), products = $("products"), prospects = $("prospects");
+    let selectedProspect = null;
+    let productRows = [];
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, options);
+      const text = await response.text();
+      let data;
+      try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${typeof data === "string" ? data : JSON.stringify(data)}`);
       return data;
     }
-    function show(value){output.textContent=typeof value==="string"?value:JSON.stringify(value,null,2)}
-    function productId(){return products.value}
-    async function loadProducts(chooseId=""){
-      const rows=await api("/api/products");products.replaceChildren(new Option("Choose a product",""));
-      rows.forEach(row=>products.add(new Option(row.name,row.id)));
-      if(chooseId)products.value=String(chooseId);
-      if(products.value)await loadProspects();
+
+    function show(value) {
+      output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+      $("result-status").textContent = value?.status ? `Status · ${value.status}` : "Result received";
     }
-    async function loadProspects(){
-      selectedProspect=null;prospects.replaceChildren();if(!productId())return;
-      const rows=await api(`/api/products/${productId()}/prospects`);
-      rows.forEach(row=>{const button=document.createElement("button");button.className="prospect";button.type="button";button.textContent=`${row.company_name} · ${row.contact_title||"title not stored"}`;button.onclick=()=>{selectedProspect=row;show(row)};prospects.append(button)});
-      show({product_id:Number(productId()),prospects:rows.length});
+
+    function productId() { return products.value; }
+
+    function updateActionState() {
+      const hasProduct = Boolean(productId());
+      const hasProspect = hasProduct && Boolean(selectedProspect);
+      document.querySelectorAll("[data-workflow], [data-view-workflow], [data-requires-product]").forEach(button => { button.disabled = !hasProduct; });
+      document.querySelectorAll("[data-requires-prospect]").forEach(button => { button.disabled = !hasProspect; });
+      $("product-count").textContent = String(productRows.length);
+      $("prospect-count").textContent = productId() ? $("prospect-list-count").textContent : "—";
     }
-    async function run(url,method="GET"){try{show(await api(url,{method}))}catch(error){show(`Request failed: ${error.message}`)}}
-    async function selectedAction(path){if(!productId()||!selectedProspect){show("Select a product and prospect first.");return}await run(path(Number(productId()),selectedProspect.id),"POST")}
-    async function selectedView(path){if(!productId()||!selectedProspect){show("Select a product and prospect first.");return}await run(path(Number(productId()),selectedProspect.id))}
-    async function refreshStatus(){
-      try{
-        const s=await api("/api/status"), q=s.queue||{}, h=s.hardware||{}, latest=s.ollama?.last_inference;
-        const model=s.ollama?.model||"unknown";
-        $("status").textContent=`Ollama: ${s.ollama?.state||"unknown"} · Model: ${model} · Queue: ${q.queued||0} queued, ${q.running||0} running`;
-        $("hardware").textContent=`Hardware: RAM ${h.ram_gb??"unknown"} GB · CPU ${h.cpu_count??"unknown"} · GPU ${h.gpu_status||"unknown"} · Recommended ${h.recommended_model||"unknown"}`;
-        const inference=latest?`${latest.task} · ${latest.model} · ${latest.status} · seed ${latest.seed} · temp ${latest.temperature} · repeat ${latest.repeat_penalty}`:"none recorded";
-        const hashes=s.prompt_hashes||{};
-        $("traceability").textContent=`Commit: ${s.git_commit||"unknown"} · Last inference: ${inference} · Signal prompt SHA-256: ${hashes.signals||"unknown"} · Reply prompt SHA-256: ${hashes.replies||"unknown"}`;
-      }catch{
-        $("status").textContent="API status unavailable";
-        $("hardware").textContent="Hardware recommendation unavailable";
-        $("traceability").textContent="Build and inference traceability unavailable";
+
+    function renderSelectedProspect() {
+      if (!selectedProspect) {
+        $("selected-company").textContent = "No prospect selected";
+        $("selected-title").textContent = productId() ? "Choose a prospect from the list." : "Choose a product first.";
+        $("selected-id").textContent = "No record selected";
+        $("selection-mark").textContent = "—";
+        updateActionState();
+        return;
+      }
+      const company = selectedProspect.company_name || "Unnamed company";
+      $("selected-company").textContent = company;
+      $("selected-title").textContent = selectedProspect.contact_title || "Contact title not stored";
+      $("selected-id").textContent = `Prospect ID ${selectedProspect.id}`;
+      $("selection-mark").textContent = company.trim().charAt(0).toUpperCase() || "P";
+      updateActionState();
+    }
+
+    function updateProspectEmpty(title, detail) {
+      prospects.replaceChildren();
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      const heading = document.createElement("strong");
+      heading.textContent = title;
+      const note = document.createElement("span");
+      note.textContent = detail;
+      empty.append(heading, note);
+      prospects.append(empty);
+    }
+
+    async function loadProducts(chooseId = "") {
+      productRows = await api("/api/products");
+      products.replaceChildren(new Option("Select a product", ""));
+      productRows.forEach(row => products.add(new Option(row.name, row.id)));
+      if (chooseId) products.value = String(chooseId);
+      $("product-count").textContent = String(productRows.length);
+      if (products.value) await loadProspects();
+      else {
+        selectedProspect = null;
+        $("prospect-list-count").textContent = "0";
+        $("prospect-intro").textContent = "Choose a product to load its stored prospects.";
+        updateProspectEmpty(productRows.length ? "Select a product" : "No products stored", productRows.length ? "Select a product above to view its prospects." : "Create a product to start a local workflow.");
+        renderSelectedProspect();
       }
     }
-    $("product-form").onsubmit=async event=>{event.preventDefault();try{const row=await api("/api/products",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:$("product-name").value,description:$("product-description").value,docs_path:$("docs-path").value})});show(row);await loadProducts(row.id)}catch(error){show(`Create failed: ${error.message}`)}};
-    products.onchange=()=>loadProspects().catch(error=>show(`Load failed: ${error.message}`));
-    document.querySelectorAll("[data-workflow]").forEach(button=>button.onclick=()=>{if(!productId())return show("Select a product first.");run(`/api/products/${productId()}/${button.dataset.workflow}`,"POST")});
-    document.querySelectorAll("[data-view-workflow]").forEach(button=>button.onclick=()=>{if(!productId())return show("Select a product first.");run(`/api/products/${productId()}/${button.dataset.viewWorkflow}`)});
-    $("signals").onclick=()=>selectedAction((_product,id)=>`/api/prospects/${id}/signals`);
-    $("view-signals").onclick=()=>selectedView((_product,id)=>`/api/prospects/${id}/signals`);
-    $("ranking").onclick=()=>{if(!productId())return show("Select a product first.");run(`/api/products/${productId()}/ranking`)};
-    $("draft").onclick=()=>selectedAction((product,id)=>`/api/products/${product}/prospects/${id}/draft`);
-    $("view-draft").onclick=()=>selectedView((product,id)=>`/api/products/${product}/prospects/${id}/draft`);
-    $("problem-statement").onclick=()=>selectedAction((product,id)=>`/api/products/${product}/prospects/${id}/problem-statement`);
-    $("view-problem-statement").onclick=()=>selectedView((product,id)=>`/api/products/${product}/prospects/${id}/problem-statement`);
-    $("retry-queue").onclick=async()=>{await run("/api/queue/retry","POST");await refreshStatus()};
-    $("reply-form").onsubmit=async event=>{event.preventDefault();const id=encodeURIComponent($("reply-id").value.trim());await run(`/api/replies/${id}/classification`,"POST")};
-    loadProducts().catch(error=>show(`Load failed: ${error.message}`));refreshStatus();
+
+    async function loadProspects() {
+      selectedProspect = null;
+      renderSelectedProspect();
+      prospects.replaceChildren();
+      if (!productId()) {
+        $("prospect-list-count").textContent = "0";
+        updateProspectEmpty("No product selected", "Select a stored product to see its prospects.");
+        return;
+      }
+      const rows = await api(`/api/products/${productId()}/prospects`);
+      $("prospect-list-count").textContent = String(rows.length);
+      $("prospect-intro").textContent = rows.length ? "Select a prospect to see its available workflows." : "No prospect records are stored for this product.";
+      $("prospect-count").textContent = String(rows.length);
+      if (!rows.length) {
+        updateProspectEmpty("No prospects stored", "Import a product-scoped prospect CSV to begin research.");
+        updateActionState();
+        return;
+      }
+      rows.forEach((row, index) => {
+        const button = document.createElement("button");
+        button.className = "prospect";
+        button.type = "button";
+        button.setAttribute("aria-pressed", "false");
+        button.setAttribute("aria-label", `${row.company_name || "Unnamed company"}, ${row.contact_title || "contact title not stored"}, prospect ${row.id}`);
+        const number = document.createElement("span");
+        number.className = "prospect-index";
+        number.setAttribute("aria-hidden", "true");
+        number.textContent = String(index + 1).padStart(2, "0");
+        const copy = document.createElement("span");
+        copy.className = "prospect-copy";
+        const name = document.createElement("span");
+        name.className = "prospect-name";
+        name.textContent = row.company_name || "Unnamed company";
+        const meta = document.createElement("span");
+        meta.className = "prospect-meta";
+        meta.textContent = row.contact_title || "Contact title not stored";
+        copy.append(name, meta);
+        const arrow = document.createElement("span");
+        arrow.className = "prospect-arrow";
+        arrow.setAttribute("aria-hidden", "true");
+        arrow.textContent = "›";
+        button.append(number, copy, arrow);
+        button.onclick = () => {
+          selectedProspect = row;
+          prospects.querySelectorAll(".prospect").forEach(item => item.setAttribute("aria-pressed", String(item === button)));
+          renderSelectedProspect();
+          show({ product_id: Number(productId()), prospect_id: row.id, status: "selected" });
+        };
+        prospects.append(button);
+      });
+      updateActionState();
+    }
+
+    async function run(url, method = "GET", options = {}) {
+      $("result-status").textContent = "Request in progress";
+      try {
+        const result = await api(url, { method, ...options });
+        show(result);
+        return result;
+      } catch (error) {
+        const message = `Request failed: ${error.message}`;
+        output.textContent = message;
+        $("result-status").textContent = "Request failed";
+        return null;
+      }
+    }
+
+    async function selectedAction(path) {
+      if (!productId() || !selectedProspect) {
+        output.textContent = "Select a product and prospect first.";
+        return;
+      }
+      await run(path(Number(productId()), selectedProspect.id), "POST");
+    }
+
+    async function selectedView(path) {
+      if (!productId() || !selectedProspect) {
+        output.textContent = "Select a product and prospect first.";
+        return;
+      }
+      await run(path(Number(productId()), selectedProspect.id));
+    }
+
+    async function refreshStatus() {
+      try {
+        const s = await api("/api/status"), q = s.queue || {}, h = s.hardware || {}, latest = s.ollama?.last_inference;
+        const state = s.ollama?.state || "unknown";
+        const model = s.ollama?.model || "unknown";
+        $("status").textContent = `Ollama ${state}`;
+        $("status").dataset.state = state;
+        $("model-detail").textContent = `Model · ${model}`;
+        $("queue-count").textContent = `${q.queued || 0} queued · ${q.running || 0} running`;
+        $("queue-detail").textContent = `${q.done || 0} complete · ${q.failed || 0} failed`;
+        $("hardware").textContent = h.tier || "Hardware profile ready";
+        $("hardware-detail").textContent = `RAM ${h.ram_gb ?? "unknown"} GB · ${h.cpu_count ?? "unknown"} CPUs · Recommended ${h.recommended_model || "unknown"}`;
+        const inference = latest ? `${latest.task} · ${latest.model} · ${latest.status} · seed ${latest.seed} · temp ${latest.temperature} · repeat ${latest.repeat_penalty}` : "none recorded";
+        const hashes = s.prompt_hashes || {};
+        $("traceability").textContent = `Commit ${s.git_commit || "unknown"} · Last inference ${inference} · Signal prompt SHA-256 ${hashes.signals || "unknown"} · Reply prompt SHA-256 ${hashes.replies || "unknown"}`;
+      } catch {
+        $("status").textContent = "API unavailable";
+        $("status").dataset.state = "error";
+        $("model-detail").textContent = "Could not read local Ollama status.";
+        $("queue-count").textContent = "Queue unavailable";
+        $("hardware").textContent = "Hardware unavailable";
+        $("hardware-detail").textContent = "Could not read the local API.";
+        $("traceability").textContent = "Build and inference traceability unavailable.";
+      }
+    }
+
+    $("product-form").onsubmit = async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const formStatus = $("product-form-status");
+      formStatus.textContent = "Creating product.";
+      const payload = {
+        name: $("product-name").value,
+        description: $("product-description").value,
+        docs_path: $("docs-path").value,
+      };
+      const created = await run("/api/products", "POST", { headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (created?.id) {
+        formStatus.textContent = `Created ${created.name || "product"}.`;
+        form.reset();
+        form.closest("details").open = false;
+        await loadProducts(created.id);
+      } else {
+        formStatus.textContent = "Product creation failed. See the latest result.";
+      }
+    };
+
+    products.onchange = () => loadProspects().catch(error => {
+      output.textContent = `Load failed: ${error.message}`;
+      $("result-status").textContent = "Load failed";
+    });
+    document.querySelectorAll("[data-workflow]").forEach(button => button.onclick = () => {
+      if (!productId()) return;
+      run(`/api/products/${productId()}/${button.dataset.workflow}`, "POST");
+    });
+    document.querySelectorAll("[data-view-workflow]").forEach(button => button.onclick = () => {
+      if (!productId()) return;
+      run(`/api/products/${productId()}/${button.dataset.viewWorkflow}`);
+    });
+    $("signals").onclick = () => selectedAction((_product, id) => `/api/prospects/${id}/signals`);
+    $("view-signals").onclick = () => selectedView((_product, id) => `/api/prospects/${id}/signals`);
+    $("ranking").onclick = () => { if (productId()) run(`/api/products/${productId()}/ranking`); };
+    $("draft").onclick = () => selectedAction((product, id) => `/api/products/${product}/prospects/${id}/draft`);
+    $("view-draft").onclick = () => selectedView((product, id) => `/api/products/${product}/prospects/${id}/draft`);
+    $("problem-statement").onclick = () => selectedAction((product, id) => `/api/products/${product}/prospects/${id}/problem-statement`);
+    $("view-problem-statement").onclick = () => selectedView((product, id) => `/api/products/${product}/prospects/${id}/problem-statement`);
+    $("retry-queue").onclick = async () => { await run("/api/queue/retry", "POST"); await refreshStatus(); };
+    $("reply-form").onsubmit = async event => {
+      event.preventDefault();
+      const id = encodeURIComponent($("reply-id").value.trim());
+      const formStatus = $("reply-form-status");
+      formStatus.textContent = "Classifying the stored reply.";
+      const result = await run(`/api/replies/${id}/classification`, "POST");
+      formStatus.textContent = result ? "Reply classification complete." : "Classification failed. See the latest result.";
+    };
+
+    loadProducts().catch(error => { output.textContent = `Load failed: ${error.message}`; });
+    refreshStatus();
   </script>
 </body>
 </html>
