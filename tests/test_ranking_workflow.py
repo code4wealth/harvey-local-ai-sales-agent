@@ -184,6 +184,22 @@ def test_ranking_is_product_scoped_and_uses_only_verified_signal_runs(
     assert retail["latest_signal_run_status"] == "failed"
     assert retail["signal_run_id"] != failed_run
     assert retail["score_breakdown"]["signal_score"] == pytest.approx(20.0)
+    assert retail["score_explanations"]["icp_fit"]["weighted_contribution"] == pytest.approx(65.0)
+    assert retail["score_explanations"]["signal_strength"]["weighted_contribution"] == pytest.approx(7.0)
+    assert retail["score_explanations"]["signal_strength"]["component"]["inputs"]["contributions"] == [
+        {
+            "type": "hiring",
+            "confidence": 0.8,
+            "weight": 25.0,
+            "contribution": 20.0,
+            "evidence": "The team hired five people.",
+            "signal_run_id": retail["signal_run_id"],
+        }
+    ]
+    assert retail["score_explanations"]["evidence_quality"]["score"] == 100.0
+    assert retail["score_explanations"]["evidence_quality"]["included_in_total_score"] is False
+    assert retail["score_explanations"]["icp_fit"]["components"]["size_fit"]["rule_based"] is True
+    assert retail["score_explanations"]["icp_fit"]["components"]["icp_similarity"]["model_derived"] is True
     assert retail["verified_signal_reasons"] == [
         {
             "type": "hiring",
@@ -205,6 +221,123 @@ def test_ranking_is_product_scoped_and_uses_only_verified_signal_runs(
     assert healthcare["verified_signal_reasons"] == []
     assert healthcare["icp_field_matches"]["industries"]["status"] == "no_exact_match"
     assert retail["score"] > healthcare["score"]
+
+
+def test_ranking_rejects_a_previously_verified_quote_after_source_page_changes(
+    db_path, monkeypatch, tmp_path
+):
+    page_dir = tmp_path / "pages"
+    monkeypatch.setattr(prospects, "DEFAULT_PAGE_DIR", page_dir)
+    _use_mock_embeddings(monkeypatch)
+    conn = db.connect()
+    try:
+        product_id = db.create_product(conn, name="Stale evidence product")
+        prospect_id = db.create_prospect(
+            conn, product_id=product_id, company_name="Changed company"
+        )
+        original = "The company hired five support specialists this month."
+        prospects.store_prospect_page(
+            conn, prospect_id=prospect_id, text=original, page_dir=page_dir
+        )
+        _save_icp(
+            conn,
+            product_id,
+            _icp(
+                industry="support operations",
+                pain_point="missed handoffs",
+                trigger="hired five specialists",
+                disqualifier="no support team",
+            ),
+        )
+        _save_signal_run(
+            conn,
+            prospect_id,
+            [
+                {
+                    "type": "hiring",
+                    "evidence": original,
+                    "confidence": 0.8,
+                }
+            ],
+            status="succeeded",
+        )
+        prospects.store_prospect_page(
+            conn,
+            prospect_id=prospect_id,
+            text="The company maintains its current support organization.",
+            page_dir=page_dir,
+        )
+    finally:
+        conn.close()
+
+    result = _get(f"/api/products/{product_id}/ranking").json()["prospects"][0]
+
+    assert result["signals_status"] == "stale"
+    assert "signals" in result["missing_inputs"]
+    assert result["score_breakdown"]["signal_score"] is None
+    assert "signal_score" in result["missing_components"]
+    assert result["partial"] is True
+    assert result["verified_signal_reasons"] == []
+    assert result["score_explanations"]["evidence_quality"]["score"] is None
+    assert "no longer appears verbatim" in result["signal_status_reason"]
+
+
+def test_legacy_signal_without_confidence_is_not_scored_as_zero(db_path, monkeypatch, tmp_path):
+    page_dir = tmp_path / "pages"
+    monkeypatch.setattr(prospects, "DEFAULT_PAGE_DIR", page_dir)
+    _use_mock_embeddings(monkeypatch)
+    evidence = "The company hired five support specialists this month."
+    conn = db.connect()
+    try:
+        product_id = db.create_product(conn, name="Legacy confidence product")
+        prospect_id = db.create_prospect(
+            conn, product_id=product_id, company_name="Legacy company"
+        )
+        prospects.store_prospect_page(
+            conn, prospect_id=prospect_id, text=evidence, page_dir=page_dir
+        )
+        _save_icp(
+            conn,
+            product_id,
+            _icp(
+                industry="support operations",
+                pain_point="missed handoffs",
+                trigger="hired five specialists",
+                disqualifier="no support team",
+            ),
+        )
+        run_id = db.create_signal_run(
+            conn, prospect_id=prospect_id, model_name="legacy-model"
+        )
+        conn.execute(
+            "UPDATE signal_runs SET status = 'succeeded', signals_json = ? "
+            "WHERE id = ?",
+            (json.dumps([{"type": "hiring", "evidence": evidence, "about_company": True}]), run_id),
+        )
+        conn.execute(
+            "INSERT INTO signals (prospect_id, signal_run_id, type, evidence, confidence, created_at) "
+            "VALUES (?, ?, 'hiring', ?, 0.0, ?)",
+            (prospect_id, run_id, evidence, db.utcnow()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = _get(f"/api/products/{product_id}/ranking").json()["prospects"][0]
+
+    assert result["signals_status"] == "confidence_missing"
+    assert "signal_confidence" in result["missing_inputs"]
+    assert result["score_breakdown"]["signal_score"] is None
+    assert "signal_score" in result["missing_components"]
+    assert result["verified_signal_reasons"] == [
+        {
+            "type": "hiring",
+            "evidence": evidence,
+            "confidence": None,
+            "signal_run_id": result["signal_run_id"],
+        }
+    ]
+    assert result["partial"] is True
 
 
 def test_missing_icp_and_signals_never_produce_a_default_score(db_path, monkeypatch):

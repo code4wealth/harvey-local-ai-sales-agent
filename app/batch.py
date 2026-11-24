@@ -60,18 +60,13 @@ def _latest_rows(conn, prospect_id: int, product_id: int):
         "WHERE product_id = ? ORDER BY id DESC LIMIT 1",
         (product_id,),
     ).fetchone()
-    research = conn.execute(
-        "SELECT embedding, embedding_model, icp_similarity FROM prospect_research "
-        "WHERE prospect_id = ? ORDER BY id DESC LIMIT 1",
-        (prospect_id,),
-    ).fetchone()
     signals = list(
         conn.execute(
             "SELECT type, confidence FROM signals WHERE prospect_id = ? ORDER BY id",
             (prospect_id,),
         ).fetchall()
     )
-    return icp, research, signals
+    return icp, signals
 
 
 def _unpack_or_none(blob: bytes | None) -> list[float] | None:
@@ -105,7 +100,7 @@ def score_and_store_prospect(
     prospect = db.get_prospect(conn, prospect_id)
     if prospect is None:
         raise ValueError(f"prospect {prospect_id} not found")
-    icp, research, signals = _latest_rows(
+    icp, signals = _latest_rows(
         conn, prospect_id=int(prospect_id), product_id=prospect["product_id"]
     )
     icp_data = _icp_data(icp)
@@ -114,21 +109,14 @@ def score_and_store_prospect(
     if icp is not None:
         icp_vector = _unpack_or_none(icp["embedding"])
         icp_model = icp["embedding_model"]
-        prospect_vectors: list[tuple[list[float] | None, str]] = [
-            (_unpack_or_none(prospect["page_embedding"]), prospect["page_embedding_model"])
-        ]
-        if research is not None:
-            prospect_vectors.append(
-                (_unpack_or_none(research["embedding"]), research["embedding_model"])
-            )
-        if icp_vector is not None and icp_model:
-            for vector, model in prospect_vectors:
-                if vector is not None and model == icp_model:
-                    similarity = scoring.icp_similarity(icp_vector, vector)
-                    break
-        if similarity is None and research is not None:
-            # This field stores the normalized 0–1 component, never raw cosine.
-            similarity = research["icp_similarity"]
+        page_vector = _unpack_or_none(prospect["page_embedding"])
+        if (
+            icp_vector is not None
+            and icp_model
+            and page_vector is not None
+            and prospect["page_embedding_model"] == icp_model
+        ):
+            similarity = scoring.icp_similarity(icp_vector, page_vector)
 
     if verified_signals is _USE_STORED_SIGNALS:
         raw_signals = [dict(row) for row in signals] if signals else None

@@ -96,47 +96,82 @@ def _signal_field(signal: Any, name: str) -> Any:
         return getattr(signal, name, None)
 
 
+def signal_score_details(
+    signals: Sequence[Mapping[str, Any]] | None,
+    *,
+    weights: Mapping[str, float] = SIGNAL_WEIGHTS,
+) -> dict[str, Any]:
+    """Explain the weighted signal score; invalid or absent input remains unknown."""
+    empty = {
+        "score": None,
+        "uncapped_score": None,
+        "cap": 100.0,
+        "contributions": [],
+        "reason": "Signal input is missing or contains an invalid type/confidence.",
+    }
+    if signals is None or isinstance(signals, (str, bytes)):
+        return empty
+    best_by_type: dict[str, tuple[float, Any]] = {}
+    for signal in signals:
+        signal_type = _signal_field(signal, "type")
+        if not isinstance(signal_type, str) or not signal_type.strip():
+            return empty
+        signal_type = signal_type.strip().lower()
+        if signal_type == "none":
+            continue
+        if signal_type not in weights:
+            return empty
+        confidence = _signal_field(signal, "confidence")
+        if isinstance(confidence, bool):
+            return empty
+        try:
+            confidence_value = float(confidence)
+        except (TypeError, ValueError, OverflowError):
+            return empty
+        if not math.isfinite(confidence_value) or not 0.0 <= confidence_value <= 1.0:
+            return empty
+        previous = best_by_type.get(signal_type)
+        if previous is None or confidence_value > previous[0]:
+            best_by_type[signal_type] = (confidence_value, signal)
+
+    contributions: list[dict[str, Any]] = []
+    total = 0.0
+    for signal_type in sorted(best_by_type):
+        confidence, signal = best_by_type[signal_type]
+        try:
+            weight = float(weights[signal_type])
+        except (TypeError, ValueError, OverflowError):
+            return empty
+        if not math.isfinite(weight) or weight < 0.0:
+            return empty
+        contribution = weight * confidence
+        total += contribution
+        item = {
+            "type": signal_type,
+            "confidence": confidence,
+            "weight": weight,
+            "contribution": contribution,
+        }
+        evidence = _signal_field(signal, "evidence")
+        if isinstance(evidence, str):
+            item["evidence"] = evidence
+        contributions.append(item)
+    return {
+        "score": min(100.0, total),
+        "uncapped_score": total,
+        "cap": 100.0,
+        "contributions": contributions,
+        "reason": "Highest confidence is used once per type; the total is capped at 100.",
+    }
+
+
 def signal_score(
     signals: Sequence[Mapping[str, Any]] | None,
     *,
     weights: Mapping[str, float] = SIGNAL_WEIGHTS,
 ) -> float | None:
     """Use the highest confidence once per type; return ``None`` if uncomputable."""
-    if signals is None:
-        return None
-    if isinstance(signals, (str, bytes)):
-        return None
-    best_by_type: dict[str, float] = {}
-    for signal in signals:
-        signal_type = _signal_field(signal, "type")
-        if not isinstance(signal_type, str) or not signal_type.strip():
-            return None
-        signal_type = signal_type.strip().lower()
-        if signal_type == "none":
-            continue
-        if signal_type not in weights:
-            return None
-        confidence = _signal_field(signal, "confidence")
-        if isinstance(confidence, bool):
-            return None
-        try:
-            confidence_value = float(confidence)
-        except (TypeError, ValueError, OverflowError):
-            return None
-        if not math.isfinite(confidence_value) or not 0.0 <= confidence_value <= 1.0:
-            return None
-        best_by_type[signal_type] = max(best_by_type.get(signal_type, 0.0), confidence_value)
-
-    total = 0.0
-    for signal_type, confidence in best_by_type.items():
-        try:
-            weight = float(weights[signal_type])
-        except (TypeError, ValueError, OverflowError):
-            return None
-        if not math.isfinite(weight) or weight < 0.0:
-            return None
-        total += weight * confidence
-    return min(100.0, total)
+    return signal_score_details(signals, weights=weights)["score"]
 
 
 def _number(value: Any) -> float | None:

@@ -46,6 +46,48 @@ def test_signal_score_uses_highest_confidence_once_per_type_and_caps_at_100():
     assert scoring.signal_score([{"type": "funding", "confidence": 1.1}]) is None
 
 
+def test_signal_score_details_show_model_confidence_and_deterministic_type_weights():
+    details = scoring.signal_score_details(
+        [
+            {
+                "type": "hiring",
+                "confidence": 0.6,
+                "evidence": "An earlier hiring sentence.",
+            },
+            {
+                "type": "hiring",
+                "confidence": 0.8,
+                "evidence": "The company hired five specialists.",
+            },
+            {
+                "type": "funding",
+                "confidence": 0.5,
+                "evidence": "The company received a grant.",
+            },
+        ]
+    )
+    assert details["score"] == pytest.approx(35.0)
+    assert details["uncapped_score"] == pytest.approx(35.0)
+    assert details["cap"] == 100.0
+    assert details["contributions"] == [
+        {
+            "type": "funding",
+            "confidence": 0.5,
+            "weight": 30.0,
+            "contribution": 15.0,
+            "evidence": "The company received a grant.",
+        },
+        {
+            "type": "hiring",
+            "confidence": 0.8,
+            "weight": 25.0,
+            "contribution": 20.0,
+            "evidence": "The company hired five specialists.",
+        },
+    ]
+    assert scoring.signal_score_details([{"type": "hiring", "evidence": "legacy quote"}])["score"] is None
+
+
 def test_size_fit_is_full_in_range_and_logarithmic_to_zero_at_three_x():
     bounds = {"min": 100, "max": 1000}
     assert scoring.size_fit(100, bounds) == 100.0

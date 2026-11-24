@@ -45,14 +45,21 @@ def _load_icp(conn, product_id: int) -> tuple[Any | None, dict[str, Any], str]:
     return row, value, "available"
 
 
-def _signal_snapshot(conn, prospect_id: int, product_id: int) -> dict[str, Any]:
+def _signal_snapshot(
+    conn,
+    prospect_id: int,
+    product_id: int,
+    *,
+    page_status: str,
+    page_text: str,
+) -> dict[str, Any]:
     latest = conn.execute(
         "SELECT id, status FROM signal_runs WHERE prospect_id = ? AND product_id = ? "
         "ORDER BY id DESC LIMIT 1",
         (int(prospect_id), int(product_id)),
     ).fetchone()
     successful = conn.execute(
-        "SELECT id, created_at FROM signal_runs "
+        "SELECT id, created_at, signals_json, drop_counts_json FROM signal_runs "
         "WHERE prospect_id = ? AND product_id = ? AND status = 'succeeded' "
         "ORDER BY id DESC LIMIT 1",
         (int(prospect_id), int(product_id)),
@@ -64,35 +71,143 @@ def _signal_snapshot(conn, prospect_id: int, product_id: int) -> dict[str, Any]:
             "run_id": None,
             "created_at": None,
             "signals": None,
+            "reason": "No successful signal run is stored for this prospect.",
+            "unverified_count": 0,
         }
 
-    rows = conn.execute(
+    try:
+        raw_signals = json.loads(successful["signals_json"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        raw_signals = None
+    if not isinstance(raw_signals, list):
+        return {
+            "status": "invalid",
+            "latest_run_status": latest["status"] if latest is not None else None,
+            "run_id": int(successful["id"]),
+            "created_at": successful["created_at"],
+            "signals": None,
+            "reason": "The successful signal run contains invalid stored JSON.",
+            "unverified_count": 0,
+        }
+    if not raw_signals or all(
+        isinstance(item, dict) and str(item.get("type", "")).strip().lower() == "none"
+        for item in raw_signals
+    ):
+        return {
+            "status": "none_found",
+            "latest_run_status": latest["status"] if latest is not None else None,
+            "run_id": int(successful["id"]),
+            "created_at": successful["created_at"],
+            "signals": [],
+            "reason": "The successful signal run found no supported signals.",
+            "unverified_count": 0,
+            "drop_counts_json": successful["drop_counts_json"],
+        }
+    if page_status != "available":
+        return {
+            "status": "unverifiable",
+            "latest_run_status": latest["status"] if latest is not None else None,
+            "run_id": int(successful["id"]),
+            "created_at": successful["created_at"],
+            "signals": None,
+            "reason": "Stored page text is unavailable, so signal evidence cannot be rechecked.",
+            "unverified_count": len(raw_signals),
+        }
+
+    stored_rows = conn.execute(
         "SELECT type, evidence, confidence FROM signals "
         "WHERE prospect_id = ? AND signal_run_id = ? ORDER BY id",
         (int(prospect_id), int(successful["id"])),
     ).fetchall()
+    if len(stored_rows) != len(raw_signals):
+        return {
+            "status": "invalid",
+            "latest_run_status": latest["status"] if latest is not None else None,
+            "run_id": int(successful["id"]),
+            "created_at": successful["created_at"],
+            "signals": None,
+            "reason": "Stored signal records do not match their successful run snapshot.",
+            "unverified_count": len(raw_signals),
+        }
+
     verified: list[dict[str, Any]] = []
-    for row in rows:
-        signal_type = str(row["type"] or "").strip().lower()
-        evidence = str(row["evidence"] or "")
-        try:
-            confidence = float(row["confidence"])
-        except (TypeError, ValueError, OverflowError):
-            continue
+    confidence_missing = False
+    for item, row in zip(raw_signals, stored_rows):
+        if not isinstance(item, dict):
+            return {
+                "status": "invalid",
+                "latest_run_status": latest["status"] if latest is not None else None,
+                "run_id": int(successful["id"]),
+                "created_at": successful["created_at"],
+                "signals": None,
+                "reason": "A stored signal record is not an object.",
+                "unverified_count": len(raw_signals),
+            }
+        signal_type = item.get("type")
+        evidence = item.get("evidence")
         if (
-            signal_type in scoring.SIGNAL_WEIGHTS
-            and evidence.strip()
-            and 0.0 <= confidence <= 1.0
+            not isinstance(signal_type, str)
+            or signal_type.strip().lower() not in scoring.SIGNAL_WEIGHTS
+            or not isinstance(evidence, str)
+            or not evidence.strip()
+            or str(row["type"] or "").strip().lower() != signal_type.strip().lower()
+            or row["evidence"] != evidence
         ):
-            verified.append(
-                {"type": signal_type, "evidence": evidence, "confidence": confidence}
-            )
+            return {
+                "status": "invalid",
+                "latest_run_status": latest["status"] if latest is not None else None,
+                "run_id": int(successful["id"]),
+                "created_at": successful["created_at"],
+                "signals": None,
+                "reason": "A stored signal record is invalid or does not match its run snapshot.",
+                "unverified_count": len(raw_signals),
+            }
+        quotes, dropped = scoring.verify_quotes(page_text, [evidence])
+        if dropped or evidence not in page_text or not quotes:
+            return {
+                "status": "stale",
+                "latest_run_status": latest["status"] if latest is not None else None,
+                "run_id": int(successful["id"]),
+                "created_at": successful["created_at"],
+                "signals": None,
+                "reason": "Stored signal evidence no longer appears verbatim in the current page text.",
+                "unverified_count": 1,
+            }
+
+        confidence = item.get("confidence")
+        if isinstance(confidence, bool) or confidence is None:
+            confidence_value = None
+            confidence_missing = True
+        else:
+            try:
+                confidence_value = float(confidence)
+            except (TypeError, ValueError, OverflowError):
+                confidence_value = None
+                confidence_missing = True
+            if confidence_value is not None and not 0.0 <= confidence_value <= 1.0:
+                confidence_value = None
+                confidence_missing = True
+        verified.append(
+            {
+                "type": signal_type.strip().lower(),
+                "evidence": evidence,
+                "confidence": confidence_value,
+            }
+        )
+
     return {
-        "status": "available" if verified else "none_found",
+        "status": "confidence_missing" if confidence_missing else "available",
         "latest_run_status": latest["status"] if latest is not None else None,
         "run_id": int(successful["id"]),
         "created_at": successful["created_at"],
         "signals": verified,
+        "reason": (
+            "One or more legacy signals lack valid confidence; signal strength is not scored."
+            if confidence_missing
+            else "Every scored signal is backed by a verbatim quote in the current stored page."
+        ),
+        "unverified_count": 0,
+        "drop_counts_json": successful["drop_counts_json"],
     }
 
 
@@ -279,6 +394,152 @@ def _tier(score_result: dict[str, Any] | None) -> str:
     return "low"
 
 
+def _signal_score_explanation(signal_state: dict[str, Any]) -> dict[str, Any]:
+    details = scoring.signal_score_details(signal_state["signals"])
+    for contribution in details["contributions"]:
+        contribution["signal_run_id"] = signal_state["run_id"]
+    details.update(
+        {
+            "status": signal_state["status"],
+            "signal_run_id": signal_state["run_id"],
+            "rule_based_aggregation": True,
+            "model_fields": ["signal type", "confidence"],
+            "evidence_validation": "Rule-based exact quote check against current stored page text.",
+            "reason": signal_state["reason"],
+        }
+    )
+    return details
+
+
+def _evidence_quality(signal_state: dict[str, Any]) -> dict[str, Any]:
+    status = signal_state["status"]
+    base = {
+        "status": status,
+        "rule_based": True,
+        "included_in_total_score": False,
+        "method": "Verified evidence quotes divided by verified quotes plus quote-verification rejections.",
+        "signal_run_id": signal_state["run_id"],
+        "reason": signal_state["reason"],
+    }
+    if status in {"missing", "invalid", "stale", "unverifiable"}:
+        return {**base, "score": None, "verified_quotes": 0, "rejected_quotes": None}
+    raw_drop_counts = signal_state.get("drop_counts_json")
+    try:
+        drop_counts = json.loads(raw_drop_counts) if raw_drop_counts else {}
+        rejected = int(drop_counts.get("quote", 0))
+        if rejected < 0:
+            raise ValueError("negative quote count")
+    except (TypeError, ValueError, json.JSONDecodeError, AttributeError):
+        return {**base, "status": "unknown", "score": None, "verified_quotes": None, "rejected_quotes": None}
+    signals = signal_state["signals"] or []
+    verified = len(signals)
+    attempted = verified + rejected
+    return {
+        **base,
+        "status": "not_applicable" if attempted == 0 else "available",
+        "score": None if attempted == 0 else 100.0 * verified / attempted,
+        "verified_quotes": verified,
+        "rejected_quotes": rejected,
+        "attempted_quotes": attempted,
+        "reason": (
+            "No signal quotes were returned, so quote quality is not applicable."
+            if attempted == 0
+            else "Quote-verification result from the persisted signal run; this quality indicator does not add points to the total."
+        ),
+    }
+
+
+def _score_explanations(
+    *,
+    icp_id: int | None,
+    score_result: dict[str, Any] | None,
+    signal_state: dict[str, Any],
+    page_status: str,
+    field_matches: dict[str, Any],
+) -> dict[str, Any]:
+    breakdown = score_result["breakdown"] if score_result is not None else {}
+    weights = breakdown.get("weights", scoring.SCORE_WEIGHTS)
+    contributions = breakdown.get("weighted_contributions", {})
+
+    def component(name: str, *, rule: bool, model: bool, method: str, inputs: dict[str, Any]):
+        value = breakdown.get(name)
+        return {
+            "value": value,
+            "weight": weights[name],
+            "weighted_contribution": contributions.get(name, 0.0),
+            "status": "available" if value is not None else "missing",
+            "rule_based": rule,
+            "model_derived": model,
+            "method": method,
+            "inputs": inputs,
+        }
+
+    icp = component(
+        "icp_similarity",
+        rule=True,
+        model=True,
+        method=(
+            "Model-derived cosine similarity from the stored product ICP JSON and stored local page text, "
+            "mapped deterministically from cosine 0.15–0.65 onto 0–1."
+        ),
+        inputs={
+            "icp_id": icp_id,
+            "page_text_status": page_status,
+            "embedding_model": batch.DEFAULT_MODEL,
+            "textual_entailment": False,
+        },
+    )
+    size = component(
+        "size_fit",
+        rule=True,
+        model=False,
+        method="Rule-based employee-count fit against the stored ICP size bounds; logarithmic decay outside the range.",
+        inputs=field_matches["company_size"],
+    )
+    title = component(
+        "title_fit",
+        rule=True,
+        model=False,
+        method="Rule-based keyword fit between the stored contact title and stored ICP buyer-title terms.",
+        inputs=field_matches["buyer_titles"],
+    )
+    signal = component(
+        "signal_score",
+        rule=True,
+        model=True,
+        method="Model-generated signal types/confidences, combined by deterministic per-type weights and capped at 100.",
+        inputs=_signal_score_explanation(signal_state),
+    )
+    icp_fit_points = sum(
+        float(contributions.get(name, 0.0))
+        for name in ("icp_similarity", "size_fit", "title_fit")
+    )
+    signal_points = float(contributions.get("signal_score", 0.0))
+    return {
+        "icp_fit": {
+            "weighted_contribution": icp_fit_points,
+            "maximum_weight": sum(weights[name] for name in ("icp_similarity", "size_fit", "title_fit")),
+            "rule_based_and_model_derived": True,
+            "components": {
+                "icp_similarity": icp,
+                "size_fit": size,
+                "title_fit": title,
+            },
+            "literal_icp_phrase_matches": field_matches,
+        },
+        "signal_strength": {
+            "weighted_contribution": signal_points,
+            "maximum_weight": weights["signal_score"],
+            "rule_based_and_model_derived": True,
+            "component": signal,
+        },
+        "evidence_quality": _evidence_quality(signal_state),
+        "total_score": score_result["score"] if score_result is not None else None,
+        "partial": score_result["partial"] if score_result is not None else True,
+        "formula": "See score_breakdown.weights and score_breakdown.weighted_contributions; evidence_quality is an audit indicator, not an extra score weight.",
+    }
+
+
 def rank_product(
     product_id: int, *, page_dir: str | Path | None = None
 ) -> dict[str, Any]:
@@ -292,15 +553,23 @@ def rank_product(
         ranked: list[dict[str, Any]] = []
         for prospect in db.list_prospects(conn, product_id):
             prospect_id = int(prospect["id"])
-            signal_state = _signal_snapshot(conn, prospect_id, product_id)
             page_status, page_text = _read_page(
                 conn, prospect_id, page_dir=page_dir
+            )
+            signal_state = _signal_snapshot(
+                conn,
+                prospect_id,
+                product_id,
+                page_status=page_status,
+                page_text=page_text,
             )
             missing_inputs: list[str] = []
             if icp_status != "available":
                 missing_inputs.append("icp")
-            if signal_state["status"] == "missing":
+            if signal_state["status"] in {"missing", "invalid", "stale", "unverifiable"}:
                 missing_inputs.append("signals")
+            elif signal_state["status"] == "confidence_missing":
+                missing_inputs.append("signal_confidence")
             if page_status != "available":
                 missing_inputs.append("page_text")
 
@@ -326,6 +595,18 @@ def rank_product(
                 }
                 for signal in (signal_state["signals"] or [])
             ]
+            field_matches = (
+                _icp_field_matches(prospect, icp_data, page_status, page_text)
+                if icp_status == "available"
+                else _empty_icp_field_matches()
+            )
+            explanations = _score_explanations(
+                icp_id=int(icp_row["id"]) if icp_row is not None else None,
+                score_result=score_result,
+                signal_state=signal_state,
+                page_status=page_status,
+                field_matches=field_matches,
+            )
             result = {
                 "prospect_id": prospect_id,
                 "product_id": int(product_id),
@@ -338,18 +619,16 @@ def rank_product(
                 "tier": _tier(score_result),
                 "partial": score_result["partial"] if score_result is not None else True,
                 "score_breakdown": score_result["breakdown"] if score_result is not None else None,
+                "score_explanations": explanations,
                 "missing_inputs": missing_inputs,
                 "missing_components": missing_components,
                 "page_text_status": page_status,
                 "signals_status": signal_state["status"],
+                "signal_status_reason": signal_state["reason"],
                 "latest_signal_run_status": signal_state["latest_run_status"],
                 "signal_run_id": signal_state["run_id"],
                 "verified_signal_reasons": evidence_reasons,
-                "icp_field_matches": (
-                    _icp_field_matches(prospect, icp_data, page_status, page_text)
-                    if icp_status == "available"
-                    else _empty_icp_field_matches()
-                ),
+                "icp_field_matches": field_matches,
             }
             ranked.append(result)
 

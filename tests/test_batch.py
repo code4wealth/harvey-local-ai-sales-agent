@@ -246,6 +246,36 @@ def test_missing_embedding_model_leaves_similarity_null_and_score_partial(
         conn.close()
 
 
+def test_stale_research_similarity_cannot_fill_current_missing_embedding(db_path):
+    conn = db.connect()
+    try:
+        product_id, prospect_id = _product_and_prospect(conn)
+        icp_data = {
+            "company_size_min": 50,
+            "company_size_max": 500,
+            "buyer_titles": ["VP of Sales"],
+        }
+        conn.execute(
+            "INSERT INTO icps (product_id, icp_json, embedding, embedding_model, created_at) "
+            "VALUES (?, ?, NULL, '', ?)",
+            (product_id, json.dumps(icp_data), db.utcnow()),
+        )
+        conn.execute(
+            "INSERT INTO prospect_research "
+            "(prospect_id, summary, embedding, embedding_model, icp_similarity, source_path, created_at) "
+            "VALUES (?, 'old summary', NULL, '', 0.95, 'old-source.txt', ?)",
+            (prospect_id, db.utcnow()),
+        )
+        conn.commit()
+
+        result = batch.score_and_store_prospect(conn, prospect_id)
+
+        assert result["breakdown"]["icp_similarity"] is None
+        assert result["partial"] is True
+    finally:
+        conn.close()
+
+
 def test_missing_score_inputs_are_null_and_score_is_partial(db_path):
     conn = db.connect()
     try:
