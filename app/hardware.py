@@ -38,7 +38,11 @@ class HardwareInfo:
     recommended_num_ctx: int
 
     def as_dict(self) -> dict:
-        return asdict(self)
+        result = asdict(self)
+        result["gpu_status"] = (
+            "none detected" if self.gpu_vram_gb is None else "NVIDIA GPU detected"
+        )
+        return result
 
 
 def recommend(ram_gb: float | None, vram_gb: float | None) -> tuple[str, str]:

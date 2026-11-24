@@ -43,6 +43,7 @@ class QueueWorker:
         self.poll_seconds = poll_seconds
         self.batch_size = batch_size
         self._stop = threading.Event()
+        self._wake = threading.Event()
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -59,21 +60,27 @@ class QueueWorker:
         self._thread = threading.Thread(target=self._loop, name="queue-worker", daemon=True)
         self._thread.start()
 
+    def wake(self) -> None:
+        """Request an immediate queue poll without running handlers in the API thread."""
+        self._wake.set()
+
     def stop(self, timeout: float = 10.0) -> None:
         self._stop.set()
+        self._wake.set()
         if self._thread:
             self._thread.join(timeout)
 
     def _loop(self) -> None:
         while not self._stop.is_set():
+            self._wake.clear()
             try:
                 attempted = self.run_once()
             except Exception:
                 logger.exception("queue worker iteration failed")
                 attempted = 0
             # If nothing was runnable (Ollama down or queue empty), wait the
-            # full poll interval; otherwise drain the backlog briskly.
-            self._stop.wait(self.poll_seconds if attempted == 0 else 0.2)
+            # full poll interval unless explicitly woken; otherwise drain briskly.
+            self._wake.wait(self.poll_seconds if attempted == 0 else 0.2)
 
     def run_once(self) -> int:
         """One poll iteration. Returns how many runnable tasks were attempted."""

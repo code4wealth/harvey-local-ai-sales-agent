@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import math
+import os
+import sys
+from types import ModuleType
 
 import pytest
 
@@ -44,6 +47,31 @@ def test_embed_texts_uses_normalized_local_model_and_caches_it(monkeypatch):
         "normalize_embeddings": True,
     }
     assert math.sqrt(sum(value * value for value in first[0])) == pytest.approx(1.0)
+
+
+def test_model_load_forces_hugging_face_and_transformers_offline(monkeypatch):
+    observed = {}
+
+    class LocalOnlyModel:
+        def __init__(self, model_name):
+            observed["model_name"] = model_name
+            observed["hf_offline"] = os.environ.get("HF_HUB_OFFLINE")
+            observed["transformers_offline"] = os.environ.get("TRANSFORMERS_OFFLINE")
+
+    module = ModuleType("sentence_transformers")
+    module.SentenceTransformer = LocalOnlyModel
+    monkeypatch.setitem(sys.modules, "sentence_transformers", module)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "0")
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "0")
+
+    model = embeddings._load_model(embeddings.DEFAULT_MODEL)
+
+    assert isinstance(model, LocalOnlyModel)
+    assert observed == {
+        "model_name": embeddings.DEFAULT_MODEL,
+        "hf_offline": "1",
+        "transformers_offline": "1",
+    }
 
 
 def test_embed_long_text_chunks_averages_normalizes_and_caps_at_six(monkeypatch):

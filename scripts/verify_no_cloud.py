@@ -23,7 +23,7 @@ SECRET_PATTERNS = [
 ]
 BANNED = BRAND_PATTERNS + SECRET_PATTERNS
 EXCLUDE_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".claude", "test_evidence", "dist", "build"}
-EXCLUDE_FILES = {"CLAUDE.md", "AGENTS.md", "README_PACK.md", "START_PROMPT.md", "verify_no_cloud.py", "package-lock.json"}
+EXCLUDE_FILES = {"CLAUDE.md", "AGENTS.md", "README_PACK.md", "START_PROMPT.md", "verify_no_cloud.py", "test_ai_network_boundary.py", "package-lock.json"}
 EXTS = {".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".toml", ".txt", ".yml", ".yaml", ".example", ".cfg", ".ini", ".html", ".md"}
 # Docs that are allowed to *mention* the brand names (never secrets). Exact
 # repo-relative POSIX paths, not globs. HARVEY_NOTES.md documents the one-time

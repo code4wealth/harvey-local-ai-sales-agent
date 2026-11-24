@@ -37,6 +37,35 @@ def test_fastapi_lifespan_starts_and_stops_background_worker(db_path, monkeypatc
     asyncio.run(exercise_lifespan())
 
 
+def test_queue_worker_wake_triggers_an_immediate_poll(db_path):
+    first_poll = threading.Event()
+    second_poll = threading.Event()
+    lock = threading.Lock()
+    calls = 0
+    worker = QueueWorker(poll_seconds=60.0)
+
+    def fake_run_once():
+        nonlocal calls
+        with lock:
+            calls += 1
+            current = calls
+        if current == 1:
+            first_poll.set()
+        else:
+            second_poll.set()
+        return 0
+
+    worker.run_once = fake_run_once
+    worker.start()
+    try:
+        assert first_poll.wait(timeout=1.0)
+        worker.wake()
+        assert second_poll.wait(timeout=1.0)
+    finally:
+        worker.stop(timeout=1.0)
+    assert calls >= 2
+
+
 def test_queue_worker_survives_read_timeout_from_health_probe(db_path, monkeypatch):
     probe_called = threading.Event()
 

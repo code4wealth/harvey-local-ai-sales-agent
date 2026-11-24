@@ -7,8 +7,10 @@
   <style>
     :root{color-scheme:dark;--bg:#101817;--panel:#192321;--line:#34433f;--ink:#edf3ef;--muted:#a8b6ae;--accent:#86d7af}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
-    header,main{max-width:1000px;margin:auto;padding:24px}header{display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--line)}
+    header,main,footer{max-width:1000px;margin:auto;padding:24px}header{display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--line)}
     h1,h2,p{margin-top:0}h1{font-size:1.4rem;margin-bottom:2px}h2{font-size:1rem}small,.muted{color:var(--muted)}
+    .service{display:grid;gap:5px;justify-items:end;text-align:right}.service small{max-width:520px;overflow-wrap:anywhere}#retry-queue{width:auto;padding:5px 9px;font-size:.85rem}
+    footer{border-top:1px solid var(--line);overflow-wrap:anywhere}
     .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin:18px 0}
     section,.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
     label{display:block;margin:10px 0 4px;color:var(--muted)}input,select,button{font:inherit;color:var(--ink);background:#101817;border:1px solid var(--line);border-radius:7px;padding:9px;width:100%}
@@ -21,7 +23,11 @@
 <body>
   <header>
     <div><h1>Harvey</h1><small>Local-first sales workspace · drafts are never sent</small></div>
-    <div id="status" role="status">Checking local service…</div>
+    <div class="service">
+      <div id="status" role="status">Checking local service…</div>
+      <small id="hardware" role="status">Hardware recommendation: checking…</small>
+      <button id="retry-queue" type="button">Retry queued tasks</button>
+    </div>
   </header>
   <main>
     <div class="grid">
@@ -34,13 +40,20 @@
           <div class="actions"><button>Create product</button></div>
         </form>
         <label for="products">Select product</label><select id="products"><option value="">Choose a product</option></select>
-        <div class="actions"><button data-workflow="profile">Generate profile</button><button data-workflow="icp">Generate ICP</button></div>
+        <div class="actions">
+          <button data-workflow="profile">Generate profile</button><button data-view-workflow="profile">View profile</button>
+          <button data-workflow="icp">Generate ICP</button><button data-view-workflow="icp">View ICP</button>
+        </div>
       </section>
       <section>
         <h2>Prospects</h2>
         <p class="muted">Choose a product to load its stored prospects.</p>
         <div id="prospects" aria-live="polite"></div>
-        <div class="actions"><button id="signals">Extract signals</button><button id="ranking">Refresh ranking</button><button id="draft">Create unsent draft</button></div>
+        <div class="actions">
+          <button id="signals">Extract signals</button><button id="view-signals">View latest signals</button>
+          <button id="ranking">Refresh ranking</button><button id="draft">Create unsent draft</button>
+          <button id="view-draft">View latest draft</button>
+        </div>
       </section>
     </div>
     <section>
@@ -51,13 +64,14 @@
       <h2>Latest API result</h2><pre id="output" aria-live="polite">Select a product to begin. All requests stay on this service origin.</pre>
     </section>
   </main>
+  <footer><small id="traceability">Build and inference traceability: checking…</small></footer>
   <script>
     const $=id=>document.getElementById(id), output=$("output"), products=$("products"), prospects=$("prospects");
     let selectedProspect=null;
     async function api(url,options={}){
       const response=await fetch(url,options), text=await response.text();
       let data;try{data=text?JSON.parse(text):null}catch{data=text}
-      if(!response.ok)throw new Error(typeof data==="string"?data:JSON.stringify(data));
+      if(!response.ok)throw new Error(`HTTP ${response.status}: ${typeof data==="string"?data:JSON.stringify(data)}`);
       return data;
     }
     function show(value){output.textContent=typeof value==="string"?value:JSON.stringify(value,null,2)}
@@ -76,13 +90,32 @@
     }
     async function run(url,method="GET"){try{show(await api(url,{method}))}catch(error){show(`Request failed: ${error.message}`)}}
     async function selectedAction(path){if(!productId()||!selectedProspect){show("Select a product and prospect first.");return}await run(path(Number(productId()),selectedProspect.id),"POST")}
-    async function refreshStatus(){try{const s=await api("/api/status");$("status").textContent=`Ollama: ${s.ollama?.state||"unknown"}`}catch{$("status").textContent="API status unavailable"}}
+    async function selectedView(path){if(!productId()||!selectedProspect){show("Select a product and prospect first.");return}await run(path(Number(productId()),selectedProspect.id))}
+    async function refreshStatus(){
+      try{
+        const s=await api("/api/status"), q=s.queue||{}, h=s.hardware||{}, latest=s.ollama?.last_inference;
+        const model=s.ollama?.model||"unknown";
+        $("status").textContent=`Ollama: ${s.ollama?.state||"unknown"} · Model: ${model} · Queue: ${q.queued||0} queued, ${q.running||0} running`;
+        $("hardware").textContent=`Hardware: RAM ${h.ram_gb??"unknown"} GB · CPU ${h.cpu_count??"unknown"} · GPU ${h.gpu_status||"unknown"} · Recommended ${h.recommended_model||"unknown"}`;
+        const inference=latest?`${latest.task} · ${latest.model} · ${latest.status} · seed ${latest.seed} · temp ${latest.temperature} · repeat ${latest.repeat_penalty}`:"none recorded";
+        const hashes=s.prompt_hashes||{};
+        $("traceability").textContent=`Commit: ${s.git_commit||"unknown"} · Last inference: ${inference} · Signal prompt SHA-256: ${hashes.signals||"unknown"} · Reply prompt SHA-256: ${hashes.replies||"unknown"}`;
+      }catch{
+        $("status").textContent="API status unavailable";
+        $("hardware").textContent="Hardware recommendation unavailable";
+        $("traceability").textContent="Build and inference traceability unavailable";
+      }
+    }
     $("product-form").onsubmit=async event=>{event.preventDefault();try{const row=await api("/api/products",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:$("product-name").value,description:$("product-description").value,docs_path:$("docs-path").value})});show(row);await loadProducts(row.id)}catch(error){show(`Create failed: ${error.message}`)}};
     products.onchange=()=>loadProspects().catch(error=>show(`Load failed: ${error.message}`));
     document.querySelectorAll("[data-workflow]").forEach(button=>button.onclick=()=>{if(!productId())return show("Select a product first.");run(`/api/products/${productId()}/${button.dataset.workflow}`,"POST")});
+    document.querySelectorAll("[data-view-workflow]").forEach(button=>button.onclick=()=>{if(!productId())return show("Select a product first.");run(`/api/products/${productId()}/${button.dataset.viewWorkflow}`)});
     $("signals").onclick=()=>selectedAction((_product,id)=>`/api/prospects/${id}/signals`);
+    $("view-signals").onclick=()=>selectedView((_product,id)=>`/api/prospects/${id}/signals`);
     $("ranking").onclick=()=>{if(!productId())return show("Select a product first.");run(`/api/products/${productId()}/ranking`)};
     $("draft").onclick=()=>selectedAction((product,id)=>`/api/products/${product}/prospects/${id}/draft`);
+    $("view-draft").onclick=()=>selectedView((product,id)=>`/api/products/${product}/prospects/${id}/draft`);
+    $("retry-queue").onclick=async()=>{await run("/api/queue/retry","POST");await refreshStatus()};
     $("reply-form").onsubmit=async event=>{event.preventDefault();const id=encodeURIComponent($("reply-id").value.trim());await run(`/api/replies/${id}/classification`,"POST")};
     loadProducts().catch(error=>show(`Load failed: ${error.message}`));refreshStatus();
   </script>

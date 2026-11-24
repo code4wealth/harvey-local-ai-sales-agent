@@ -1,14 +1,14 @@
 """Real, local-only sentence embeddings with a lazy model cache.
 
-The model downloads from Hugging Face Hub only when it is not already cached.
-After the first successful download, set ``HF_HUB_OFFLINE=1`` to ensure loading
-and inference use the local cache without Hub access. This module never uses an
-LLM or a hosted inference endpoint.
+The app forces Hugging Face and Transformers offline mode before loading the
+model. Model files must be cached separately before offline use; this AI path
+never downloads them or calls a hosted inference endpoint.
 """
 
 from __future__ import annotations
 
 import math
+import os
 import struct
 import threading
 from collections.abc import Sequence
@@ -32,6 +32,9 @@ class EmbeddingModelUnavailable(EmbeddingError):
 
 
 def _load_model(model_name: str) -> Any:
+    # Do not let a missing cache trigger an outbound Hub download from an AI path.
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
     try:
         from sentence_transformers import SentenceTransformer
     except ImportError as exc:
@@ -43,7 +46,7 @@ def _load_model(model_name: str) -> Any:
     except Exception as exc:
         raise EmbeddingModelUnavailable(
             f"Could not load local embedding model {model_name!r}. "
-            "Download it once while online, then retry with HF_HUB_OFFLINE=1. "
+            "Cache its files before running the app; AI paths stay offline. "
             f"Cause: {exc}"
         ) from exc
 

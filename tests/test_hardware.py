@@ -48,8 +48,11 @@ def test_hardware_endpoint_reports_detected_fields():
 
     result = api_hardware()
     assert set(result) == {
-        "ram_gb", "cpu_count", "gpu_vram_gb", "tier", "recommended_model", "recommended_num_ctx"
+        "ram_gb", "cpu_count", "gpu_vram_gb", "gpu_status", "tier", "recommended_model", "recommended_num_ctx"
     }
     assert result["cpu_count"] >= 1
+    assert result["gpu_status"] == (
+        "none detected" if result["gpu_vram_gb"] is None else "NVIDIA GPU detected"
+    )
     assert result["recommended_model"].startswith("qwen3:")
     assert result["recommended_num_ctx"] in {2048, 4096, 8192}

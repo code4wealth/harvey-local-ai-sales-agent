@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
+import subprocess
 from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -52,7 +54,44 @@ app = FastAPI(
 )
 
 
-FRONTEND_INDEX = Path(__file__).resolve().parents[1] / "frontend" / "index.html"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+FRONTEND_INDEX = REPOSITORY_ROOT / "frontend" / "index.html"
+PROMPT_HASH_FILES = {
+    "signals": REPOSITORY_ROOT / "data" / "eval" / "frozen_signal_prompt.sha256",
+    "replies": REPOSITORY_ROOT / "data" / "eval" / "frozen_reply_prompt.sha256",
+}
+
+
+def read_git_commit_hash() -> str:
+    """Read the source commit once at app startup; packaged builds may lack Git."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    commit = result.stdout.strip()
+    return commit if re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", commit) else "unknown"
+
+
+def read_frozen_prompt_hashes() -> dict[str, str]:
+    """Read only the two frozen digest files; missing or malformed values stay unknown."""
+    hashes: dict[str, str] = {}
+    for name, path in PROMPT_HASH_FILES.items():
+        try:
+            value = path.read_text(encoding="ascii").strip()
+        except (OSError, UnicodeError):
+            value = ""
+        hashes[name] = value if re.fullmatch(r"[0-9a-fA-F]{64}", value) else "unknown"
+    return hashes
+
+
+GIT_COMMIT = read_git_commit_hash()
 
 
 @app.get("/", include_in_schema=False)
@@ -380,6 +419,20 @@ def api_queue_prospect_score(prospect_id: int) -> dict:
         conn.close()
 
 
+@app.post("/api/queue/retry", tags=["system"])
+def api_retry_queue() -> dict:
+    """Wake the local background worker to retry queued tasks immediately."""
+    worker = getattr(app.state, "queue_worker", None)
+    if worker is None:
+        raise HTTPException(status_code=503, detail="queue worker is not running")
+    worker.wake()
+    conn = db.connect()
+    try:
+        return {"status": "scheduled", "queue": db.queue_counts(conn)}
+    finally:
+        conn.close()
+
+
 @app.get("/api/hardware", tags=["system"])
 def api_hardware() -> dict:
     """Report detected RAM, CPU count, NVIDIA VRAM, tier, and model recommendation."""
@@ -423,7 +476,11 @@ def api_status() -> dict:
         "last_inference": (
             {
                 "task": latest_inference["task"],
+                "model": latest_inference["model"],
                 "status": latest_inference["status"],
+                "temperature": latest_inference["temperature"],
+                "seed": latest_inference["seed"],
+                "repeat_penalty": latest_inference["repeat_penalty"],
                 "created_at": latest_inference["created_at"],
             }
             if latest_inference
@@ -435,6 +492,8 @@ def api_status() -> dict:
     return {
         "service": "ok",
         "ai_mode": "local-only",
+        "git_commit": GIT_COMMIT,
+        "prompt_hashes": read_frozen_prompt_hashes(),
         "ollama": ollama,
         "hardware": hw.as_dict(),
         "queue": queue,

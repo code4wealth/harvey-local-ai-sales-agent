@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from app import db, llm_client, prospects
+from app import db, llm_client, main as main_module, prospects
 from app.main import app
 
 
@@ -35,6 +35,8 @@ def test_system_routes_report_status_and_hardware(db_path, monkeypatch):
     status = status_response.json()
     assert status["service"] == "ok"
     assert status["ai_mode"] == "local-only"
+    assert status["git_commit"] == main_module.GIT_COMMIT
+    assert set(status["prompt_hashes"]) == {"signals", "replies"}
     assert status["ollama"]["available"] is True
     assert status["ollama"]["state"] == "available"
     assert status["ollama"]["url"] == "http://127.0.0.1:11434"
@@ -44,7 +46,7 @@ def test_system_routes_report_status_and_hardware(db_path, monkeypatch):
     assert hardware_response.status_code == 200
     hardware = hardware_response.json()
     assert set(hardware) == {
-        "ram_gb", "cpu_count", "gpu_vram_gb", "tier", "recommended_model", "recommended_num_ctx"
+        "ram_gb", "cpu_count", "gpu_vram_gb", "gpu_status", "tier", "recommended_model", "recommended_num_ctx"
     }
     assert hardware["cpu_count"] >= 1
     assert hardware["recommended_model"].startswith("qwen3:")
@@ -273,3 +275,79 @@ def test_status_reports_ollama_http_failure_separately(db_path, monkeypatch):
     assert status["state"] == "error"
     assert status["available"] is False
     assert "HTTP 503" in status["message"]
+
+
+def test_status_exposes_latest_model_seed_and_decoding_settings(db_path, monkeypatch):
+    conn = db.connect()
+    try:
+        db.log_inference(
+            conn,
+            task="traceability-test",
+            model="qwen3:4b",
+            host=llm_client.OLLAMA_URL,
+            temperature=0.2,
+            seed=43,
+            repeat_penalty=1.0,
+            status="ok",
+        )
+    finally:
+        conn.close()
+
+    def healthy_handler(request):
+        return httpx.Response(200, json={"models": []})
+
+    monkeypatch.setattr(
+        llm_client,
+        "_client",
+        lambda timeout: httpx.Client(
+            base_url=llm_client.OLLAMA_URL,
+            timeout=timeout,
+            transport=httpx.MockTransport(healthy_handler),
+        ),
+    )
+
+    async def get_status():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.get("/api/status")
+
+    response = asyncio.run(get_status())
+    latest = response.json()["ollama"]["last_inference"]
+    assert latest["task"] == "traceability-test"
+    assert latest["model"] == "qwen3:4b"
+    assert latest["temperature"] == 0.2
+    assert latest["seed"] == 43
+    assert latest["repeat_penalty"] == 1.0
+
+
+def test_git_commit_lookup_falls_back_to_unknown(monkeypatch):
+    def unavailable_git(*_args, **_kwargs):
+        raise FileNotFoundError("git not installed")
+
+    monkeypatch.setattr(main_module.subprocess, "run", unavailable_git)
+    assert main_module.read_git_commit_hash() == "unknown"
+
+
+def test_queue_retry_endpoint_wakes_worker_without_running_in_api_thread(db_path, monkeypatch):
+    class FakeWorker:
+        def __init__(self):
+            self.wake_count = 0
+
+        def wake(self):
+            self.wake_count += 1
+
+    worker = FakeWorker()
+    monkeypatch.setattr(app.state, "queue_worker", worker, raising=False)
+
+    async def retry_queue():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.post("/api/queue/retry")
+
+    response = asyncio.run(retry_queue())
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "scheduled",
+        "queue": {"queued": 0, "running": 0, "done": 0, "failed": 0},
+    }
+    assert worker.wake_count == 1
