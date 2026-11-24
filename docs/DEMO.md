@@ -32,8 +32,12 @@ ollama pull qwen3:4b
 ```text
 RESULT: Reported live configuration: qwen3:4b, temperature 0, seed 42,
 repeat_penalty 1.0, retry temperature 0.2, Windows laptop, about 18 tokens/s.
-Ollama version, model-list output, and local service status: not run; no actual
-command output was supplied for `ollama --version` or `ollama list`.
+User-supplied local checks: Ollama 0.40.17; `qwen3:4b` ID 359d7dd4bcda,
+2.5 GB; model licence Apache License 2.0 (January 2004).
+Hardware: 15.7 GB RAM, 12 CPUs, 4.0 GB NVIDIA VRAM, standard-laptop tier,
+recommended `qwen3:4b`, num_ctx 4096. `/api/status`: `ai_mode=local-only`,
+Ollama available at `http://127.0.0.1:11434`, queue empty. These are
+user-supplied command/API facts, not offline-acceptance script evidence.
 ```
 
 ## 2. Create an isolated demo database and start the API
@@ -225,21 +229,22 @@ directory. The script's maximum recovery wait is configurable with
 ### Offline acceptance results
 
 No files were present under `test_evidence/offline/` when this update was made.
-The command-output block in the request contained a placeholder rather than
-captured outputs, so Ollama version/model/license and installed
-`sentence-transformers` metadata remain unverified. No values were inferred.
+The user supplied Ollama, model, hardware, status, and package facts below; these
+are recorded as reported values, not as acceptance-script evidence. Internet-off
+and Ollama-down outcomes remain `not run` until their evidence files exist.
 
 | Check | Status | Evidence / result |
 |---|---|---|
 | `make verify` for the current implementation | passed — 165 tests; corpus validation and no-cloud scan passed. | Mocked/source checks, not live-model proof. |
 | `git diff --check` | passed. | No whitespace errors reported. |
 | PowerShell script execution | not run — no PowerShell result is present in `test_evidence/offline/`. | Script syntax and real Windows networking behavior remain to be verified on the target laptop. |
-| Ollama version, installed model list, and live status | not run — no `ollama --version` / `ollama list` output was supplied. | No Ollama/Qwen3 version, installed-model, or live-inference claim is made. |
-| Qwen3 licence metadata | not run — no `ollama show qwen3:4b --license` output was supplied. | Licence remains unverified; see `docs/LICENSES.md`. |
-| `sentence-transformers` package metadata | not run — no `pip show sentence-transformers` output was supplied. | Installed version and licence remain unverified; see `docs/LICENSES.md`. |
+| Ollama version, installed model list, and local status | reported by user — Ollama `0.40.17`; `qwen3:4b`, ID `359d7dd4bcda`, `2.5 GB`; `/api/status` local-only, available at loopback, queue empty. | User-supplied facts; not a timestamped acceptance-script result. |
+| Hardware recommendation | reported by user — 15.7 GB RAM, 12 CPUs, 4.0 GB NVIDIA VRAM; standard-laptop, `qwen3:4b`, num_ctx 4096. | User-supplied `/api/hardware` output; not a timestamped acceptance-script result. |
+| Qwen3 licence metadata | reported by user — Apache License 2.0, January 2004. | From the supplied `ollama show qwen3:4b --license` output; see `docs/LICENSES.md`. |
+| `sentence-transformers` package metadata | reported by user — version `3.4.1`, Apache 2.0. | From the supplied `pip show sentence-transformers` output; see `docs/LICENSES.md`. |
 | Offline acceptance against the local database/API | not run — no files were present in `test_evidence/offline/`. | No timestamped acceptance result exists yet. |
-| Ollama-down / recovery acceptance | not run — no files were present in `test_evidence/offline/`. | Do not treat mocked queue tests as a live outage test. |
-| User's internet-off test | not run by instruction. | Run manually on the target machine; keep its result separate from these local-only scripts. |
+| Ollama-down / recovery acceptance | not run until evidence files exist. | Do not treat mocked queue tests or the supplied status snapshot as a live outage test. |
+| User's internet-off test | not run until evidence files exist. | Keep its result separate from these local-only scripts. |
 
 ### Unresolved limitations
 
@@ -247,7 +252,9 @@ The acceptance scripts have not been executed in PowerShell here. Runtime
 behavior on the target Windows build, the `Get-NetTCPConnection` permission
 requirements, the locally imported sample data, and live Ollama queue recovery
 remain user verification items. Hardware GPU detection currently reports
-NVIDIA VRAM via `nvidia-smi` only. Exact Ollama/model-card metadata and licence
-metadata for embedding/transitive packages remain unavailable; see
-`docs/LICENSES.md`. Static source scans and mocks are not a substitute for the
-manual internet-off test, which remains unrun.
+NVIDIA VRAM via `nvidia-smi` only. The reported Ollama and Qwen3 values do not
+verify Ollama's distribution licence or the embedding model's model-card
+metadata; licence/version metadata for embedding transitive packages also
+remain unavailable. See `docs/LICENSES.md`. Static source scans and mocks are
+not a substitute for the internet-off test, which remains `not run` until its
+evidence file exists.
