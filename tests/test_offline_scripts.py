@@ -6,7 +6,18 @@ from urllib.parse import urlsplit
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
+
+
+def test_offline_make_target_runs_verification_with_both_model_caches_offline():
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    environment = (ROOT / ".env.example").read_text(encoding="utf-8")
+
+    assert "HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 $(MAKE) verify" in makefile
+    assert "scripts/offline_test.py" not in makefile
+    assert "HF_HUB_OFFLINE=1" in environment
+    assert "TRANSFORMERS_OFFLINE=1" in environment
 
 
 @pytest.mark.parametrize("name", ["offline_acceptance.ps1", "ollama_down_check.ps1"])

@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app import db, llm_client
+from app import db, llm_client, local_paths
 from app.main import app
 from app.queue_worker import HANDLERS, QueueWorker
 from app.workflows import icp, profile, register_workflow_handlers
@@ -76,10 +76,27 @@ ICP_PLANETARIUM = {
 }
 
 
-def _create_product(name: str, docs_path: Path) -> int:
+def _create_product(
+    name: str,
+    docs_path: Path,
+    *,
+    test_root: Path | None = None,
+    monkeypatch=None,
+) -> int:
+    stored_docs_path = str(docs_path)
+    if test_root is not None:
+        if monkeypatch is None:
+            raise ValueError("monkeypatch is required for an isolated company-info root")
+        monkeypatch.setattr(local_paths, "REPOSITORY_ROOT", test_root)
+        target = test_root / "data" / "company_info" / docs_path.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if docs_path.is_file() and docs_path.resolve() != target.resolve():
+            target.write_bytes(docs_path.read_bytes())
+        stored_docs_path = target.relative_to(test_root).as_posix()
+
     conn = db.connect()
     try:
-        product_id = db.create_product(conn, name=name, docs_path=str(docs_path))
+        product_id = db.create_product(conn, name=name, docs_path=stored_docs_path)
         conn.commit()
         return product_id
     finally:
@@ -101,7 +118,7 @@ def _use_mock_transport(monkeypatch, handler) -> None:
 def _post_raw(path: str) -> httpx.Response:
     async def request():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.post(path)
 
     return asyncio.run(request())
@@ -135,7 +152,7 @@ def _post(path: str) -> httpx.Response:
 def _get(path: str) -> httpx.Response:
     async def request():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.get(path)
 
     return asyncio.run(request())
@@ -171,7 +188,9 @@ def test_profile_api_uses_json_schema_cleans_reply_and_persists_model(db_path, m
     monkeypatch.setenv("DEFAULT_MODEL", "sample-test-model")
     company_info = tmp_path / "profile.md"
     company_info.write_text(BAKERY_DOC, encoding="utf-8")
-    product_id = _create_product("Bakery", company_info)
+    product_id = _create_product(
+        "Bakery", company_info, test_root=tmp_path, monkeypatch=monkeypatch
+    )
     seen = []
 
     def handler(request):
@@ -241,7 +260,9 @@ def test_profile_post_returns_pollable_run_then_worker_completes_with_mocked_oll
     monkeypatch.setenv("DEFAULT_MODEL", "pollable-profile-model")
     company_info = tmp_path / "pollable-profile.md"
     company_info.write_text(BAKERY_DOC, encoding="utf-8")
-    product_id = _create_product("Pollable profile", company_info)
+    product_id = _create_product(
+        "Pollable profile", company_info, test_root=tmp_path, monkeypatch=monkeypatch
+    )
     _use_mock_transport(
         monkeypatch,
         lambda request: _chat_response(_profile_json(PROFILE_BAKERY_NO_NAME)),
@@ -271,7 +292,9 @@ def test_profile_accepts_grounded_summary_with_a_legitimate_colon(
     monkeypatch.setenv("DEFAULT_MODEL", "profile-colon-model")
     company_info = tmp_path / "colon-summary.md"
     company_info.write_text(BAKERY_DOC, encoding="utf-8")
-    product_id = _create_product("Bakery", company_info)
+    product_id = _create_product(
+        "Bakery", company_info, test_root=tmp_path, monkeypatch=monkeypatch
+    )
     colon_profile = dict(PROFILE_BAKERY_NO_NAME)
     colon_profile["summary"] = "A neighborhood pastry shop: sells seasonal pastries."
 
@@ -288,7 +311,9 @@ def test_profile_grounding_failure_retries_with_feedback_before_persisting(db_pa
     monkeypatch.setenv("DEFAULT_MODEL", "profile-grounding-model")
     company_info = tmp_path / "grounded.md"
     company_info.write_text(BAKERY_DOC, encoding="utf-8")
-    product_id = _create_product("Bakery", company_info)
+    product_id = _create_product(
+        "Bakery", company_info, test_root=tmp_path, monkeypatch=monkeypatch
+    )
     hallucinated = dict(PROFILE_BAKERY_NO_NAME)
     hallucinated["summary"] = "A nationwide cloud accounting platform guarantees savings."
     replies = iter([_profile_json(hallucinated), _profile_json(PROFILE_BAKERY_NO_NAME)])
@@ -337,7 +362,9 @@ def test_profile_rejects_product_name_or_near_variant_on_all_retries(
     monkeypatch.setenv("DEFAULT_MODEL", "product-name-check-model")
     company_info = tmp_path / "relaycue.md"
     company_info.write_text("RelayCue is a browser-based workspace.", encoding="utf-8")
-    product_id = _create_product("RelayCue", company_info)
+    product_id = _create_product(
+        "RelayCue", company_info, test_root=tmp_path, monkeypatch=monkeypatch
+    )
     invalid_profile = {
         "summary": summary,
         "value_proposition": "not stated",
@@ -408,7 +435,9 @@ def test_profile_rejects_ungrounded_stray_token_and_persists_failure(
     monkeypatch.setenv("DEFAULT_MODEL", "profile-stray-token-model")
     company_info = tmp_path / "stray-token.md"
     company_info.write_text(BAKERY_DOC, encoding="utf-8")
-    product_id = _create_product("Bakery", company_info)
+    product_id = _create_product(
+        "Bakery", company_info, test_root=tmp_path, monkeypatch=monkeypatch
+    )
     invalid_profile = dict(PROFILE_BAKERY_NO_NAME)
     invalid_profile["key_features"] = ["B2: B2B software", "pre-order pickup"]
     options_sent = []
@@ -455,7 +484,9 @@ def test_workflow_retries_invalid_json_and_validates_before_saving(db_path, monk
     monkeypatch.setenv("DEFAULT_MODEL", "retry-test-model")
     company_info = tmp_path / "retry.md"
     company_info.write_text(BAKERY_DOC, encoding="utf-8")
-    product_id = _create_product("Bakery", company_info)
+    product_id = _create_product(
+        "Bakery", company_info, test_root=tmp_path, monkeypatch=monkeypatch
+    )
     prompts = []
     replies = iter(
         ["not json", json.dumps({"summary": "required fields are missing"}), _profile_json(PROFILE_BAKERY_NO_NAME)]
@@ -492,7 +523,9 @@ def test_unavailable_ollama_queues_and_worker_replays_profile(
     monkeypatch.setenv("DEFAULT_MODEL", "queued-test-model")
     company_info = tmp_path / "queued.md"
     company_info.write_text(BAKERY_DOC, encoding="utf-8")
-    product_id = _create_product("Bakery", company_info)
+    product_id = _create_product(
+        "Bakery", company_info, test_root=tmp_path, monkeypatch=monkeypatch
+    )
 
     def unavailable(request):
         raise httpx.ConnectError("Ollama is stopped", request=request)
@@ -569,8 +602,12 @@ def test_profile_and_icp_are_separated_by_product_and_icp_reads_stored_profile_o
         encoding="utf-8",
     )
     planetarium_doc.write_text(PLANETARIUM_DOC, encoding="utf-8")
-    bakery_id = _create_product("Bakery", bakery_doc)
-    planetarium_id = _create_product("Planetarium", planetarium_doc)
+    bakery_id = _create_product(
+        "Bakery", bakery_doc, test_root=tmp_path, monkeypatch=monkeypatch
+    )
+    planetarium_id = _create_product(
+        "Planetarium", planetarium_doc, test_root=tmp_path, monkeypatch=monkeypatch
+    )
 
     def handler(request):
         payload = json.loads(request.content)
@@ -791,7 +828,9 @@ def test_invalid_generation_is_stored_and_returned_without_default_output(
     monkeypatch.setenv("DEFAULT_MODEL", "failure-test-model")
     company_info = tmp_path / "failure.md"
     company_info.write_text("SAMPLE failure-case source.", encoding="utf-8")
-    product_id = _create_product("Failure product", company_info)
+    product_id = _create_product(
+        "Failure product", company_info, test_root=tmp_path, monkeypatch=monkeypatch
+    )
     calls = 0
 
     def invalid(request):

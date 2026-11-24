@@ -13,7 +13,7 @@ from app.main import app
 def _get(path: str) -> httpx.Response:
     async def request():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.get(path)
 
     return asyncio.run(request())

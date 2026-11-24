@@ -6,17 +6,17 @@ import json
 import logging
 import re
 import time
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app import db, llm_client
+from app import db, llm_client, local_paths
 from app.queue_worker import register_handler
 from app.workflows import common
 
 TASK_TYPE = "workflow.profile"
 MAX_DOCUMENT_CHARS = 3000
+MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
 NUM_CTX = 4096
 NOT_STATED = "not stated"
 GENERAL_GROUNDING_THRESHOLD = 0.60
@@ -242,13 +242,22 @@ def _profile_inputs(product_id: int) -> tuple[str, str]:
 
     if not docs_path:
         raise common.WorkflowInputError("product has no company-info file path")
-    source = Path(docs_path)
-    if not source.is_file():
-        raise common.WorkflowInputError(f"company-info file does not exist: {docs_path}")
     try:
-        document = source.read_text(encoding="utf-8").strip()
+        source = local_paths.resolve_company_info_path(docs_path)
+    except ValueError as exc:
+        raise common.WorkflowInputError(str(exc)) from exc
+    if not source.is_file():
+        raise common.WorkflowInputError("company-info file does not exist")
+    try:
+        with source.open("rb") as handle:
+            raw_document = handle.read(MAX_DOCUMENT_BYTES + 1)
+        if len(raw_document) > MAX_DOCUMENT_BYTES:
+            raise common.WorkflowInputError(
+                f"company-info file exceeds {MAX_DOCUMENT_BYTES} bytes"
+            )
+        document = raw_document.decode("utf-8").strip()
     except (OSError, UnicodeDecodeError) as exc:
-        raise common.WorkflowInputError(f"company-info file could not be read: {exc}") from exc
+        raise common.WorkflowInputError("company-info file could not be read as UTF-8") from exc
     if not document:
         raise common.WorkflowInputError("company-info file is empty")
     return product_name, document[:MAX_DOCUMENT_CHARS]

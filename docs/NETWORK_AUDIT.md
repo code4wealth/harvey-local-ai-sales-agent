@@ -14,6 +14,26 @@ There is no cloud SDK, hosted model fallback, or paid AI service in the app
 source inventory. Product page text is stored locally and is not fetched by an
 external research client in this checkout.
 
+## Local-service security controls
+
+- The documented and `make run` bind address is `127.0.0.1`. This API has no
+  user authentication and must not be exposed on `0.0.0.0` or a LAN interface.
+- A Host allowlist accepts loopback names and the Arena preview domain; other
+  Host headers are rejected. State-changing browser requests
+  carrying a mismatched `Origin`, or `Sec-Fetch-Site: cross-site`, receive 403.
+  Non-browser local clients without those headers remain supported.
+- API-configured company-info paths must be repository-relative and resolve
+  inside `data/company_info/`; traversal, URLs, absolute paths, and symlinks
+  escaping the directory are rejected. The profile reader applies the same
+  containment check and caps source documents at 5 MiB.
+- Prospect CSV uploads are capped at 5 MiB and local prospect-page text at
+  1 MiB. These checks run while streaming request bodies, not only after a full
+  in-memory read.
+- `make offline` sets both Hugging Face/Transformers offline flags and runs the
+  deterministic verification suite. It is not proof that Wi-Fi was disabled;
+  the target-machine offline acceptance and network-isolation checks remain
+  operator-run and are not claimed here.
+
 ## Evidence and limits
 
 - `tests/test_llm_client.py` mocks HTTPX and asserts the base URL remains

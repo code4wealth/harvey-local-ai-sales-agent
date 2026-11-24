@@ -55,7 +55,7 @@ def test_system_routes_report_status_and_hardware(db_path, monkeypatch):
 
     async def get_routes():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             status_response = await client.get("/api/status")
             hardware_response = await client.get("/api/hardware")
         return status_response, hardware_response
@@ -92,7 +92,7 @@ def test_health_checks_sqlite_without_blocking_on_ollama(db_path, monkeypatch):
 
     async def get_health():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.get("/health")
 
     response = asyncio.run(get_health())
@@ -112,7 +112,7 @@ def test_health_returns_503_when_sqlite_is_unavailable(db_path, monkeypatch):
 
     async def get_health():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.get("/health")
 
     response = asyncio.run(get_health())
@@ -135,7 +135,7 @@ def test_status_distinguishes_slow_ollama_from_unavailable(db_path, monkeypatch)
 
     async def get_status():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.get("/api/status")
 
     response = asyncio.run(get_status())
@@ -174,7 +174,7 @@ def test_status_shows_last_generation_timeout_as_slow_when_probe_is_up(db_path, 
 
     async def get_status():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.get("/api/status")
 
     response = asyncio.run(get_status())
@@ -220,7 +220,7 @@ def test_status_does_not_keep_old_timeout_as_slow(db_path, monkeypatch):
 
     async def get_status():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.get("/api/status")
 
     response = asyncio.run(get_status())
@@ -245,7 +245,7 @@ def test_status_reports_connect_failure_as_unavailable(db_path, monkeypatch):
 
     async def get_status():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.get("/api/status")
 
     response = asyncio.run(get_status())
@@ -261,7 +261,7 @@ def test_product_prospect_csv_and_local_page_routes(db_path, monkeypatch, tmp_pa
 
     async def exercise():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             product_response = await client.post(
                 "/api/products", json={"name": "Harvey CRM", "description": "Local sales tool"}
             )
@@ -333,7 +333,7 @@ def test_status_reports_ollama_http_failure_separately(db_path, monkeypatch):
 
     async def get_status():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.get("/api/status")
 
     response = asyncio.run(get_status())
@@ -377,7 +377,7 @@ def test_status_exposes_latest_model_seed_and_decoding_settings(db_path, monkeyp
 
     async def get_status():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.get("/api/status")
 
     response = asyncio.run(get_status())
@@ -412,7 +412,7 @@ def test_queue_retry_endpoint_wakes_worker_without_running_in_api_thread(db_path
 
     async def retry_queue():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.post("/api/queue/retry")
 
     response = asyncio.run(retry_queue())

@@ -26,6 +26,7 @@ NONLOCAL_CLIENT_IMPORTS = {
     "requests", "urllib", "urllib3", "aiohttp", "socket", "smtplib", "ftplib",
     "websocket", "websockets", "huggingface_hub",
 }
+# Pure URL parsing is not a transport; the urllib.request stack remains banned.
 URL_PATTERN = re.compile(r"https?://[^\s\"'`]+", re.IGNORECASE)
 
 
@@ -70,7 +71,7 @@ def test_ai_path_has_no_cloud_sdk_imports_or_nonlocal_urls():
                 root = (node.module or "").split(".", 1)[0]
                 if root in CLOUD_SDK_ROOTS:
                     offenders.append(f"{relative}:{node.lineno}: cloud SDK import")
-                if root in NONLOCAL_CLIENT_IMPORTS:
+                if root in NONLOCAL_CLIENT_IMPORTS and node.module != "urllib.parse":
                     offenders.append(f"{relative}:{node.lineno}: external HTTP client import")
 
             if isinstance(node, ast.Assign):

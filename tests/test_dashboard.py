@@ -10,7 +10,7 @@ from app.main import app
 def test_root_serves_embedded_local_only_dashboard():
     async def request():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.get("/")
 
     response = asyncio.run(request())
@@ -57,7 +57,7 @@ def test_root_serves_embedded_local_only_dashboard():
 def test_dashboard_controls_are_wired_to_same_origin_workflows_and_status():
     async def request():
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
             return await client.get("/")
 
     html = asyncio.run(request()).text

@@ -49,12 +49,13 @@ In terminal 2, from the repository root:
 export DB_PATH="$PWD/data/harvey-demo.db"
 export DEFAULT_MODEL=qwen3:4b
 python scripts/import_replies.py --db-path "$DB_PATH"
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Leave the API running. The embedded dashboard is at `http://127.0.0.1:8000/`.
 All AI inference is routed to local Ollama at `127.0.0.1:11434`; this
-application has no cloud fallback.
+application has no cloud fallback. The API has no user authentication; keep it
+bound to loopback and do not expose it to a LAN.
 
 ```text
 RESULT: Reply-import count and API startup output: not run.

@@ -50,13 +50,19 @@ python -m venv .venv
 pip install -e '.[dev]'
 ollama serve                         # separate terminal
 ollama pull qwen3:4b                 # one-time model download
-DEFAULT_MODEL=qwen3:4b uvicorn app.main:app --host 0.0.0.0 --port 8000
+DEFAULT_MODEL=qwen3:4b uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 The service stores its SQLite database at `data/harvey.db` by default. Override
 `DB_PATH` if needed. Ollama and downloaded local models must be installed before
 running AI workflows; tests use mocked Ollama responses and do not need a live
 model.
+
+The API has no user authentication and is intended for one local operator:
+bind it to `127.0.0.1` (as above), not `0.0.0.0` or a LAN address. Mutating
+browser requests with a cross-origin `Origin` or `Sec-Fetch-Site: cross-site`
+header are rejected. Product company-info paths are confined to
+`data/company_info/`; CSV and prospect-page request bodies are size-limited.
 
 ## Useful commands
 

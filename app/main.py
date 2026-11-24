@@ -7,16 +7,18 @@ import os
 import re
 import sqlite3
 import subprocess
-from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import AsyncIterator
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
-from app import batch, db, hardware, llm_client, prospects
+from app import batch, db, hardware, llm_client, local_paths, prospects
 from app.queue_worker import QueueWorker
 from app.workflows import icp as icp_workflow
 from app.workflows import profile as profile_workflow
@@ -59,6 +61,62 @@ app = FastAPI(
     description="Local-only sales research and outreach backend. AI runs through local Ollama.",
     lifespan=lifespan,
 )
+
+# This unauthenticated local service accepts loopback hosts and the Arena
+# preview host. Arbitrary Host headers are rejected to reduce DNS-
+# rebinding exposure; normal desktop use should still bind Uvicorn to loopback.
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["127.0.0.1", "localhost", "::1", "*.e2b.app"],
+)
+
+MAX_PROSPECT_CSV_BYTES = 5 * 1024 * 1024
+MAX_PROSPECT_PAGE_BYTES = 1 * 1024 * 1024
+_STATE_CHANGING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _origin_tuple(value: str) -> tuple[str, str, int] | None:
+    try:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme.lower() not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            return None
+        scheme = parsed.scheme.lower()
+        host = parsed.hostname.rstrip(".").casefold()
+        port = parsed.port or (443 if scheme == "https" else 80)
+        return scheme, host, port
+    except ValueError:
+        return None
+
+
+def _request_origin_tuple(request: Request) -> tuple[str, str, int] | None:
+    host = request.headers.get("host", "")
+    forwarded_scheme = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip()
+    scheme = forwarded_scheme if forwarded_scheme in {"http", "https"} else request.url.scheme
+    return _origin_tuple(f"{scheme}://{host}")
+
+
+@app.middleware("http")
+async def reject_cross_origin_mutations(request: Request, call_next):
+    """Reject browser-originated cross-site requests that can mutate local data."""
+    if request.method.upper() in _STATE_CHANGING_METHODS:
+        origin = request.headers.get("origin")
+        fetch_site = request.headers.get("sec-fetch-site", "").casefold()
+        if fetch_site == "cross-site" or (
+            origin is not None and _origin_tuple(origin) != _request_origin_tuple(request)
+        ):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "cross-origin state-changing request blocked"},
+            )
+    return await call_next(request)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -108,14 +166,35 @@ def api_dashboard() -> FileResponse:
 
 class ProductCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    description: str = ""
-    docs_path: str = ""
+    description: str = Field(default="", max_length=500)
+    docs_path: str = Field(default="", max_length=500)
 
 
 def _prospect_response(row) -> dict:
     result = dict(row)
     result.pop("page_embedding", None)
     return result
+
+
+async def _read_limited_body(request: Request, *, max_bytes: int, label: str) -> bytes:
+    """Read a request body incrementally and reject it once its byte budget is exceeded."""
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared_length = int(content_length)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="invalid Content-Length") from exc
+        if declared_length < 0:
+            raise HTTPException(status_code=400, detail="invalid Content-Length")
+        if declared_length > max_bytes:
+            raise HTTPException(status_code=413, detail=f"{label} exceeds {max_bytes} bytes")
+
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > max_bytes:
+            raise HTTPException(status_code=413, detail=f"{label} exceeds {max_bytes} bytes")
+        body.extend(chunk)
+    return bytes(body)
 
 
 def _recent_timeout_inference(row) -> bool:
@@ -133,10 +212,14 @@ def _recent_timeout_inference(row) -> bool:
 
 @app.post("/api/products", status_code=201, tags=["products"])
 def api_create_product(request: ProductCreate) -> dict:
+    try:
+        docs_path = local_paths.normalize_company_info_path(request.docs_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     conn = db.connect()
     try:
         product_id = db.create_product(
-            conn, name=request.name, description=request.description, docs_path=request.docs_path
+            conn, name=request.name, description=request.description, docs_path=docs_path
         )
         conn.commit()
         product = db.get_product(conn, product_id)
@@ -271,7 +354,10 @@ def api_rank_product(product_id: int) -> dict:
 @app.post("/api/products/{product_id}/prospects/import", status_code=201, tags=["prospects"])
 async def api_import_prospects(product_id: int, request: Request) -> dict:
     try:
-        csv_text = (await request.body()).decode("utf-8-sig")
+        body = await _read_limited_body(
+            request, max_bytes=MAX_PROSPECT_CSV_BYTES, label="prospect CSV"
+        )
+        csv_text = body.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
         raise HTTPException(status_code=400, detail="CSV must be UTF-8 encoded") from exc
     conn = db.connect()
@@ -305,7 +391,10 @@ def api_get_prospect(prospect_id: int) -> dict:
 @app.put("/api/prospects/{prospect_id}/page", tags=["prospects"])
 async def api_store_prospect_page(prospect_id: int, request: Request) -> dict:
     try:
-        page_text = (await request.body()).decode("utf-8")
+        body = await _read_limited_body(
+            request, max_bytes=MAX_PROSPECT_PAGE_BYTES, label="prospect page text"
+        )
+        page_text = body.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise HTTPException(status_code=400, detail="page text must be UTF-8 encoded") from exc
     conn = db.connect()
