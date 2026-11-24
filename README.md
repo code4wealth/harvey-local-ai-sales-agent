@@ -71,8 +71,9 @@ are marked `not supplied`.
 ## Reported live-run snapshot
 
 Configuration: `qwen3:4b`, temperature `0`, seed `42`, `repeat_penalty=1.0`,
-retry temperature `0.2`, Windows laptop, about 18 tokens/s. Unavailable run
-outputs are marked `not run`; unreported outcomes are marked `not supplied`.
+retry temperature `0.2`, Windows laptop, about 18 tokens/s. All data is fictional
+`SAMPLE` data. Unavailable run outputs remain marked `not run`; unreported
+outcomes remain marked `not supplied`.
 
 - Signals, development (37 prospects; signal prompt hash prefix `73fa8d34...`):
   expected-signal recall `14/16 (87.5%)`; `34/37` prospects passed; `1` false
@@ -97,9 +98,22 @@ outputs are marked `not run`; unreported outcomes are marked `not supplied`.
   on the final run (HTTP 200); an earlier run failed grounding after the model
   invented a trigger event and disqualifier, and the failure was stored with
   its reason.
-- Demo behavior: ranking returned an explicit missing-input status when no
-  signal run exists; the draft was skipped with `no verified evidence` and was
-  never sent; reply classification of `R001` returned `interested`.
+- Signals ran for all `41` prospect rows (`21` RelayCue, `20` FieldNest); saved
+  rankings are under `test_evidence/real_run/`. Ranking returns an explicit
+  missing-input status when no signal run exists. Reply classification of
+  `R001` returned `interested` with confidence `0.95`.
+- Drafts, first attempt (`9` prospects): `6` skipped with `no verified evidence`
+  and `3` failed the verbatim-evidence check after the model paraphrased; none
+  were sent.
+- Drafts after the fix (`6384b4b`, `156` tests): across `21` RelayCue prospects,
+  `7` succeeded (IDs `22`, `28`, `30`, `32`, `34`, `35`, `36`), `12` skipped
+  with `no verified evidence`, and `2` failed (`25`, `37`) with stored reasons.
+  All had `sent=false`; FieldNest drafts were not run. `evidence_used` contains
+  `1` or `2` verbatim spans of `4`–`15` words; each must be a substring of verified
+  signal evidence and the body after case and whitespace normalization, and appear
+  in double quotes in the body.
+  In the successful example for prospect `22`, a four-word verified span was
+  quoted in the body (`sent=false`).
 
 No held-out reply or page text is included here.
 

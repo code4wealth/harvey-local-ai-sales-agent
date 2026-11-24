@@ -105,17 +105,18 @@ development is expected. Held-out per-label counts are `3`, so each reply moves
 a label by `33` points. Signal development scores are optimistic because the
 signal prompt was revised after seeing development failures. Signal extraction
 over-extracts on held-out pages (`3` trap false positives, `0/12` empty lists)
-despite perfect recall, so precision on trap pages is the main weakness. The 4B
-model is non-deterministic across seeds and occasionally emits repeated-token
-artifacts; quote verification catches them, but quote retries did not always fix
-them (`P001`). Profile summaries omit the product name because the model could
-not reproduce it. RelayCue profile and ICP succeeded. FieldNest ICP succeeded on
-the final run (HTTP 200); an earlier run failed grounding after the model invented
-a trigger event and disqualifier, and that failure was stored with its reason.
-In the demo, ranking returned an explicit missing-input status when no signal run
-exists; the draft was skipped with reason `no verified evidence` and never sent;
-reply classification of `R001` returned `interested`. All data is fictional
-SAMPLE data.
+despite perfect recall, so precision on trap pages is the main weakness. The
+4B model is non-deterministic across seeds and occasionally emits repeated-token
+artifacts; quote verification and the artifact check catch them,
+but quote retries did not always fix the issue (`P001`). Profile summaries omit
+the product name because the model could not reliably reproduce it. RelayCue
+profile and ICP succeeded. FieldNest ICP succeeded on the final run (HTTP 200);
+an earlier run failed grounding after the model invented a trigger event and
+disqualifier, and that failure was stored with its reason. Signals ran for all
+`41` prospect rows (`21` RelayCue, `20` FieldNest), with rankings saved to
+`test_evidence/real_run/`. Ranking returns an explicit missing-input status when
+no signal run exists. Reply classification of `R001` returned `interested` with
+confidence `0.95`. All data is fictional SAMPLE data.
 
 ## Product-specific ranking
 
@@ -127,9 +128,21 @@ Missing inputs remain visible and can produce partial or unranked results.
 
 ## Evidence-grounded outreach drafts
 
-A draft's evidence check proves that each listed quote is an exact string in a
-stored verified signal and occurs verbatim in the body. It does not prove that
-every unquoted sentence is semantically entailed by the product profile or
-prospect page. The prompt instructs the model not to invent facts, but language
-models can still produce unsupported copy. Review drafts before use. The
-workflow only persists unsent drafts; it has no email-send capability.
+The validator checks that each `evidence_used` span is a substring of this
+prospect's stored verified signal evidence and appears in the body inside double
+quotes, after case and whitespace normalization only. Generated drafts must
+contain `1`–`2` spans of `4`–`15` words. This does **not** verify that other
+sentences in the body are grounded in the product profile or prospect evidence.
+Spans can be as short as `4` words, so drafts can be weak or include unsupported
+pitch sentences; the prompt's grounding instruction does not make the remaining
+body semantically verified. Every draft is stored with `sent=false` and requires
+human review; the workflow has no email-send capability.
+
+On the first attempt, `9` prospects were tried: `6` drafts were skipped with
+`no verified evidence`, and `3` failed the verbatim-evidence check because the
+model paraphrased; none were sent. After the fix (`6384b4b`, `156` tests), across
+`21` RelayCue prospects, `7` drafts succeeded (IDs `22`, `28`, `30`, `32`, `34`,
+`35`, `36`), `12` were skipped with `no verified evidence`, and `2` (`25`, `37`)
+failed validation and remain stored as visible failures with reasons. All had
+`sent=false`. The example for prospect `22` used and quoted a four-word verified
+span and succeeded with `sent=false`. FieldNest drafts were not run.

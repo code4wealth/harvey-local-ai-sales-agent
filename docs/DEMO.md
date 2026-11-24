@@ -93,10 +93,13 @@ curl -fsS -X POST "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/prospects/${
 curl -fsS "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/prospects/${PROSPECT_ID}/draft"
 ```
 
-A draft is persisted locally and is never sent. If there are no valid signals,
-the draft status is `skipped` with reason `no verified evidence`; no LLM call is
-made. Ranking remains deterministic and reports missing components rather than
-inventing inputs.
+Drafts are persisted locally with `sent=false` and are never sent. If there are
+no valid signals, the draft status is `skipped` with reason `no verified evidence`;
+no LLM call is made. The fixed workflow allows `1` or `2` evidence spans of `4`–`15`
+words each; each must be a substring of verified signal evidence and the body after
+case and whitespace normalization, with each span enclosed in double quotes in
+the body. Ranking reports an explicit missing-input status when no signal run
+exists.
 
 ```text
 RESULT: Signals development (37 prospects; signal prompt hash prefix 73fa8d34...):
@@ -106,9 +109,17 @@ and P022 (model returned nothing); 8 quote-verification retries in total.
 Signals held-out (12 pages, one run): expected-signal recall 8/8 (100%);
 9/12 pages passed (failed P045, P047, P049); trap false positives:
 no-signal/implied 1, negated 1, other-company 1; stale-signal trap held;
-empty-list returns 0/12; 4 quote drops, 2 negated drops. Ranking returned an
-explicit missing-input status when no signal run exists; the draft was skipped
-with reason `no verified evidence` and was never sent.
+empty-list returns 0/12; 4 quote drops, 2 negated drops. Signals ran for all 41
+prospect rows (21 RelayCue, 20 FieldNest); rankings were saved to
+test_evidence/real_run/. Ranking returned an explicit missing-input status when
+no signal run exists.
+Drafts, first attempt (9 prospects): 6 skipped with `no verified evidence` and
+3 failed the verbatim-evidence check because the model paraphrased; none were
+sent. After the fix (commit 6384b4b; 156 tests), 21 RelayCue prospects had 7
+successful drafts (IDs 22, 28, 30, 32, 34, 35, 36), 12 skipped with `no verified
+evidence`, and 2 failed (IDs 25, 37) with stored reasons; all had `sent=false`.
+FieldNest drafts were not run. In the successful example for prospect 22, a
+four-word verified span was quoted in the body; status succeeded, sent false.
 ```
 
 ## 5. Classify one sample reply and run the development evaluator
@@ -135,7 +146,8 @@ Replies held-out (24, one run, prompt frozen, hash prefix a369052a...): 18/24
 not_interested 2/3, other 1/3, out_of_office 3/3, question 2/3, unsubscribe
 3/3, wrong_person 3/3; ambiguous 6/10 (60%), clear 12/14 (85.7%);
 misclassified IDs R014, R018, R019, R048, R050, R060. Report path and
-duration: not supplied. The live classification of R001 returned `interested`.
+duration: not supplied. The live classification of R001 returned `interested`
+with confidence `0.95`.
 ```
 
 ## 6. Verify implementation without rerunning live or held-out evaluations
@@ -149,5 +161,5 @@ These checks use tests and mocked Ollama responses; they do not count as a live
 model demonstration and do not rerun either held-out evaluator.
 
 ```text
-RESULT: make verify — passed (154 tests); git diff --check — passed.
+RESULT: make verify — passed (156 tests); git diff --check — passed.
 ```
