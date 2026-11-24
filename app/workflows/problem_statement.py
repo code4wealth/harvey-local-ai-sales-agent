@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app import db, llm_client, scoring
 from app.queue_worker import register_handler
+from app.traceability import prompt_traceability
 from app.workflows.icp import (
     IdealCustomerProfile,
     validate_icp_grounding,
@@ -355,6 +356,8 @@ def problem_statement_payload(row) -> dict[str, Any]:
         "temperature": row["temperature"],
         "seed": row["seed"],
         "repeat_penalty": row["repeat_penalty"],
+        "prompt_hash": row["prompt_hash"],
+        "commit_hash": row["commit_hash"],
         "business_profile_id": row["business_profile_id"],
         "icp_id": row["icp_id"],
         "signal_run_id": row["signal_run_id"],
@@ -405,6 +408,8 @@ def latest_problem_statement_payload(product_id: int, prospect_id: int) -> dict[
             "temperature": None,
             "seed": None,
             "repeat_penalty": None,
+            "prompt_hash": None,
+            "commit_hash": None,
             "business_profile_id": None,
             "icp_id": None,
             "signal_run_id": None,
@@ -461,8 +466,21 @@ def execute_problem_statement_run(
         finally:
             conn.close()
 
+    prompt = build_problem_statement_prompt(profile, icp, verified_signals)
+    traceability = prompt_traceability(prompt)
+    conn = db.connect()
+    try:
+        db.update_problem_statement_run(
+            conn,
+            run_id,
+            status="running",
+            model_name=model_name,
+            **traceability,
+        )
+    finally:
+        conn.close()
     generated = llm_client.generate_json(
-        build_problem_statement_prompt(profile, icp, verified_signals),
+        prompt,
         GeneratedProblemStatement,
         model=model_name,
         task=f"problem_statement:{run_id}",
@@ -485,6 +503,7 @@ def execute_problem_statement_run(
             statement=generated.statement,
             evidence=generated.evidence,
             model_name=model_name,
+            **traceability,
         )
     finally:
         conn.close()

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import httpx
+import pytest
 
 from app import db, llm_client, main as main_module, prospects
 from app.main import app
@@ -79,6 +81,43 @@ def test_system_routes_report_status_and_hardware(db_path, monkeypatch):
     assert hardware["cpu_count"] >= 1
     assert hardware["recommended_model"].startswith("qwen3:")
     assert hardware["recommended_num_ctx"] in {2048, 4096, 8192}
+
+
+def test_health_checks_sqlite_without_blocking_on_ollama(db_path, monkeypatch):
+    monkeypatch.setattr(
+        llm_client,
+        "ollama_up",
+        lambda: pytest.fail("liveness health must not probe local AI"),
+    )
+
+    async def get_health():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.get("/health")
+
+    response = asyncio.run(get_health())
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "database": "ok",
+        "ai_mode": "local-only",
+    }
+
+
+def test_health_returns_503_when_sqlite_is_unavailable(db_path, monkeypatch):
+    def unavailable_database():
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(main_module.db, "connect", unavailable_database)
+
+    async def get_health():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.get("/health")
+
+    response = asyncio.run(get_health())
+    assert response.status_code == 503
+    assert response.json()["detail"] == "local database unavailable"
 
 
 def test_status_distinguishes_slow_ollama_from_unavailable(db_path, monkeypatch):
@@ -317,6 +356,8 @@ def test_status_exposes_latest_model_seed_and_decoding_settings(db_path, monkeyp
             seed=43,
             repeat_penalty=1.0,
             status="ok",
+            prompt_hash="a" * 64,
+            commit_hash="b" * 40,
         )
     finally:
         conn.close()
@@ -346,6 +387,8 @@ def test_status_exposes_latest_model_seed_and_decoding_settings(db_path, monkeyp
     assert latest["temperature"] == 0.2
     assert latest["seed"] == 43
     assert latest["repeat_penalty"] == 1.0
+    assert latest["prompt_hash"] == "a" * 64
+    assert latest["commit_hash"] == "b" * 40
 
 
 def test_git_commit_lookup_falls_back_to_unknown(monkeypatch):

@@ -39,6 +39,11 @@ CREATE TABLE IF NOT EXISTS business_profiles (
     product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     profile_json TEXT NOT NULL,
     model_name  TEXT NOT NULL DEFAULT '',
+    temperature REAL NOT NULL DEFAULT 0.0,
+    seed        INTEGER NOT NULL DEFAULT 42,
+    repeat_penalty REAL NOT NULL DEFAULT 1.0,
+    prompt_hash TEXT NOT NULL DEFAULT '',
+    commit_hash TEXT NOT NULL DEFAULT '',
     created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_profiles_product ON business_profiles(product_id, created_at DESC);
@@ -50,6 +55,11 @@ CREATE TABLE IF NOT EXISTS icps (
     embedding      BLOB,
     embedding_model TEXT NOT NULL DEFAULT '',
     model_name     TEXT NOT NULL DEFAULT '',
+    temperature    REAL NOT NULL DEFAULT 0.0,
+    seed           INTEGER NOT NULL DEFAULT 42,
+    repeat_penalty REAL NOT NULL DEFAULT 1.0,
+    prompt_hash    TEXT NOT NULL DEFAULT '',
+    commit_hash    TEXT NOT NULL DEFAULT '',
     created_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_icps_product ON icps(product_id, created_at DESC);
@@ -89,6 +99,8 @@ CREATE TABLE IF NOT EXISTS signal_runs (
     product_id             INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     status                 TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
     model_name             TEXT,
+    prompt_hash            TEXT NOT NULL DEFAULT '',
+    commit_hash            TEXT NOT NULL DEFAULT '',
     temperature            REAL NOT NULL DEFAULT 0.0,
     seed                   INTEGER NOT NULL DEFAULT 42,
     repeat_penalty         REAL NOT NULL DEFAULT 1.0,
@@ -129,6 +141,8 @@ CREATE TABLE IF NOT EXISTS problem_statements (
     evidence_json          TEXT,
     error                  TEXT,
     model_name             TEXT,
+    prompt_hash            TEXT NOT NULL DEFAULT '',
+    commit_hash            TEXT NOT NULL DEFAULT '',
     temperature            REAL NOT NULL DEFAULT 0.0,
     seed                   INTEGER NOT NULL DEFAULT 42,
     repeat_penalty         REAL NOT NULL DEFAULT 1.0,
@@ -181,6 +195,8 @@ CREATE TABLE IF NOT EXISTS reply_classifications (
     confidence   REAL,
     rationale    TEXT,
     model_name   TEXT,
+    prompt_hash  TEXT NOT NULL DEFAULT '',
+    commit_hash  TEXT NOT NULL DEFAULT '',
     temperature  REAL NOT NULL DEFAULT 0.0,
     seed         INTEGER NOT NULL DEFAULT 42,
     repeat_penalty REAL NOT NULL DEFAULT 1.0,
@@ -206,6 +222,8 @@ CREATE TABLE IF NOT EXISTS inference_log (
     repeat_penalty REAL NOT NULL DEFAULT 1.0,
     status        TEXT NOT NULL DEFAULT 'ok'
                   CHECK (status IN ('ok', 'error:unavailable', 'error:timeout', 'error:http', 'error:invalid_json')),
+    prompt_hash   TEXT NOT NULL DEFAULT '',
+    commit_hash   TEXT NOT NULL DEFAULT '',
     created_at    TEXT NOT NULL
 );
 
@@ -250,6 +268,8 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     workflow       TEXT NOT NULL CHECK (workflow IN ('profile', 'icp')),
     status         TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
     model_name     TEXT,
+    prompt_hash    TEXT NOT NULL DEFAULT '',
+    commit_hash    TEXT NOT NULL DEFAULT '',
     temperature    REAL NOT NULL DEFAULT 0.0,
     seed           INTEGER NOT NULL DEFAULT 42,
     repeat_penalty REAL NOT NULL DEFAULT 1.0,
@@ -274,6 +294,8 @@ CREATE TABLE IF NOT EXISTS draft_runs (
     evidence_used_json  TEXT,
     error               TEXT,
     model_name          TEXT,
+    prompt_hash         TEXT NOT NULL DEFAULT '',
+    commit_hash         TEXT NOT NULL DEFAULT '',
     temperature         REAL NOT NULL DEFAULT 0.0,
     seed                INTEGER NOT NULL DEFAULT 42,
     repeat_penalty      REAL NOT NULL DEFAULT 1.0,
@@ -542,8 +564,40 @@ def init_db(conn: sqlite3.Connection) -> None:
             "ALTER TABLE inference_log ADD COLUMN status TEXT NOT NULL DEFAULT 'ok' "
             "CHECK (status IN ('ok', 'error:unavailable', 'error:timeout', 'error:http', 'error:invalid_json'))"
         )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(inference_log)")}
     if "load_seconds" not in columns:
         conn.execute("ALTER TABLE inference_log ADD COLUMN load_seconds REAL")
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(inference_log)")}
+    for column, definition in {
+        "prompt_hash": "TEXT NOT NULL DEFAULT ''",
+        "commit_hash": "TEXT NOT NULL DEFAULT ''",
+    }.items():
+        if column not in columns:
+            conn.execute(f"ALTER TABLE inference_log ADD COLUMN {column} {definition}")
+
+    output_traceability = {
+        "temperature": "REAL NOT NULL DEFAULT 0.0",
+        "seed": "INTEGER NOT NULL DEFAULT 42",
+        "repeat_penalty": "REAL NOT NULL DEFAULT 1.0",
+        "prompt_hash": "TEXT NOT NULL DEFAULT ''",
+        "commit_hash": "TEXT NOT NULL DEFAULT ''",
+    }
+    for table in ("business_profiles", "icps"):
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for column, definition in output_traceability.items():
+            if column not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    for table in (
+        "workflow_runs", "signal_runs", "problem_statements", "draft_runs",
+        "reply_classifications",
+    ):
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for column in ("prompt_hash", "commit_hash"):
+            if column not in columns:
+                conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+                )
 
     merge_duplicate_products(conn)
     conn.execute(
@@ -634,6 +688,8 @@ def update_reply_classification(
     rationale: str | None = None,
     error: str | None = None,
     queue_task_id: int | None = None,
+    prompt_hash: str | None = None,
+    commit_hash: str | None = None,
 ) -> None:
     if status not in {"pending", "queued", "running", "succeeded", "failed"}:
         raise ValueError(f"invalid reply classification status: {status!r}")
@@ -641,11 +697,14 @@ def update_reply_classification(
         raise ValueError("a succeeded reply classification requires a validated result")
     cur = conn.execute(
         "UPDATE reply_classifications SET status = ?, model_name = COALESCE(?, model_name), "
+        "prompt_hash = COALESCE(?, prompt_hash), commit_hash = COALESCE(?, commit_hash), "
         "label = ?, confidence = ?, rationale = ?, error = ?, queue_task_id = ?, updated_at = ? "
         "WHERE reply_id = ?",
         (
             status,
             model_name,
+            prompt_hash,
+            commit_hash,
             label,
             float(confidence) if confidence is not None else None,
             rationale,
@@ -691,14 +750,16 @@ def log_inference(
     temperature: float = 0.0,
     seed: int = 42,
     repeat_penalty: float = 1.0,
+    prompt_hash: str = "",
+    commit_hash: str = "",
 ) -> int:
     if status not in INFERENCE_STATUSES:
         raise ValueError(f"invalid inference status: {status!r}")
     cur = conn.execute(
         "INSERT INTO inference_log "
         "(task, model, host, prompt_tokens, eval_tokens, seconds, load_seconds, "
-        "temperature, seed, repeat_penalty, status, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "temperature, seed, repeat_penalty, status, prompt_hash, commit_hash, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             task,
             model,
@@ -711,6 +772,8 @@ def log_inference(
             int(seed),
             float(repeat_penalty),
             status,
+            str(prompt_hash),
+            str(commit_hash),
             utcnow(),
         ),
     )
@@ -811,14 +874,17 @@ def update_workflow_run(
     error: str | None = None,
     model_name: str | None = None,
     queue_task_id: int | None = None,
+    prompt_hash: str | None = None,
+    commit_hash: str | None = None,
 ) -> None:
     if status not in {"queued", "running", "succeeded", "failed"}:
         raise ValueError(f"invalid workflow run status: {status!r}")
     cur = conn.execute(
         "UPDATE workflow_runs SET status = ?, result_json = NULL, error = ?, "
-        "model_name = COALESCE(?, model_name), queue_task_id = COALESCE(?, queue_task_id), "
+        "model_name = COALESCE(?, model_name), prompt_hash = COALESCE(?, prompt_hash), "
+        "commit_hash = COALESCE(?, commit_hash), queue_task_id = COALESCE(?, queue_task_id), "
         "updated_at = ? WHERE id = ?",
-        (status, error, model_name, queue_task_id, utcnow(), int(run_id)),
+        (status, error, model_name, prompt_hash, commit_hash, queue_task_id, utcnow(), int(run_id)),
     )
     if cur.rowcount != 1:
         raise ValueError(f"workflow run {run_id} not found")
@@ -873,6 +939,11 @@ def save_workflow_output(
     workflow: str,
     result: dict[str, Any],
     model_name: str,
+    temperature: float = 0.0,
+    seed: int = 42,
+    repeat_penalty: float = 1.0,
+    prompt_hash: str = "",
+    commit_hash: str = "",
 ) -> None:
     if workflow not in {"profile", "icp"}:
         raise ValueError(f"invalid workflow: {workflow!r}")
@@ -880,21 +951,28 @@ def save_workflow_output(
     now = utcnow()
     if workflow == "profile":
         conn.execute(
-            "INSERT INTO business_profiles (product_id, profile_json, model_name, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (int(product_id), result_json, model_name, now),
+            "INSERT INTO business_profiles "
+            "(product_id, profile_json, model_name, temperature, seed, repeat_penalty, "
+            "prompt_hash, commit_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (int(product_id), result_json, model_name, float(temperature), int(seed),
+             float(repeat_penalty), prompt_hash, commit_hash, now),
         )
     else:
         conn.execute(
-            "INSERT INTO icps (product_id, icp_json, embedding, embedding_model, model_name, created_at) "
-            "VALUES (?, ?, NULL, '', ?, ?)",
-            (int(product_id), result_json, model_name, now),
+            "INSERT INTO icps "
+            "(product_id, icp_json, embedding, embedding_model, model_name, temperature, seed, "
+            "repeat_penalty, prompt_hash, commit_hash, created_at) "
+            "VALUES (?, ?, NULL, '', ?, ?, ?, ?, ?, ?, ?)",
+            (int(product_id), result_json, model_name, float(temperature), int(seed),
+             float(repeat_penalty), prompt_hash, commit_hash, now),
         )
     cur = conn.execute(
         "UPDATE workflow_runs SET status = 'succeeded', result_json = ?, error = NULL, "
-        "model_name = ?, queue_task_id = NULL, updated_at = ? "
+        "model_name = ?, temperature = ?, seed = ?, repeat_penalty = ?, prompt_hash = ?, "
+        "commit_hash = ?, queue_task_id = NULL, updated_at = ? "
         "WHERE id = ? AND product_id = ? AND workflow = ?",
-        (result_json, model_name, now, int(run_id), int(product_id), workflow),
+        (result_json, model_name, float(temperature), int(seed), float(repeat_penalty),
+         prompt_hash, commit_hash, now, int(run_id), int(product_id), workflow),
     )
     if cur.rowcount != 1:
         raise ValueError(f"workflow run {run_id} does not match product/workflow")
@@ -1092,6 +1170,8 @@ def update_problem_statement_run(
     seed: int | None = None,
     repeat_penalty: float | None = None,
     queue_task_id: int | None = None,
+    prompt_hash: str | None = None,
+    commit_hash: str | None = None,
 ) -> None:
     if status not in {"queued", "running", "succeeded", "failed", "skipped"}:
         raise ValueError(f"invalid problem statement status: {status!r}")
@@ -1112,6 +1192,7 @@ def update_problem_statement_run(
         "error = ?, model_name = COALESCE(?, model_name), "
         "temperature = COALESCE(?, temperature), seed = COALESCE(?, seed), "
         "repeat_penalty = COALESCE(?, repeat_penalty), "
+        "prompt_hash = COALESCE(?, prompt_hash), commit_hash = COALESCE(?, commit_hash), "
         "queue_task_id = COALESCE(?, queue_task_id), updated_at = ? WHERE id = ?",
         (
             status,
@@ -1122,6 +1203,8 @@ def update_problem_statement_run(
             float(temperature) if temperature is not None else None,
             int(seed) if seed is not None else None,
             float(repeat_penalty) if repeat_penalty is not None else None,
+            prompt_hash,
+            commit_hash,
             int(queue_task_id) if queue_task_id is not None else None,
             utcnow(),
             int(run_id),
@@ -1141,6 +1224,8 @@ def update_signal_run(
     model_name: str | None = None,
     queue_task_id: int | None = None,
     quote_retries: int | None = None,
+    prompt_hash: str | None = None,
+    commit_hash: str | None = None,
 ) -> None:
     if status not in {"queued", "running", "succeeded", "failed"}:
         raise ValueError(f"invalid signal run status: {status!r}")
@@ -1149,12 +1234,15 @@ def update_signal_run(
     cur = conn.execute(
         "UPDATE signal_runs SET status = ?, error = ?, "
         "model_name = COALESCE(?, model_name), "
+        "prompt_hash = COALESCE(?, prompt_hash), commit_hash = COALESCE(?, commit_hash), "
         "queue_task_id = COALESCE(?, queue_task_id), "
         "quote_retries = COALESCE(?, quote_retries), updated_at = ? WHERE id = ?",
         (
             status,
             error,
             model_name,
+            prompt_hash,
+            commit_hash,
             queue_task_id,
             int(quote_retries) if quote_retries is not None else None,
             utcnow(),
@@ -1192,6 +1280,8 @@ def save_signal_run(
     removed_content: dict[str, Any],
     model_name: str,
     quote_retries: int = 0,
+    prompt_hash: str = "",
+    commit_hash: str = "",
 ) -> None:
     result_json = json.dumps(signals, ensure_ascii=False, sort_keys=True, allow_nan=False)
     drop_json = json.dumps(drop_counts, ensure_ascii=False, sort_keys=True, allow_nan=False)
@@ -1231,13 +1321,16 @@ def save_signal_run(
         cur = conn.execute(
             "UPDATE signal_runs SET status = 'succeeded', signals_json = ?, "
             "drop_counts_json = ?, removed_content_json = ?, error = NULL, "
-            "model_name = ?, quote_retries = ?, queue_task_id = NULL, updated_at = ? "
+            "model_name = ?, prompt_hash = ?, commit_hash = ?, quote_retries = ?, "
+            "queue_task_id = NULL, updated_at = ? "
             "WHERE id = ? AND prospect_id = ? AND product_id = ?",
             (
                 result_json,
                 drop_json,
                 removed_json,
                 model_name,
+                prompt_hash,
+                commit_hash,
                 int(quote_retries),
                 now,
                 int(run_id),
@@ -1332,15 +1425,18 @@ def update_draft_run(
     error: str | None = None,
     model_name: str | None = None,
     queue_task_id: int | None = None,
+    prompt_hash: str | None = None,
+    commit_hash: str | None = None,
 ) -> None:
     if status not in {"queued", "running", "succeeded", "failed", "skipped"}:
         raise ValueError(f"invalid draft status: {status!r}")
     cur = conn.execute(
         "UPDATE draft_runs SET status = ?, subject = NULL, body = NULL, "
         "evidence_used_json = NULL, error = ?, "
-        "model_name = COALESCE(?, model_name), queue_task_id = COALESCE(?, queue_task_id), updated_at = ? "
-        "WHERE id = ?",
-        (status, error, model_name, queue_task_id, utcnow(), int(run_id)),
+        "model_name = COALESCE(?, model_name), prompt_hash = COALESCE(?, prompt_hash), "
+        "commit_hash = COALESCE(?, commit_hash), "
+        "queue_task_id = COALESCE(?, queue_task_id), updated_at = ? WHERE id = ?",
+        (status, error, model_name, prompt_hash, commit_hash, queue_task_id, utcnow(), int(run_id)),
     )
     if cur.rowcount != 1:
         raise ValueError(f"draft run {run_id} not found")
@@ -1355,6 +1451,8 @@ def save_draft_output(
     body: str,
     evidence_used: list[str],
     model_name: str,
+    prompt_hash: str,
+    commit_hash: str,
 ) -> None:
     if not subject.strip() or not body.strip() or not evidence_used:
         raise ValueError("a successful draft requires subject, body, and verified evidence")
@@ -1363,9 +1461,9 @@ def save_draft_output(
     )
     cur = conn.execute(
         "UPDATE draft_runs SET status = 'succeeded', subject = ?, body = ?, "
-        "evidence_used_json = ?, error = NULL, model_name = ?, queue_task_id = NULL, "
-        "updated_at = ? WHERE id = ?",
-        (subject, body, evidence_json, model_name, utcnow(), int(run_id)),
+        "evidence_used_json = ?, error = NULL, model_name = ?, prompt_hash = ?, "
+        "commit_hash = ?, queue_task_id = NULL, updated_at = ? WHERE id = ?",
+        (subject, body, evidence_json, model_name, prompt_hash, commit_hash, utcnow(), int(run_id)),
     )
     if cur.rowcount != 1:
         raise ValueError(f"draft run {run_id} not found")

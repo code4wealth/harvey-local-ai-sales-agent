@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 import json
 
 import httpx
@@ -151,6 +152,9 @@ def test_classification_receives_only_reply_text_and_stores_result(db_path, monk
         "num_ctx": reply_workflow.NUM_CTX,
     }
     prompt = payload["messages"][-1]["content"]
+    expected_prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    assert body["prompt_hash"] == expected_prompt_hash
+    assert body["commit_hash"]
     assert reply_text in prompt
     assert "not now" in prompt
     assert "question: asks a specific question about how the product works" in prompt
@@ -170,6 +174,13 @@ def test_classification_receives_only_reply_text_and_stores_result(db_path, monk
     assert "difficulty" not in prompt
     assert "split" not in prompt
     assert "fictional observatory" in prompt
+    conn = db.connect()
+    try:
+        saved = db.get_reply_classification(conn, "R001")
+        assert saved["prompt_hash"] == expected_prompt_hash
+        assert saved["commit_hash"] == body["commit_hash"]
+    finally:
+        conn.close()
 
 
 def test_bad_label_retries_then_returns_valid_classification(db_path, monkeypatch):

@@ -24,6 +24,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from app import db as _db
+from app.traceability import prompt_traceability
 
 # Hard-coded by design. Do not read this value from environment/configuration.
 OLLAMA_URL = "http://127.0.0.1:11434"
@@ -193,6 +194,8 @@ def _write_inference_log(
     load_seconds: float | None = None,
     temperature: float = DEFAULT_TEMPERATURE,
     seed: int = DEFAULT_SEED,
+    prompt_hash: str = "",
+    commit_hash: str = "",
 ) -> int:
     """Persist one request row. Success-path write errors intentionally propagate."""
     conn = _db.connect()
@@ -210,6 +213,8 @@ def _write_inference_log(
             temperature=temperature,
             seed=seed,
             repeat_penalty=DEFAULT_REPEAT_PENALTY,
+            prompt_hash=prompt_hash,
+            commit_hash=commit_hash,
         )
     finally:
         conn.close()
@@ -226,6 +231,8 @@ def _write_error_log_best_effort(
     load_seconds: float | None = None,
     temperature: float = DEFAULT_TEMPERATURE,
     seed: int = DEFAULT_SEED,
+    prompt_hash: str = "",
+    commit_hash: str = "",
 ) -> int | None:
     try:
         return _write_inference_log(
@@ -238,6 +245,8 @@ def _write_error_log_best_effort(
             status=status,
             temperature=temperature,
             seed=seed,
+            prompt_hash=prompt_hash,
+            commit_hash=commit_hash,
         )
     except Exception:
         logger.exception("could not write inference_log error row: task=%s status=%s", task, status)
@@ -297,6 +306,7 @@ def _chat(
     if num_ctx <= 0:
         raise ValueError("num_ctx must be a positive integer")
     resolved_model = _resolve_model(model)
+    traceability = prompt_traceability(prompt)
     messages = ([{"role": "system", "content": system}] if system else []) + [
         {"role": "user", "content": prompt}
     ]
@@ -322,6 +332,7 @@ def _chat(
     except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
         elapsed = time.monotonic() - started
         _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=0,
@@ -335,6 +346,7 @@ def _chat(
     except httpx.TimeoutException as exc:
         elapsed = time.monotonic() - started
         _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=0,
@@ -349,6 +361,7 @@ def _chat(
     wall_seconds = time.monotonic() - started
     if response.status_code == 404 and "not found" in response.text.lower():
         _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=0,
@@ -363,6 +376,7 @@ def _chat(
         )
     if response.status_code != 200:
         _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=0,
@@ -379,6 +393,7 @@ def _chat(
         body = response.json()
     except json.JSONDecodeError as exc:
         _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=0,
@@ -401,6 +416,7 @@ def _chat(
         )
     if not isinstance(body, dict):
         _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=prompt_tokens,
@@ -427,6 +443,7 @@ def _chat(
 
     if initial_status == "ok":
         log_id = _write_inference_log(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=prompt_tokens,
@@ -439,6 +456,7 @@ def _chat(
         )
     else:
         log_id = _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=prompt_tokens,

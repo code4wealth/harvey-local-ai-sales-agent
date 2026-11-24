@@ -35,6 +35,17 @@ def test_schema_initializes_all_phase_tables_idempotently(db_path):
             assert {"temperature", "seed", "repeat_penalty"} <= {
                 row[1] for row in conn.execute(f"PRAGMA table_info({table})")
             }
+        for table in (
+            "workflow_runs", "signal_runs", "reply_classifications", "inference_log",
+            "draft_runs", "problem_statements",
+        ):
+            assert {"prompt_hash", "commit_hash"} <= {
+                row[1] for row in conn.execute(f"PRAGMA table_info({table})")
+            }
+        for table in ("business_profiles", "icps"):
+            assert {"temperature", "seed", "repeat_penalty", "prompt_hash", "commit_hash"} <= {
+                row[1] for row in conn.execute(f"PRAGMA table_info({table})")
+            }
         assert "quote_retries" in {
             row[1] for row in conn.execute("PRAGMA table_info(signal_runs)")
         }
@@ -77,11 +88,12 @@ def test_init_db_migrates_existing_inference_log_status_and_load_seconds(tmp_pat
         columns = {row[1] for row in conn.execute("PRAGMA table_info(inference_log)")}
         assert "status" in columns
         assert "load_seconds" in columns
-        assert {"temperature", "seed"} <= columns
+        assert {"temperature", "seed", "prompt_hash", "commit_hash"} <= columns
         row = conn.execute(
-            "SELECT status, load_seconds, temperature, seed FROM inference_log"
+            "SELECT status, load_seconds, temperature, seed, prompt_hash, commit_hash "
+            "FROM inference_log"
         ).fetchone()
-        assert row == ("ok", None, 0.0, 42)
+        assert row == ("ok", None, 0.0, 42, "", "")
     finally:
         conn.close()
 
@@ -104,8 +116,13 @@ def test_init_db_adds_model_names_to_legacy_profile_tables(tmp_path):
         db.init_db(conn)
         for table in ("business_profiles", "icps"):
             columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-            assert "model_name" in columns
-            assert conn.execute(f"SELECT model_name FROM {table} WHERE id = 1").fetchone()[0] == ""
+            assert {
+                "model_name", "temperature", "seed", "repeat_penalty", "prompt_hash", "commit_hash"
+            } <= columns
+            assert conn.execute(
+                f"SELECT model_name, temperature, seed, repeat_penalty, prompt_hash, commit_hash "
+                f"FROM {table} WHERE id = 1"
+            ).fetchone() == ("", 0.0, 42, 1.0, "", "")
     finally:
         conn.close()
 

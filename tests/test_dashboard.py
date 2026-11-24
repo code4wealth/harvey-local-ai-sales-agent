@@ -96,6 +96,8 @@ def test_dashboard_controls_are_wired_to_same_origin_workflows_and_status():
         'The local model returned data that did not match the required format.',
         'latest.seed',
         'latest.model',
+        'latest.prompt_hash',
+        'latest.commit_hash',
         'hashes.signals',
         'hashes.replies',
         's.git_commit',

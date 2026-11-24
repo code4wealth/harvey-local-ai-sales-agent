@@ -7,11 +7,10 @@ import re
 from typing import Any, Iterator
 
 from app import db
+from app.traceability import prompt_traceability
 
 
 _STRAY_TOKEN_ARTIFACT = re.compile(r"(\w+): \1")
-
-
 def iter_string_fields(value: Any, path: str = "") -> Iterator[tuple[str, str]]:
     """Yield every string leaf and its dotted/indexed field path."""
     if isinstance(value, str):
@@ -85,6 +84,8 @@ def update_run(
     error: str | None = None,
     model_name: str | None = None,
     queue_task_id: int | None = None,
+    prompt_hash: str | None = None,
+    commit_hash: str | None = None,
 ) -> None:
     conn = db.connect()
     try:
@@ -95,6 +96,8 @@ def update_run(
             error=error,
             model_name=model_name,
             queue_task_id=queue_task_id,
+            prompt_hash=prompt_hash,
+            commit_hash=commit_hash,
         )
     finally:
         conn.close()
@@ -107,6 +110,11 @@ def complete_run(
     workflow: str,
     result: dict[str, Any],
     model_name: str,
+    prompt_hash: str,
+    commit_hash: str,
+    temperature: float,
+    seed: int,
+    repeat_penalty: float,
 ) -> None:
     conn = db.connect()
     try:
@@ -117,6 +125,11 @@ def complete_run(
             workflow=workflow,
             result=result,
             model_name=model_name,
+            prompt_hash=prompt_hash,
+            commit_hash=commit_hash,
+            temperature=temperature,
+            seed=seed,
+            repeat_penalty=repeat_penalty,
         )
     finally:
         conn.close()
@@ -177,6 +190,8 @@ def workflow_run_payload(row) -> dict[str, Any]:
         "model_name": row["model_name"],
         "temperature": row["temperature"],
         "seed": row["seed"],
+        "prompt_hash": row["prompt_hash"],
+        "commit_hash": row["commit_hash"],
         "repeat_penalty": row["repeat_penalty"],
         "queue_task_id": row["queue_task_id"],
         "created_at": row["created_at"],

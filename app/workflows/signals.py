@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from app import db, llm_client, prospects, scoring
 from app.queue_worker import register_handler
+from app.traceability import prompt_traceability
 from app.workflows.common import ungrounded_stray_token_matches
 
 TASK_TYPE = "workflow.signals"
@@ -450,8 +451,16 @@ def execute_signal_run(
     # Keep build_signal_prompt unchanged: quote retries reuse the exact same
     # prompt template so its frozen SHA-256 remains stable.
     signal_prompt = build_signal_prompt(submitted_text)
+    traceability = prompt_traceability(signal_prompt)
     conn = db.connect()
     try:
+        db.update_signal_run(
+            conn,
+            run_id,
+            status="running",
+            model_name=model_name,
+            **traceability,
+        )
         existing_run = db.get_signal_run(conn, run_id)
         quote_retries = int(existing_run["quote_retries"] or 0) if existing_run else 0
         attempts_used = int(
@@ -547,6 +556,7 @@ def execute_signal_run(
             removed_content=removed_content,
             model_name=model_name,
             quote_retries=quote_retries,
+            **traceability,
         )
     finally:
         conn.close()
@@ -721,6 +731,8 @@ def signal_run_payload(row) -> dict[str, Any]:
         "temperature": row["temperature"],
         "seed": row["seed"],
         "repeat_penalty": row["repeat_penalty"],
+        "prompt_hash": row["prompt_hash"],
+        "commit_hash": row["commit_hash"],
         "quote_retries": int(row["quote_retries"]),
         "queue_task_id": row["queue_task_id"],
         "created_at": row["created_at"],

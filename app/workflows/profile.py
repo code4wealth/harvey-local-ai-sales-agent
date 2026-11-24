@@ -256,10 +256,12 @@ def _profile_inputs(product_id: int) -> tuple[str, str]:
 
 def execute_profile_run(product_id: int, run_id: int, model_name: str) -> BusinessProfile:
     """Run one already-persisted profile task; exceptions remain visible to callers."""
-    common.update_run(run_id, status="running", model_name=model_name)
     product_name, document = _profile_inputs(product_id)
+    prompt = build_profile_prompt(document, product_name)
+    traceability = common.prompt_traceability(prompt)
+    common.update_run(run_id, status="running", model_name=model_name, **traceability)
     generated = llm_client.generate_json(
-        build_profile_prompt(document, product_name),
+        prompt,
         BusinessProfile,
         model=model_name,
         task=f"profile:{run_id}",
@@ -278,6 +280,10 @@ def execute_profile_run(product_id: int, run_id: int, model_name: str) -> Busine
         workflow="profile",
         result=generated.model_dump(mode="json"),
         model_name=model_name,
+        temperature=llm_client.DEFAULT_TEMPERATURE,
+        seed=llm_client.DEFAULT_SEED,
+        repeat_penalty=llm_client.DEFAULT_REPEAT_PENALTY,
+        **traceability,
     )
     return generated
 

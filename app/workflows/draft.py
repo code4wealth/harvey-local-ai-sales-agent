@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app import db, llm_client, scoring
 from app.queue_worker import register_handler
+from app.traceability import prompt_traceability
 from app.workflows.profile import BusinessProfile, validate_stored_profile
 
 TASK_TYPE = "workflow.draft"
@@ -310,6 +311,8 @@ def draft_run_payload(row) -> dict[str, Any]:
         "temperature": row["temperature"],
         "seed": row["seed"],
         "repeat_penalty": row["repeat_penalty"],
+        "prompt_hash": row["prompt_hash"],
+        "commit_hash": row["commit_hash"],
         "business_profile_id": row["business_profile_id"],
         "signal_run_id": row["signal_run_id"],
         "queue_task_id": row["queue_task_id"],
@@ -356,6 +359,8 @@ def latest_draft_payload(product_id: int, prospect_id: int) -> dict[str, Any]:
             "temperature": None,
             "seed": None,
             "repeat_penalty": None,
+            "prompt_hash": None,
+            "commit_hash": None,
             "business_profile_id": None,
             "signal_run_id": None,
             "queue_task_id": None,
@@ -386,8 +391,22 @@ def execute_draft_run(run_id: int, model_name: str) -> OutreachDraft | None:
     if stored_profile is None:
         raise DraftInputError("no stored business profile exists for this product")
 
+    prompt = build_draft_prompt(stored_profile, verified_signals)
+    traceability = prompt_traceability(prompt)
+    conn = db.connect()
+    try:
+        db.update_draft_run(
+            conn,
+            run_id,
+            status="running",
+            error=None,
+            model_name=model_name,
+            **traceability,
+        )
+    finally:
+        conn.close()
     generated = llm_client.generate_json(
-        build_draft_prompt(stored_profile, verified_signals),
+        prompt,
         OutreachDraft,
         model=model_name,
         task=f"draft:{run_id}",
@@ -406,6 +425,7 @@ def execute_draft_run(run_id: int, model_name: str) -> OutreachDraft | None:
             body=generated.body,
             evidence_used=generated.evidence_used,
             model_name=model_name,
+            **traceability,
         )
     finally:
         conn.close()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 
 import httpx
@@ -200,6 +201,9 @@ def test_problem_statement_uses_latest_profile_icp_and_verified_signal_sources(
         "num_ctx": problem_workflow.NUM_CTX,
     }
     prompt = payload["messages"][-1]["content"]
+    expected_prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    assert result["prompt_hash"] == expected_prompt_hash
+    assert result["commit_hash"]
     assert "Stored business profile JSON" in prompt
     assert "Stored ICP JSON" in prompt
     assert "Verified signals JSON" in prompt
@@ -213,6 +217,8 @@ def test_problem_statement_uses_latest_profile_icp_and_verified_signal_sources(
     try:
         row = db.get_problem_statement_run(conn, result["id"])
         assert row["status"] == "succeeded"
+        assert row["prompt_hash"] == expected_prompt_hash
+        assert row["commit_hash"] == result["commit_hash"]
         assert row["statement"] == STATEMENT
         assert json.loads(row["evidence_json"]) == [EVIDENCE_SPAN]
         assert json.loads(row["source_signal_ids_json"]) == signal_ids

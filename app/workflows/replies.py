@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app import db, llm_client
 from app.queue_worker import register_handler
+from app.traceability import prompt_traceability
 
 TASK_TYPE = "workflow.reply_classification"
 NUM_CTX = 2048
@@ -118,6 +119,8 @@ def reply_classification_payload(reply_id: str) -> dict[str, Any]:
                 "temperature": None,
                 "seed": None,
                 "repeat_penalty": None,
+                "prompt_hash": None,
+                "commit_hash": None,
                 "error": None,
                 "queue_task_id": None,
                 "created_at": None,
@@ -133,6 +136,8 @@ def reply_classification_payload(reply_id: str) -> dict[str, Any]:
             "temperature": row["temperature"],
             "seed": row["seed"],
             "repeat_penalty": row["repeat_penalty"],
+            "prompt_hash": row["prompt_hash"],
+            "commit_hash": row["commit_hash"],
             "error": row["error"],
             "queue_task_id": row["queue_task_id"],
             "created_at": row["created_at"],
@@ -170,6 +175,8 @@ def _update(
     rationale: str | None = None,
     error: str | None = None,
     queue_task_id: int | None = None,
+    prompt_hash: str | None = None,
+    commit_hash: str | None = None,
 ) -> None:
     conn = db.connect()
     try:
@@ -183,6 +190,8 @@ def _update(
             rationale=rationale,
             error=error,
             queue_task_id=queue_task_id,
+            prompt_hash=prompt_hash,
+            commit_hash=commit_hash,
         )
     finally:
         conn.close()
@@ -192,8 +201,11 @@ def execute_reply_classification(reply_id: str, model_name: str) -> ReplyClassif
     """Classify only the stored reply text and persist its validated result."""
     _start(reply_id, model_name)
     reply_text = _load_reply_text(reply_id)
+    prompt = build_reply_prompt(reply_text)
+    traceability = prompt_traceability(prompt)
+    _update(reply_id, status="running", model_name=model_name, **traceability)
     result = llm_client.generate_json(
-        build_reply_prompt(reply_text),
+        prompt,
         ReplyClassification,
         model=model_name,
         task=f"reply-classification:{reply_id}",
@@ -209,6 +221,7 @@ def execute_reply_classification(reply_id: str, model_name: str) -> ReplyClassif
         label=result.label,
         confidence=result.confidence,
         rationale=result.rationale,
+        **traceability,
     )
     return result
 

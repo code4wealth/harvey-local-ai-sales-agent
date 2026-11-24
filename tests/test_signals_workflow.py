@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 
 import httpx
@@ -200,6 +201,9 @@ def test_signal_api_validates_schema_uses_only_clean_page_and_persists_exact_rem
         "num_ctx": signal_workflow.NUM_CTX,
     }
     prompt = payload["messages"][-1]["content"]
+    expected_prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    assert body["prompt_hash"] == expected_prompt_hash
+    assert body["commit_hash"]
     assert quote in prompt
     assert "Navigation: Home" not in prompt
     assert "Cookie Banner" not in prompt
@@ -222,6 +226,8 @@ def test_signal_api_validates_schema_uses_only_clean_page_and_persists_exact_rem
         assert run["model_name"] == "signal-test-model"
         assert run["temperature"] == 0.0
         assert run["seed"] == 42
+        assert run["prompt_hash"] == expected_prompt_hash
+        assert run["commit_hash"] == body["commit_hash"]
         assert run["created_at"]
         assert json.loads(run["signals_json"]) == body["signals"]
         stored = conn.execute(

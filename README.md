@@ -134,8 +134,14 @@ No held-out reply or page text is included here.
 - `POST` / `GET /api/products/{id}/prospects/{prospect_id}/draft`
 - `POST` / `GET /api/products/{id}/prospects/{prospect_id}/problem-statement`
 - `POST` / `GET /api/replies/{reply_id}/classification`
+- `GET /health` checks API/SQLite liveness without requiring Ollama
 - `GET /api/hardware` and `GET /api/status`
 - `POST /api/queue/retry` (wakes the local queue worker)
+
+Generated workflow results include model settings, a SHA-256 of the rendered
+prompt, and the checked-out source commit when available. `/api/status` reports
+the latest inference trace; legacy rows and packaged builds may show hashes as
+unknown.
 
 The draft endpoint creates an unsent draft only. Email transmission is out of
 scope.

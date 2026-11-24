@@ -522,6 +522,22 @@ def api_retry_queue() -> dict:
         conn.close()
 
 
+@app.get("/health", tags=["system"])
+def api_health() -> dict:
+    """Check API/SQLite liveness without making local AI availability a prerequisite."""
+    conn = None
+    try:
+        conn = db.connect()
+        conn.execute("SELECT 1").fetchone()
+    except (sqlite3.Error, OSError) as exc:
+        logger.warning("health check failed: local SQLite is unavailable (%s)", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="local database unavailable") from exc
+    finally:
+        if conn is not None:
+            conn.close()
+    return {"status": "ok", "database": "ok", "ai_mode": "local-only"}
+
+
 @app.get("/api/hardware", tags=["system"])
 def api_hardware() -> dict:
     """Report detected RAM, CPU count, NVIDIA VRAM, tier, and model recommendation."""
@@ -570,6 +586,8 @@ def api_status() -> dict:
                 "temperature": latest_inference["temperature"],
                 "seed": latest_inference["seed"],
                 "repeat_penalty": latest_inference["repeat_penalty"],
+                "prompt_hash": latest_inference["prompt_hash"],
+                "commit_hash": latest_inference["commit_hash"],
                 "created_at": latest_inference["created_at"],
             }
             if latest_inference

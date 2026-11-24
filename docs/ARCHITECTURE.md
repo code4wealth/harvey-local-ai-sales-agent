@@ -36,7 +36,12 @@ hard-coded to the loopback Ollama endpoint. There is no cloud fallback.
   are persisted as skipped without an inference call.
 - All AI inference uses `app/llm_client.py`. Each `inference_log` row records
   model, local host, token counts, latency, the actual temperature/seed/repeat
-  penalty for that request, and status.
+  penalty for that request, status, rendered-prompt SHA-256, and source commit.
+  Workflow result payloads also retain their prompt hash and commit beside the
+  model settings; older migrated rows use empty hashes until regenerated.
+- `GET /health` checks API/SQLite liveness only. Ollama availability is reported
+  separately by `GET /api/status`, so local AI downtime does not mark the whole
+  service unhealthy or block deterministic features.
 
 ## Determinism and failure handling
 

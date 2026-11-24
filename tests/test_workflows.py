@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 
@@ -201,6 +202,9 @@ def test_profile_api_uses_json_schema_cleans_reply_and_persists_model(db_path, m
         "num_ctx": profile.NUM_CTX,
     }
     prompt = prompt_payload["messages"][-1]["content"]
+    expected_prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    assert body["prompt_hash"] == expected_prompt_hash
+    assert body["commit_hash"] == "unknown" or len(body["commit_hash"]) in {40, 64}
     assert "SAMPLE profile facts for an unrelated bakery." in prompt
     assert "Bakery:" not in prompt
     assert "not stated" in prompt
@@ -208,11 +212,20 @@ def test_profile_api_uses_json_schema_cleans_reply_and_persists_model(db_path, m
     conn = db.connect()
     try:
         saved = conn.execute(
-            "SELECT product_id, profile_json, model_name, created_at FROM business_profiles"
+            "SELECT product_id, profile_json, model_name, temperature, seed, repeat_penalty, "
+            "prompt_hash, commit_hash, created_at FROM business_profiles"
         ).fetchone()
         assert saved["product_id"] == product_id
         assert json.loads(saved["profile_json"]) == PROFILE_BAKERY_NO_NAME
         assert saved["model_name"] == "sample-test-model"
+        assert saved["temperature"] == 0.0
+        assert saved["seed"] == 42
+        assert saved["repeat_penalty"] == 1.0
+        assert saved["prompt_hash"] == expected_prompt_hash
+        assert saved["commit_hash"] == body["commit_hash"]
+        inference = conn.execute("SELECT * FROM inference_log ORDER BY id DESC LIMIT 1").fetchone()
+        assert inference["prompt_hash"] == expected_prompt_hash
+        assert inference["commit_hash"] == body["commit_hash"]
         assert saved["created_at"]
     finally:
         conn.close()

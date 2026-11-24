@@ -342,7 +342,6 @@ def _stored_profile(product_id: int) -> BusinessProfile:
 
 def execute_icp_run(product_id: int, run_id: int, model_name: str) -> IdealCustomerProfile:
     """Run one already-persisted ICP task using only this product's stored profile."""
-    common.update_run(run_id, status="running", model_name=model_name)
     stored_profile = _stored_profile(product_id)
     profile_data = stored_profile.model_dump(mode="json")
     ordered_profile = {
@@ -360,8 +359,11 @@ def execute_icp_run(product_id: int, run_id: int, model_name: str) -> IdealCusto
         )
     }
     serialized_profile = json.dumps(ordered_profile, ensure_ascii=False, separators=(",", ":"))
+    prompt = build_icp_prompt(serialized_profile)
+    traceability = common.prompt_traceability(prompt)
+    common.update_run(run_id, status="running", model_name=model_name, **traceability)
     generated = llm_client.generate_json(
-        build_icp_prompt(serialized_profile),
+        prompt,
         IdealCustomerProfile,
         model=model_name,
         task=f"icp:{run_id}",
@@ -377,6 +379,10 @@ def execute_icp_run(product_id: int, run_id: int, model_name: str) -> IdealCusto
         workflow="icp",
         result=generated.model_dump(mode="json"),
         model_name=model_name,
+        temperature=llm_client.DEFAULT_TEMPERATURE,
+        seed=llm_client.DEFAULT_SEED,
+        repeat_penalty=llm_client.DEFAULT_REPEAT_PENALTY,
+        **traceability,
     )
     return generated
 

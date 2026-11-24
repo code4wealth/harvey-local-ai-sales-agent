@@ -862,7 +862,7 @@
         $("queue-detail").textContent = `${q.done || 0} complete · ${q.failed || 0} failed`;
         $("hardware").textContent = h.tier || "Hardware profile ready";
         $("hardware-detail").textContent = `RAM ${h.ram_gb ?? "unknown"} GB · ${h.cpu_count ?? "unknown"} CPUs · Recommended ${h.recommended_model || "unknown"}`;
-        const inference = latest ? `${latest.task} · ${latest.model} · ${latest.status} · seed ${latest.seed} · temp ${latest.temperature} · repeat ${latest.repeat_penalty}` : "none recorded";
+        const inference = latest ? `${latest.task} · ${latest.model} · ${latest.status} · seed ${latest.seed} · temp ${latest.temperature} · repeat ${latest.repeat_penalty} · prompt ${latest.prompt_hash || "unknown"} · commit ${latest.commit_hash || "unknown"}` : "none recorded";
         const hashes = s.prompt_hashes || {};
         $("traceability").textContent = `Commit ${s.git_commit || "unknown"} · Last inference ${inference} · Signal prompt SHA-256 ${hashes.signals || "unknown"} · Reply prompt SHA-256 ${hashes.replies || "unknown"}`;
       } catch {

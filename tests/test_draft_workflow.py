@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 
 import httpx
@@ -190,6 +191,9 @@ def test_draft_uses_only_profile_and_verified_signals_and_is_never_sent(
         "num_ctx": draft_workflow.NUM_CTX,
     }
     prompt = payload["messages"][-1]["content"]
+    expected_prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    assert result["prompt_hash"] == expected_prompt_hash
+    assert result["commit_hash"]
     assert "RelayCue: A local workspace" in prompt
     assert QUOTE in prompt
     assert "Pick one verified signal" in prompt
@@ -208,6 +212,8 @@ def test_draft_uses_only_profile_and_verified_signals_and_is_never_sent(
     try:
         saved = db.get_draft_run(conn, result["id"])
         assert saved["status"] == "succeeded"
+        assert saved["prompt_hash"] == expected_prompt_hash
+        assert saved["commit_hash"] == result["commit_hash"]
         assert saved["subject"] == draft["subject"]
         assert saved["body"] == draft["body"]
         assert json.loads(saved["evidence_used_json"]) == [QUOTE_SPAN]
