@@ -5,8 +5,8 @@
 Completes the product-specific deterministic ranking and workflow roadmap on the
 active Arena branch:
 
-- Keeps the inference boundary local to Ollama; deterministic temperature/seed/repeat-penalty
-  defaults and exact product-name profile-summary validation are in place.
+- Keeps the inference boundary local to Ollama, with deterministic temperature/seed/repeat-penalty
+  defaults; product display names come from the products table rather than model-written summaries.
 - Keeps reply ground truth isolated in `data/eval/reply_labels.csv`; runtime
   reply records and prompts contain text only.
 - Adds the eight-label reply classifier and redacted evaluator. The evaluator
@@ -28,7 +28,7 @@ active Arena branch:
 
 ## Validation
 
-- `PATH="$PWD/.venv/bin:$PATH" make verify` — passed; corpus checks and **152 tests**.
+- `PATH="$PWD/.venv/bin:$PATH" make verify` — passed; corpus checks and **154 tests**.
 - `git diff --check` — passed.
 - Signal-extraction prompt SHA-256 remains
   `73fa8d3444e458a90d67b641ea93712faf42b6a4f198b86510a6ff82f269ca71`.

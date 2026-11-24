@@ -127,5 +127,5 @@ These checks use tests and mocked Ollama responses; they do not count as a live
 model demonstration and do not rerun either held-out evaluator.
 
 ```text
-RESULT: make verify — passed (152 tests); git diff --check — passed.
+RESULT: make verify — passed (154 tests); git diff --check — passed.
 ```

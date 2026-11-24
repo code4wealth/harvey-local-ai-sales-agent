@@ -85,9 +85,11 @@ different ICPs; company size was null for both.
 
 The 4B model is non-deterministic across seeds. It occasionally emits stray
 repeated-token artifacts, caught by quote verification and the artifact check.
-Signal development scores are optimistic because the prompt was revised after
-seeing development failures. Held-out sets are small, so per-label numbers are
-rough. All data is fictional SAMPLE data.
+It could not reliably reproduce a product name, so profile summaries omit it;
+the display name comes from the products table. Signal development scores are
+optimistic because the prompt was revised after seeing development failures.
+Held-out sets are small, so per-label numbers are rough. All data is fictional
+SAMPLE data.
 
 ## Product-specific ranking
 
