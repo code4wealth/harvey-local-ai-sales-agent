@@ -75,21 +75,43 @@ without raw text or rationale, and requires a matching frozen prompt hash before
 it can load held-out labels/text. Hashing detects prompt-text changes only; it
 does not freeze model weights, Ollama, decoding implementation, or evaluator
 code. All replies are synthetic SAMPLE examples, so their accuracy is not a
-customer-data benchmark. The supplied live run used `qwen3:4b` at temperature
-`0`, seed `42`, repeat penalty `1.0`, on a Windows laptop at about 18 tokens/s.
-The 12-page signal held-out set and the 24-example reply held-out set were each
-run once. Signal development and held-out summary lines, plus reply per-label
-and per-difficulty accuracy values for development (36) and held-out (24), were
-not supplied and are recorded as `not run` here. Both products produced filled,
-different ICPs; company size was null for both.
+customer-data benchmark.
 
-The 4B model is non-deterministic across seeds. It occasionally emits stray
-repeated-token artifacts, caught by quote verification and the artifact check.
-It could not reliably reproduce a product name, so profile summaries omit it;
-the display name comes from the products table. Signal development scores are
-optimistic because the prompt was revised after seeing development failures.
-Held-out sets are small, so per-label numbers are rough. All data is fictional
-SAMPLE data.
+Reported live configuration was `qwen3:4b`, temperature `0`, seed `42`,
+`repeat_penalty=1.0`, retry temperature `0.2`, on a Windows laptop at about
+18 tokens/s. Signal development (37 prospects; prompt hash prefix `73fa8d34...`)
+had expected-signal recall `14/16 (87.5%)`; `34/37` prospects passed, with one
+implied-signal false positive (`P010`), misses `P001` (quote glitch persisted
+after two quote retries) and `P022` (model returned nothing), and `8`
+quote-verification retries. The held-out signal run (12 pages, run once) had
+recall `8/8 (100%)` and `9/12` pages passed (`P045`, `P047`, `P049` failed).
+There was one trap false positive in each of no-signal/implied, negated, and
+other-company categories; the stale-signal trap held, empty lists were `0/12`,
+and there were `4` quote drops and `2` negated drops.
+
+Reply development before one prompt revision scored `27/36 (75.0%)`, with
+wrong_person `1/4`, other `1/4`, and interested `3/5`. After the revision it
+scored `32/36 (88.9%)` (ambiguous `9/10`, clear `23/26`); misclassified IDs were
+`R025`, `R028`, `R039`, and `R043`. The held-out reply run (24, run once, prompt
+frozen with hash prefix `a369052a...`) scored `18/24 (75.0%)`. Per-label counts
+were interested `2/3`, meeting_request `2/3`, not_interested `2/3`, other `1/3`,
+out_of_office `3/3`, question `2/3`, unsubscribe `3/3`, and wrong_person `3/3`;
+ambiguous was `6/10 (60%)`, clear was `12/14 (85.7%)`, and misclassified IDs
+were `R014`, `R018`, `R019`, `R048`, `R050`, and `R060`.
+
+The reply prompt was revised once after seeing development results, so the
+held-out score (`75.0%`) is the honest one and the `13.9`-point drop from
+development is expected. Held-out per-label counts are `3`, so each reply moves
+a label by `33` points. Signal development scores are optimistic because the
+signal prompt was revised after seeing development failures. Signal extraction
+over-extracts on held-out pages (`3` trap false positives, `0/12` empty lists)
+despite perfect recall, so precision on trap pages is the main weakness. The 4B
+model is non-deterministic across seeds and occasionally emits repeated-token
+artifacts; quote verification catches them, but quote retries did not always fix
+them (`P001`). Profile summaries omit the product name because the model could
+not reproduce it.
+RelayCue profile and ICP succeeded; the FieldNest ICP outcome was not supplied.
+All data is fictional SAMPLE data.
 
 ## Product-specific ranking
 

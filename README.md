@@ -65,22 +65,36 @@ it does not run Ollama or either held-out evaluator. The reply evaluator writes
 redacted JSON reports beneath `test_evidence/real_run/`. It reports aggregate
 metrics and misclassified IDs only, never reply text or rationale. See
 `docs/DEMO.md` for ordered local demo commands and the reported live-run
-snapshot; result fields without supplied values are marked `not run`.
+snapshot; unavailable run outputs are marked `not run`, and unreported outcomes
+are marked `not supplied`.
 
 ## Reported live-run snapshot
 
-Reported configuration: `qwen3:4b`, temperature `0`, seed `42`,
-`repeat_penalty=1.0`, Windows laptop, about 18 tokens/s. Missing result values
-are marked `not run`; a supplied run count is recorded separately.
+Configuration: `qwen3:4b`, temperature `0`, seed `42`, `repeat_penalty=1.0`,
+retry temperature `0.2`, Windows laptop, about 18 tokens/s. Unavailable run
+outputs are marked `not run`; unreported outcomes are marked `not supplied`.
 
-- Signals, development: summary lines — not run.
-- Signals, held-out: 12 pages, one run; summary lines — not run.
-- Replies, development (36): per-label accuracy — not run; per-difficulty
-  accuracy — not run.
-- Replies, held-out (24, one run): per-label accuracy — not run;
-  per-difficulty accuracy — not run.
-- Profile and ICP: both products produced filled, different ICPs; company size
-  was null for both.
+- Signals, development (37 prospects; signal prompt hash prefix `73fa8d34...`):
+  expected-signal recall `14/16 (87.5%)`; `34/37` prospects passed; `1` false
+  positive on an implied-signal page (`P010`); misses `P001` (quote glitch
+  persisted after `2` quote retries) and `P022` (model returned nothing); `8`
+  quote-verification retries in total.
+- Signals, held-out (12 pages, one run): expected-signal recall `8/8 (100%)`;
+  `9/12` pages passed (failed `P045`, `P047`, `P049`); false positives: no-signal/
+  implied `1`, negated `1`, other-company `1`; stale-signal trap held; empty-list
+  returns `0/12`; `4` quote drops, `2` negated drops.
+- Replies, development before one prompt revision (36): `27/36 (75.0%)`;
+  wrong_person `1/4`, other `1/4`, interested `3/5`.
+- Replies, development after the revision (36): `32/36 (88.9%)`; ambiguous
+  `9/10`, clear `23/26`; misclassified IDs `R025`, `R028`, `R039`, `R043`.
+- Replies, held-out (24, one run; prompt frozen, hash prefix `a369052a...`):
+  `18/24 (75.0%)`; per-label counts: interested `2/3`, meeting_request `2/3`,
+  not_interested `2/3`, other `1/3`, out_of_office `3/3`, question `2/3`,
+  unsubscribe `3/3`, wrong_person `3/3`; ambiguous `6/10 (60%)`, clear
+  `12/14 (85.7%)`; misclassified IDs `R014`, `R018`, `R019`, `R048`, `R050`,
+  `R060`.
+- Profile and ICP: RelayCue profile and ICP succeeded; FieldNest ICP outcome:
+  not supplied.
 
 No held-out reply or page text is included here.
 

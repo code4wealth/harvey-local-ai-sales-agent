@@ -2,9 +2,9 @@
 
 This runbook is for a real local Ollama demonstration. The commands are listed
 in execution order; not every command output is present in the supplied run
-record. Missing result values are marked `not run`, and supplied held-out run
-counts are recorded separately. Do not present mocked tests as live-model
-evidence or include held-out reply/page text.
+record. Unavailable run outputs are marked `not run`, unreported outcomes are
+marked `not supplied`, and held-out run counts are recorded separately. Do not
+present mocked tests as live-model evidence or include held-out reply/page text.
 
 ## 1. Install and start local Ollama
 
@@ -30,7 +30,9 @@ ollama pull qwen3:4b
 ```
 
 ```text
-RESULT: Reported live configuration: qwen3:4b, temperature 0, seed 42, repeat_penalty 1.0, Windows laptop, about 18 tokens/s. Ollama version, model-list output, and local service status: not run.
+RESULT: Reported live configuration: qwen3:4b, temperature 0, seed 42,
+repeat_penalty 1.0, retry temperature 0.2, Windows laptop, about 18 tokens/s.
+Ollama version, model-list output, and local service status: not run.
 ```
 
 ## 2. Create an isolated demo database and start the API
@@ -74,7 +76,7 @@ Check the corresponding `GET` endpoint after the worker retries. The commands
 use only fictional SAMPLE product/prospect data.
 
 ```text
-RESULT: Both products produced filled, different ICPs; company size was null for both. Product IDs, prospect import counts, and queued-retry counts: not run.
+RESULT: RelayCue profile and ICP succeeded. FieldNest ICP outcome: not supplied. Product IDs, prospect import counts, and queued-retry counts: not run.
 ```
 
 ## 4. Inspect ranking, signals, and an unsent draft
@@ -94,7 +96,15 @@ made. Ranking remains deterministic and reports missing components rather than
 inventing inputs.
 
 ```text
-RESULT: Signals development summary lines: not run. Signals held-out: 12 pages, one run; summary lines: not run. Signal-run status, ranking status/tier, and draft status: not run.
+RESULT: Signals development (37 prospects; signal prompt hash prefix 73fa8d34...):
+expected-signal recall 14/16 (87.5%); 34/37 prospects passed; 1 implied-signal
+false positive (P010); misses P001 (quote glitch persisted after 2 quote retries)
+and P022 (model returned nothing); 8 quote-verification retries in total.
+Signals held-out (12 pages, one run): expected-signal recall 8/8 (100%);
+9/12 pages passed (failed P045, P047, P049); trap false positives:
+no-signal/implied 1, negated 1, other-company 1; stale-signal trap held;
+empty-list returns 0/12; 4 quote drops, 2 negated drops. Ranking status/tier and
+draft status: not run.
 ```
 
 ## 5. Classify one sample reply and run the development evaluator
@@ -113,7 +123,15 @@ supplied run record says the 24-example held-out reply set was run once; the
 held-out evaluator remains gated by a matching frozen reply-prompt hash.
 
 ```text
-RESULT: Replies development (36): per-label and per-difficulty accuracy, report path, and duration — not run. Replies held-out (24, one run): per-label and per-difficulty accuracy — not run.
+RESULT: Replies development before one prompt revision (36): 27/36 (75.0%);
+wrong_person 1/4, other 1/4, interested 3/5. After the revision (36): 32/36
+(88.9%); ambiguous 9/10, clear 23/26; misclassified IDs R025, R028, R039, R043.
+Replies held-out (24, one run, prompt frozen, hash prefix a369052a...): 18/24
+(75.0%); per-label counts: interested 2/3, meeting_request 2/3,
+not_interested 2/3, other 1/3, out_of_office 3/3, question 2/3, unsubscribe
+3/3, wrong_person 3/3; ambiguous 6/10 (60%), clear 12/14 (85.7%);
+misclassified IDs R014, R018, R019, R048, R050, R060. Report path and
+duration: not supplied.
 ```
 
 ## 6. Verify implementation without rerunning live or held-out evaluations
