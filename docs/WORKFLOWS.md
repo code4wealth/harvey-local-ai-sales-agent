@@ -207,7 +207,9 @@ Implemented:
    Invalid model results retry twice; terminal failures are persisted, and
    Ollama-unavailable runs are queued for worker retry. With no verified
    evidence, it stores `skipped` / `no verified evidence` and does not resolve
-   or call a model. The dashboard can generate and view the latest result.
+   or call a model. The dashboard can generate and view the latest result. This
+   workflow does not add problem-statement context to the existing draft prompt;
+   draft prompt text and its hash are kept unchanged.
 7. **Scoring and ranking:** deterministic; see the formula above and the
    product-specific ranking contract.
 
