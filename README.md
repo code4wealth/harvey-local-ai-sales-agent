@@ -93,8 +93,13 @@ outputs are marked `not run`; unreported outcomes are marked `not supplied`.
   unsubscribe `3/3`, wrong_person `3/3`; ambiguous `6/10 (60%)`, clear
   `12/14 (85.7%)`; misclassified IDs `R014`, `R018`, `R019`, `R048`, `R050`,
   `R060`.
-- Profile and ICP: RelayCue profile and ICP succeeded; FieldNest ICP outcome:
-  not supplied.
+- Profile and ICP: RelayCue profile and ICP succeeded. FieldNest ICP succeeded
+  on the final run (HTTP 200); an earlier run failed grounding after the model
+  invented a trigger event and disqualifier, and the failure was stored with
+  its reason.
+- Demo behavior: ranking returned an explicit missing-input status when no
+  signal run exists; the draft was skipped with `no verified evidence` and was
+  never sent; reply classification of `R001` returned `interested`.
 
 No held-out reply or page text is included here.
 

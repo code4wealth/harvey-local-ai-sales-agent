@@ -109,9 +109,13 @@ despite perfect recall, so precision on trap pages is the main weakness. The 4B
 model is non-deterministic across seeds and occasionally emits repeated-token
 artifacts; quote verification catches them, but quote retries did not always fix
 them (`P001`). Profile summaries omit the product name because the model could
-not reproduce it.
-RelayCue profile and ICP succeeded; the FieldNest ICP outcome was not supplied.
-All data is fictional SAMPLE data.
+not reproduce it. RelayCue profile and ICP succeeded. FieldNest ICP succeeded on
+the final run (HTTP 200); an earlier run failed grounding after the model invented
+a trigger event and disqualifier, and that failure was stored with its reason.
+In the demo, ranking returned an explicit missing-input status when no signal run
+exists; the draft was skipped with reason `no verified evidence` and never sent;
+reply classification of `R001` returned `interested`. All data is fictional
+SAMPLE data.
 
 ## Product-specific ranking
 

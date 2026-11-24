@@ -76,7 +76,10 @@ Check the corresponding `GET` endpoint after the worker retries. The commands
 use only fictional SAMPLE product/prospect data.
 
 ```text
-RESULT: RelayCue profile and ICP succeeded. FieldNest ICP outcome: not supplied. Product IDs, prospect import counts, and queued-retry counts: not run.
+RESULT: RelayCue profile and ICP succeeded. FieldNest ICP succeeded on the final
+run (HTTP 200); an earlier run failed grounding after the model invented a
+trigger event and disqualifier, and the failure was stored with its reason.
+Product IDs, prospect import counts, and queued-retry counts: not run.
 ```
 
 ## 4. Inspect ranking, signals, and an unsent draft
@@ -103,8 +106,9 @@ and P022 (model returned nothing); 8 quote-verification retries in total.
 Signals held-out (12 pages, one run): expected-signal recall 8/8 (100%);
 9/12 pages passed (failed P045, P047, P049); trap false positives:
 no-signal/implied 1, negated 1, other-company 1; stale-signal trap held;
-empty-list returns 0/12; 4 quote drops, 2 negated drops. Ranking status/tier and
-draft status: not run.
+empty-list returns 0/12; 4 quote drops, 2 negated drops. Ranking returned an
+explicit missing-input status when no signal run exists; the draft was skipped
+with reason `no verified evidence` and was never sent.
 ```
 
 ## 5. Classify one sample reply and run the development evaluator
@@ -131,7 +135,7 @@ Replies held-out (24, one run, prompt frozen, hash prefix a369052a...): 18/24
 not_interested 2/3, other 1/3, out_of_office 3/3, question 2/3, unsubscribe
 3/3, wrong_person 3/3; ambiguous 6/10 (60%), clear 12/14 (85.7%);
 misclassified IDs R014, R018, R019, R048, R050, R060. Report path and
-duration: not supplied.
+duration: not supplied. The live classification of R001 returned `interested`.
 ```
 
 ## 6. Verify implementation without rerunning live or held-out evaluations
