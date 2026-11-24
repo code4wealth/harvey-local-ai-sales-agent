@@ -1,8 +1,9 @@
 # Workflows and scoring contracts
 
-This document separates implemented deterministic behavior from LLM workflows
-that have **not** been started. No workflow prompts are being tuned in this
-patch; the operator will tune them against real local-model output later.
+This document records the implemented deterministic behavior, local-only LLM
+contracts, mocked evaluation tooling, and the remaining live-validation work.
+No real Ollama run or held-out evaluation has been performed for the current
+workflow milestones; prompt tuning and live results remain operator-owned.
 
 ## Implemented deterministic batch
 
@@ -139,12 +140,27 @@ weights without re-normalization. If all components are missing, the score is
 `0` and `partial` is true. Never substitute guessed inputs or claim a partial
 total is complete.
 
+## Product-specific deterministic ranking
+
+`GET /api/products/{product_id}/ranking` ranks only that product's prospects.
+It uses the product's stored ICP, local page text, and only valid signals from
+the latest successful signal run for each prospect. A later failed extraction
+is reported as the latest run state but does not replace the prior successful
+signal snapshot. No LLM is called and no missing component is invented.
+
+The response identifies missing inputs/components, deterministic ICP field
+matches and supporting evidence reasons, component scores, rank, and tier.
+Complete totals map to `high` at 70+, `medium` at 40+, and `low` below 40;
+incomplete inputs remain partial. A product with no usable ICP is unranked
+with a null score. This route is distinct from the older batch score writer.
+
 ## LLM workflow status
 
 All inference uses the local `app/llm_client.py` path. Structured outputs are
 Pydantic-validated and retried at most twice; workflow-specific grounding
 validators participate in those same three total attempts. No workflow calls
-a model or service directly.
+a model or service directly. Temperature is `0`, seed is `42`, and workflows
+pass explicit context budgets.
 
 Implemented:
 
@@ -154,7 +170,8 @@ Implemented:
    General claims need 60% normalized content-word overlap with the source;
    each pain-point item needs 80%. Missing fields on previously saved profiles
    are supplied as `not stated` for ICP generation without rewriting the
-   stored profile.
+   stored profile. The exact stored product name is required at the beginning
+   of the summary.
 2. **ICP:** uses the stored profile's buyer, team-size, working-situation,
    pain-point, and `not_for` fields. Every list item is grounded in its
    field-specific profile support; unsupported lists may be empty or contain
@@ -163,25 +180,43 @@ Implemented:
 3. **Buying signals:** local prospect page; `{signals: [...]}` where each
    item is `{type, evidence, about_company}`. Evidence is checked against the
    source and filtered for unrelated-company, negated, and stale events before
-   persistence.
-4. **Scoring — deterministic implementation exists:** use the formula and
-   component rules above; it does not need an LLM rationale.
+   persistence. The extraction prompt is frozen by its existing hash contract
+   and must not be changed during these milestones.
+4. **Reply classification:** `POST` / `GET /api/replies/{reply_id}/classification`.
+   The model sees only stored inbound reply text, not reply ID or evaluation
+   metadata. It returns one of eight strict labels, confidence in `[0,1]`, and
+   a rationale of at most 200 characters. Invalid results retry twice; outage
+   tasks are persisted and replayed. Ground-truth labels are in
+   `data/eval/reply_labels.csv`, never in the runtime sample-reply table.
+5. **Outreach draft:** `POST` / `GET
+   /api/products/{product_id}/prospects/{prospect_id}/draft`. The prompt uses
+   only the product's stored business profile and valid signals from the
+   latest successful signal run. Every evidence item must be a verbatim stored
+   signal quote and must appear verbatim in the body. Invalid drafts retry
+   twice; persistent failure is returned and stored. With no verified signal,
+   the workflow skips the model and persists `no verified evidence`. Drafts are
+   local records only; no send API exists.
+6. **Scoring and ranking:** deterministic; see the formula above and the
+   product-specific ranking contract.
 
-Prospect research, problem statements, email generation, reply classification,
-and full pipeline orchestration are not implemented in this workflow batch.
-Signal evaluation is separate from runtime: only offline `scripts/eval_*.py`
-and `scripts/validate_corpus.py` may read files under `data/eval/`. Target a
-small development subset with `python scripts/eval_signals.py --model qwen3:4b
+## Offline evaluators
+
+Only `scripts/eval_*.py` and `scripts/validate_corpus.py` read files under
+`data/eval/`. The reply evaluator defaults to the 36 development replies and
+reports per-label and per-difficulty accuracy, a confusion matrix, and
+misclassified reply IDs. Reports under `test_evidence/real_run/` exclude reply
+text and rationale. `python scripts/eval_replies.py --freeze-prompt` freezes the
+reply prompt hash without inference; a changed hash requires explicit
+`--refreeze`. The current baseline is recorded in
+`data/eval/frozen_reply_prompt.sha256`. Held-out evaluation uses `--held-out`
+and refuses to load its labels or text unless the stored hash matches.
+Development runs never read or write the frozen hash.
+
+Signal evaluation has a separate prompt hash and contract. Target a small
+development subset with `python scripts/eval_signals.py --model qwen3:4b
 --only P012,P028 --verbose`; held-out evaluation is selected explicitly with
-`python scripts/eval_signals.py --model qwen3:4b --held-out --verbose`.
-
-`--freeze-prompt` is a standalone operator action: it writes the current prompt
-SHA-256 to `data/eval/frozen_signal_prompt.sha256` and exits without evaluating.
-If a different hash is already present, the operator must explicitly use
-`--freeze-prompt --refreeze`. Development runs never read or write this file.
-Held-out runs require a matching frozen hash and never initialize or modify it.
-Development reports record raw replies and evidence for diagnostics, and
-`--verbose --only` also prints preprocessing, parsing, and drop details. Held-out
-output and reports retain run configuration plus IDs and counts only; they do
-not include raw replies, evidence, or page text. Local reports and the isolated
-evaluator DB are saved under `test_evidence/real_run/`.
+`python scripts/eval_signals.py --model qwen3:4b --held-out --verbose` and
+requires its own matching `data/eval/frozen_signal_prompt.sha256`. Held-out
+signal reports retain run configuration plus IDs and counts only; they exclude
+raw replies, evidence, and page text. Local reports and isolated evaluator DBs
+are saved under `test_evidence/real_run/`.

@@ -67,6 +67,30 @@ evidence, or page text. Development diagnostics, including raw model replies,
 are saved locally under `test_evidence/real_run/` and are not
 model-independent benchmarks.
 
-Reply texts are intentionally separate from operator-authored labels. The
-optional `data/sample/reply_labels.csv` is not included by default; no reply
-accuracy can be measured until the operator supplies that ground truth.
+Reply texts and labels stay separate: sample text is in
+`data/sample/replies.csv`, and labels are in `data/eval/reply_labels.csv`. The
+classifier never receives reply IDs, labels, difficulty, or split metadata. The
+offline evaluator defaults to the 36 development examples, writes reports
+without raw text or rationale, and requires a matching frozen prompt hash before
+it can load held-out labels/text. Hashing detects prompt-text changes only; it
+does not freeze model weights, Ollama, decoding implementation, or evaluator
+code. All replies are synthetic SAMPLE examples, so their accuracy is not a
+customer-data benchmark. No held-out evaluation or live Ollama run has been
+performed for this implementation.
+
+## Product-specific ranking
+
+Ranking is deterministic and intentionally lexical for several ICP-field
+matches. It can miss a legitimate paraphrase or count an incidental phrase; it
+is an auditable prioritization aid, not a semantic buyer-fit judgement. It uses
+the latest successful signal run and reports a newer failed run separately.
+Missing inputs remain visible and can produce partial or unranked results.
+
+## Evidence-grounded outreach drafts
+
+A draft's evidence check proves that each listed quote is an exact string in a
+stored verified signal and occurs verbatim in the body. It does not prove that
+every unquoted sentence is semantically entailed by the product profile or
+prospect page. The prompt instructs the model not to invent facts, but language
+models can still produce unsupported copy. Review drafts before use. The
+workflow only persists unsent drafts; it has no email-send capability.

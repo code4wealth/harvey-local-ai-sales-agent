@@ -22,10 +22,10 @@ F3	Product-specific ICP generation	Different products give different ICPs
 F4	Prospect import (CSV) + local page data; optional online research	20–30 prospects loaded; research module isolated
 F5	Prospect research from downloaded data	Summary per prospect + embedding similarity to ICP
 F6	Buying-signal classification	Typed signals with verified evidence quotes + confidence
-F7	Problem statement generation	2–3 sentences tied to signals and product pain points
-F8	Prospect scoring & prioritisation	Hybrid deterministic score + breakdown; sorted table
-F9	Personalised email generation	<120 words, one CTA, no invented facts
-F10	Reply classification	8 labels + confidence + next action; accuracy table on sample replies
+F7	Problem statement generation	2–3 sentences tied to signals and product pain points (not in the current workflow slice)
+F8	Prospect scoring & prioritisation	Deterministic product-specific ranking + component explanations and missing-input reporting
+F9	Personalised email draft	Grounded draft from stored product profile and verified signals; persisted, never sent
+F10	Reply classification	8 labels + confidence + rationale; separately measured on the 36-reply development split
 F11	Hardware detection + model recommendation	RAM/CPU/GPU detected; tiers documented
 F12	Failure handling	Banner, queue, worker retry, non-LLM features keep working
 F13	Traceability	inference_log page with model, host, tokens, latency, timestamp
@@ -44,7 +44,7 @@ standard-laptop	RAM ≥8 GB	qwen3:4b
 low-resource	else	qwen3:1.7b
 7. Data (SAMPLE, clearly labelled)
 
-data/company_info/*.md (2 products), product-scoped prospect CSVs, data/prospect_pages/*.txt, and a 60-row `data/sample/replies.csv` containing only reply IDs and text. Optional reply labels are operator-authored separately under `data/sample/reply_labels.csv`; signal-evaluation labels live under `data/eval/`.
+data/company_info/*.md (2 fictional products), product-scoped prospect CSVs, data/prospect_pages/*.txt, and a 60-row `data/sample/replies.csv` containing only reply IDs and text. Reply labels are isolated under `data/eval/reply_labels.csv`; they are not imported into the app database or passed to the classifier. Signal-evaluation labels also live under `data/eval/`.
 
 8. Scoring formula
 

@@ -1,7 +1,24 @@
 # Build Plan
 
-Target: 48–72h. Deterministic work in this patch is kept separate from LLM
-workflow/prompt work. See `docs/WORKFLOWS.md` for the detailed data contract.
+This checklist began as the original implementation plan. The current
+repository status is summarized first; historical completed phases below are
+retained as context. See `docs/WORKFLOWS.md` for detailed data contracts.
+
+## Current status
+
+- [x] Local-only profile, ICP, and buying-signal workflows with deterministic
+  Ollama settings and bounded validation retries.
+- [x] Reply classification with isolated labels and a development/held-out
+  evaluator; held-out runs require a frozen matching prompt hash.
+- [x] Product-scoped deterministic prospect ranking.
+- [x] Evidence-grounded unsent draft workflow; no verified signals means a
+  persisted `no verified evidence` skip.
+- [ ] Run the exact commands in `docs/DEMO.md` with local Ollama and fill in
+  the `RESULT: fill after live run` placeholders. No live run is claimed.
+- [ ] Optionally run held-out evaluation only after reviewing/freezing the
+  prompt; this roadmap has not performed held-out evaluation.
+- [ ] Problem-statement generation, full pipeline orchestration, and a polished
+  product UI remain outside the completed workflow slice.
 
 ## Phase 0 — Recon and setup
 
@@ -51,22 +68,15 @@ workflow/prompt work. See `docs/WORKFLOWS.md` for the detailed data contract.
 - [x] `size_fit` returns safely for `min=0`, missing bounds, and `max < min` (deterministic)
 - [x] Unknown queue task types fail visibly with a terminal failed state and are never marked done (deterministic)
 - [x] Deterministic CSV-import and scoring queue handlers run without Ollama and are not starved by queued LLM tasks (mocked Ollama health failure)
-- [x] Future LLM output schemas are flat, with lists of flat objects at most; no LLM prompts/workflows were started (documented contract)
-
-## Deferred — intentionally not started
-
-The operator will tune prompts against real `qwen3:4b` output before these
-workflows begin. Do not implement them as part of the current deterministic
-patch.
-
-- [ ] Business profile, ICP generation, prospect research summaries, signal classification prompts, problem statement, email generation, and reply classification
-- [ ] LLM workflow schemas, retry policy beyond the existing client contract, and pipeline orchestration
-- [ ] Reply-evaluation script and sample replies
+- [x] Workflow schemas are flat with Pydantic validation; profile, ICP, signal, reply-classification, and unsent-draft workflows use bounded retries and persist outcomes
 
 ## Remaining project work
 
-- [ ] Add labelled sample company information, prospects/page text, and replies (all sample data must be labelled)
-- [ ] Complete PRD API endpoints and dashboard screens
-- [ ] Add full offline test, network proof, Ollama-stop/drain proof, and save test evidence
-- [ ] Finish hardware, offline, failure-handling, cost, and known-limitations documentation; verify model/dependency licence metadata before release
-- [ ] Prepare demo video and release checklist
+- [x] Add fictional SAMPLE product information, product-scoped prospects/page text, and text-only replies; keep reply labels isolated in `data/eval/`.
+- [x] Implement validated local profile, ICP, signal, reply-classification, and outreach-draft workflows with persistent outage replay.
+- [x] Implement deterministic product-specific ranking and expose ranking/draft APIs.
+- [x] Add a reply evaluator with redacted reports, prompt freezing, and a held-out gate.
+- [ ] Run full live Ollama demos and record actual results; do not substitute mocked results.
+- [ ] Run the network-isolation and Ollama-stop/drain demonstrations on the target machine.
+- [ ] Problem-statement generation and full pipeline orchestration remain unimplemented.
+- [ ] Review model/dependency licence metadata and complete release checklist before release.

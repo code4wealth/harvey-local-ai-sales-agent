@@ -1,25 +1,69 @@
-Architecture
-Frontend (Harvey UI / React)
-        | HTTP
-FastAPI (app/main.py) --> Orchestrator (pipeline.py)
-        |                      +- workflows/* --> llm_client.py --> Ollama @127.0.0.1:11434   [ONLY AI PATH]
-        |                      +- embeddings.py -> sentence-transformers (local cache)
-        |                      +- scoring.py (deterministic)
-        |                      +- research/ (Scrapy/BS4/Playwright)  [internet, NOT AI]
-        +--> SQLite: products, business_profiles, icps, prospects, signals, problem_statements,
-                     prospect_research, scores, emails, replies, inference_log,
-                     pipeline_runs, pipeline_steps, task_queue
-Queue worker: polls task_queue; deterministic handlers run without Ollama, while LLM-dependent handlers wait for a healthy Ollama probe. Connection failures and model timeouts remain distinct in API status and inference_log.
-Context budget: chat() defaults to num_ctx=4096, temperature 0, and fixed seed 42. Hardware recommendations are 2048 for low-resource, 4096 for standard tiers, and 8192 for high-performance; callers pass the recommended value. Run records, inference logs, and signal-evaluation evidence record the temperature and seed. Research workflows should keep source-page input to roughly 2500 tokens before prompt construction.
-inference_log.status: `ok`, `error:unavailable`, `error:timeout`, `error:http`, or `error:invalid_json`; inference-proof views should filter to `ok`.
-Separation principle
-app/research/ may touch the internet and must never import llm_client. llm_client may only touch localhost and must never import research.
-Data flow per prospect
-local page text -> research summary (LLM) + similarity (embeddings) -> signals (LLM + evidence verification) -> problem statement (LLM) -> score (code) -> email (LLM). Replies are classified independently.
-Failure matrix
-Failure	Behaviour
-Ollama down	OllamaUnavailable, task queued, unavailable banner, deterministic features work
-Model not pulled	Error with ollama pull <model> hint
-Invalid JSON	Retry ×2 with validation feedback, then fail the step with message
-Model timeout	OllamaTimeout, slow-model status, queued task retries
-Embedding model missing offline	Similarity stays null; its weighted contribution is zero, listed in missing_components, and score is partial without re-normalization
+# Architecture
+
+```text
+Local browser / API client
+        | HTTP to FastAPI
+FastAPI (app/main.py)
+  |-- workflows/{profile,icp,signals,replies,draft}
+  |       `-- llm_client.py --> Ollama @127.0.0.1:11434  [ONLY AI PATH]
+  |-- ranking.py / scoring.py                 [deterministic]
+  |-- embeddings.py --> sentence-transformers [local model cache]
+  |-- research/                                [internet-capable, not AI]
+  `-- SQLite: products, business_profiles, icps, prospects, signal_runs,
+              signals, scores, reply_classifications, draft_runs,
+              workflow_runs, inference_log, task_queue
+```
+
+`app/research/` may fetch public web pages but must never import
+`llm_client.py`. The local inference client must never import research and is
+hard-coded to the loopback Ollama endpoint. There is no cloud fallback.
+
+## Runtime boundaries
+
+- Product and prospect records are isolated by `product_id`.
+- Local profile and ICP workflows use stored product information. Signal
+  extraction uses the explicitly stored local prospect page.
+- `GET /api/products/{product_id}/ranking` is deterministic. It uses the
+  product's stored ICP, local page text, and only validated signals from each
+  prospect's latest successful signal run. A later failed run is reported but
+  does not replace the last successful signal snapshot.
+- Reply classification uses only the stored reply text. `data/eval/` labels
+  never enter the application database or runtime prompts.
+- Draft generation uses only a stored profile and verified signal evidence.
+  Drafts are stored in `draft_runs`, never sent; no-verified-evidence cases
+  are persisted as skipped without an inference call.
+- All AI inference uses `app/llm_client.py` and records model, local host,
+  token counts, latency, temperature, seed, and status in `inference_log`.
+
+## Determinism and failure handling
+
+Structured inference requests use temperature `0`, seed `42`, explicit context
+budgets, JSON-schema mode, and Pydantic validation. Workflow validators can
+reject schema-valid but ungrounded output and receive the same maximum of two
+retries. `think=false` is always set by the Ollama client.
+
+The persistent queue worker replays LLM-dependent tasks after Ollama recovers.
+Connection failures become `OllamaUnavailable` and are queued; timeouts remain
+distinct. Deterministic queue handlers do not require an Ollama health probe.
+Invalid JSON after retries is persisted as a failed workflow result. Email is
+never transmitted.
+
+`inference_log.status` is one of `ok`, `error:unavailable`, `error:timeout`,
+`error:http`, or `error:invalid_json`; inference-proof views should filter to
+`ok`.
+
+## Data flow
+
+```text
+Product docs -> profile -> ICP
+Local prospect page -> verified signals -> deterministic product ranking
+                                   \-> grounded, persisted, unsent draft
+Text-only reply -> eight-way reply classification
+```
+
+Embeddings and heuristic ranking are local. Reply evaluation labels are kept
+under `data/eval/`, separate from sample reply text in `data/sample/`. The
+reply evaluator defaults to the development split, writes redacted metrics
+under `test_evidence/real_run/`, and requires a matching frozen prompt hash
+before it can load held-out labels or text. See `docs/WORKFLOWS.md` and
+`docs/KNOWN_LIMITATIONS.md` for detailed contracts and caveats.

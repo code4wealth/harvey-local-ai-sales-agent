@@ -1,43 +1,82 @@
-# Harvey — Local Multi-Product AI Sales Agent
+# Harvey Local AI Sales Agent
 
-A fully local, zero-LLM-cost, multi-product AI sales agent. Fork of
-[ethanplusai/harvey](https://github.com/ethanplusai/harvey) (now Sellbird),
-rebuilt to run **entirely on your machine**: Ollama + Qwen3 for all AI
-inference, SQLite for storage, FastAPI + a vanilla-JS dashboard, and
-sentence-transformers for embeddings. No API keys, no per-token billing, no
-cloud inference — ever.
+A local-first, multi-product sales-prospect research and drafting service. The
+FastAPI backend uses SQLite for storage, Ollama at `127.0.0.1:11434` for local
+LLM inference, and sentence-transformers for local embeddings. There is no
+cloud inference, external enrichment API, email delivery, or paid-token
+service.
 
 > Upstream attribution: Harvey/Sellbird was created by Ethan Rogers and the
 > Sellbird contributors, AGPL-3.0-only (earlier releases MIT). See `NOTICE` and
-> `LICENSE`. This fork removes the upstream subscription-CLI architecture
-> entirely and replaces it with local-only inference.
+> `LICENSE`. This fork replaces the subscription-CLI architecture with
+> local-only inference.
 
-## Status
+## Current capabilities
 
-Early conversion in progress — see `docs/TASKS.md` for the phase checklist
-and `docs/HARVEY_NOTES.md` for what changed versus upstream.
+- Product-scoped profile and ICP generation from local product information.
+- Product-scoped CSV prospect import and explicit local page-text storage.
+- Buying-signal extraction with source-grounded evidence and persisted runs.
+- Deterministic product-specific prospect rankings, including missing-input
+  reporting and component explanations.
+- Drafted outreach based only on a stored product profile and verified
+  prospect signals. Drafts are persisted but **never sent**; when no verified
+  evidence exists the workflow skips inference and records `no verified evidence`.
+- Text-only sample-reply classification using eight validated labels, plus a
+  separate offline evaluator. Ground-truth reply labels are isolated in
+  `data/eval/reply_labels.csv`; they are never imported into the runtime database
+  or included in model prompts.
+- Persistent task queue for local Ollama outages; deterministic ranking remains
+  available without an LLM call.
 
-## How it works
-
-- All AI inference goes through one file, `app/llm_client.py`, which talks
-  only to `http://127.0.0.1:11434` (Ollama). If Ollama is down, AI tasks are
-  queued and deterministic features keep working.
-- Web research (BeautifulSoup over already-downloaded pages) is internet
-  access, never AI, and lives in `app/research/`, fully separated from
-  `app/llm_client.py`.
-- Sample data in `data/` is **SAMPLE** and labelled as such everywhere.
+All model calls pass through `app/llm_client.py`, which is fixed to the local
+Ollama endpoint. Structured responses are validated, retried at most twice,
+and logged. Read `docs/WORKFLOWS.md` for contracts and `docs/KNOWN_LIMITATIONS.md`
+for heuristic and model-evaluation caveats.
 
 ## Quickstart
 
 ```bash
-ollama serve                      # start local inference
-ollama pull qwen3:4b              # laptop model (qwen3:8b / qwen3:14b for stronger machines)
-pip install -e .
-uvicorn app.main:app --reload     # backend + dashboard
-pytest -q                         # tests (LLM mocked; no Ollama needed)
-python scripts/verify_no_cloud.py # guard: fails if any cloud-AI reference reappears
+python -m venv .venv
+. .venv/bin/activate
+pip install -e '.[dev]'
+ollama serve                         # separate terminal
+ollama pull qwen3:4b                 # one-time model download
+DEFAULT_MODEL=qwen3:4b uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
+
+The service stores its SQLite database at `data/harvey.db` by default. Override
+`DB_PATH` if needed. Ollama and downloaded local models must be installed before
+running AI workflows; tests use mocked Ollama responses and do not need a live
+model.
+
+## Useful commands
+
+```bash
+make verify
+python scripts/import_replies.py --db-path data/harvey.db
+python scripts/eval_replies.py --model qwen3:4b                  # 36 development replies
+python scripts/eval_replies.py --freeze-prompt                  # freeze reply prompt, no inference
+python scripts/eval_replies.py --model qwen3:4b --held-out       # gated; requires matching freeze
+```
+
+`make verify` checks the local-only boundary, corpus metadata, and test suite;
+it does not run Ollama or either held-out evaluator. The reply evaluator writes
+redacted JSON reports beneath `test_evidence/real_run/`. It reports aggregate
+metrics and misclassified IDs only, never reply text or rationale. See
+`docs/DEMO.md` for ordered local demo commands and explicit placeholders for
+results that still require a live local run.
+
+## API highlights
+
+- `POST /api/products` and `POST /api/products/{id}/prospects/import`
+- `POST /api/products/{id}/profile` and `POST /api/products/{id}/icp`
+- `GET /api/products/{id}/ranking`
+- `POST` / `GET /api/products/{id}/prospects/{prospect_id}/draft`
+- `POST` / `GET /api/replies/{reply_id}/classification`
+
+The draft endpoint creates an unsent draft only. Email transmission is out of
+scope.
 
 ## Licence
 
-AGPL-3.0-only. See `LICENSE`, `NOTICE`.
+AGPL-3.0-only. See `LICENSE`, `NOTICE`, and `docs/MODELS_AND_LICENCES.md`.

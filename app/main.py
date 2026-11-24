@@ -20,6 +20,7 @@ from app.workflows import ranking as ranking_workflow
 from app.workflows import replies as reply_workflow
 from app.workflows import register_workflow_handlers
 from app.workflows import common as workflow_common
+from app.workflows import draft as draft_workflow
 from app.workflows import signals as signal_workflow
 
 
@@ -248,6 +249,48 @@ def api_load_prospect_page(prospect_id: int) -> PlainTextResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
         conn.close()
+
+
+def _draft_run_response(run_id: int) -> dict:
+    try:
+        return draft_workflow.read_draft_run_payload(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="draft run not found") from exc
+
+
+@app.post(
+    "/api/products/{product_id}/prospects/{prospect_id}/draft", tags=["drafts"]
+)
+def api_create_draft(
+    product_id: int, prospect_id: int, model: str | None = None
+) -> JSONResponse:
+    try:
+        payload = draft_workflow.submit_draft(product_id, prospect_id, model=model)
+    except draft_workflow.DraftProductNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except draft_workflow.DraftProspectNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except llm_client.OllamaUnavailable as exc:
+        run_id = getattr(exc, "draft_run_id", None)
+        if run_id is None:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return JSONResponse(status_code=202, content=_draft_run_response(int(run_id)))
+    except draft_workflow.DraftRunError as exc:
+        return JSONResponse(status_code=502, content=_draft_run_response(exc.run_id))
+    status_code = 202 if payload["status"] == "queued" else 200
+    return JSONResponse(status_code=status_code, content=payload)
+
+
+@app.get(
+    "/api/products/{product_id}/prospects/{prospect_id}/draft", tags=["drafts"]
+)
+def api_get_draft(product_id: int, prospect_id: int) -> dict:
+    try:
+        return draft_workflow.latest_draft_payload(product_id, prospect_id)
+    except draft_workflow.DraftProductNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except draft_workflow.DraftProspectNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 def _signal_run_response(run_id: int) -> dict:

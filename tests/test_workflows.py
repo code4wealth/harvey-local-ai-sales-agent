@@ -353,6 +353,7 @@ def test_unavailable_ollama_queues_and_worker_replays_profile(
     monkeypatch.setattr(queue_worker, "ollama_up", lambda: True)
     previous_profile = HANDLERS.get(profile.TASK_TYPE)
     previous_icp = HANDLERS.get(icp.TASK_TYPE)
+    previous_draft = HANDLERS.get("workflow.draft")
     register_workflow_handlers()
     try:
         assert QueueWorker().run_once() == 1
@@ -365,6 +366,10 @@ def test_unavailable_ollama_queues_and_worker_replays_profile(
             HANDLERS.pop(icp.TASK_TYPE, None)
         else:
             HANDLERS[icp.TASK_TYPE] = previous_icp
+        if previous_draft is None:
+            HANDLERS.pop("workflow.draft", None)
+        else:
+            HANDLERS["workflow.draft"] = previous_draft
 
     completed = _get(f"/api/products/{product_id}/profile").json()
     assert completed["status"] == "succeeded"

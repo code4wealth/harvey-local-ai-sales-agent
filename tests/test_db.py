@@ -15,7 +15,7 @@ def test_schema_initializes_all_phase_tables_idempotently(db_path):
             "products", "business_profiles", "icps", "prospects", "signals",
             "prospect_research", "problem_statements", "scores", "emails", "replies",
             "inference_log", "task_queue", "pipeline_runs", "pipeline_steps", "workflow_runs",
-            "signal_runs", "sample_replies", "reply_classifications",
+            "signal_runs", "sample_replies", "reply_classifications", "draft_runs",
         } <= names
         assert "model_name" in {
             row[1] for row in conn.execute("PRAGMA table_info(business_profiles)")
@@ -27,7 +27,7 @@ def test_schema_initializes_all_phase_tables_idempotently(db_path):
             row[1] for row in conn.execute("PRAGMA table_info(signals)")
         }
         for table in (
-            "workflow_runs", "signal_runs", "reply_classifications", "inference_log"
+            "workflow_runs", "signal_runs", "reply_classifications", "inference_log", "draft_runs"
         ):
             assert {"temperature", "seed"} <= {
                 row[1] for row in conn.execute(f"PRAGMA table_info({table})")

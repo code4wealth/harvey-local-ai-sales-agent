@@ -241,6 +241,27 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_workflow_runs_product
   ON workflow_runs(product_id, workflow, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS draft_runs (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id          INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    prospect_id         INTEGER NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+    business_profile_id INTEGER REFERENCES business_profiles(id) ON DELETE SET NULL,
+    signal_run_id       INTEGER REFERENCES signal_runs(id) ON DELETE SET NULL,
+    status              TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'skipped')),
+    subject             TEXT,
+    body                TEXT,
+    evidence_used_json  TEXT,
+    error               TEXT,
+    model_name          TEXT,
+    temperature         REAL NOT NULL DEFAULT 0.0,
+    seed                INTEGER NOT NULL DEFAULT 42,
+    queue_task_id       INTEGER,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_draft_runs_product_prospect
+  ON draft_runs(product_id, prospect_id, created_at DESC, id DESC);
 """
 
 
@@ -318,7 +339,9 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE scores_migration RENAME TO scores")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_scores_prospect ON scores(prospect_id, created_at DESC)")
 
-    for table in ("workflow_runs", "signal_runs", "reply_classifications", "inference_log"):
+    for table in (
+        "workflow_runs", "signal_runs", "reply_classifications", "inference_log", "draft_runs"
+    ):
         columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         if "temperature" not in columns:
             conn.execute(
@@ -813,6 +836,123 @@ def save_signal_run(
     except Exception:
         conn.rollback()
         raise
+
+
+def create_draft_run(
+    conn: sqlite3.Connection,
+    *,
+    product_id: int,
+    prospect_id: int,
+    business_profile_id: int | None,
+    signal_run_id: int | None,
+    model_name: str | None,
+    temperature: float = 0.0,
+    seed: int = 42,
+) -> int:
+    product = get_product(conn, product_id)
+    prospect = get_prospect(conn, prospect_id)
+    if product is None:
+        raise LookupError(f"product {product_id} not found")
+    if prospect is None or int(prospect["product_id"]) != int(product_id):
+        raise LookupError(f"prospect {prospect_id} not found for product {product_id}")
+    if business_profile_id is not None:
+        profile_row = conn.execute(
+            "SELECT product_id FROM business_profiles WHERE id = ?",
+            (int(business_profile_id),),
+        ).fetchone()
+        if profile_row is None or int(profile_row["product_id"]) != int(product_id):
+            raise ValueError("business profile does not belong to the product")
+    if signal_run_id is not None:
+        signal_run = get_signal_run(conn, signal_run_id)
+        if (
+            signal_run is None
+            or signal_run["status"] != "succeeded"
+            or int(signal_run["prospect_id"]) != int(prospect_id)
+            or int(signal_run["product_id"]) != int(product_id)
+        ):
+            raise ValueError("signal run does not belong to the product and prospect")
+    now = utcnow()
+    cur = conn.execute(
+        "INSERT INTO draft_runs "
+        "(product_id, prospect_id, business_profile_id, signal_run_id, status, model_name, "
+        "temperature, seed, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)",
+        (
+            int(product_id),
+            int(prospect_id),
+            int(business_profile_id) if business_profile_id is not None else None,
+            int(signal_run_id) if signal_run_id is not None else None,
+            model_name,
+            float(temperature),
+            int(seed),
+            now,
+            now,
+        ),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def get_draft_run(conn: sqlite3.Connection, run_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM draft_runs WHERE id = ?", (int(run_id),)).fetchone()
+
+
+def latest_draft_run(
+    conn: sqlite3.Connection, *, product_id: int, prospect_id: int
+) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM draft_runs WHERE product_id = ? AND prospect_id = ? "
+        "ORDER BY id DESC LIMIT 1",
+        (int(product_id), int(prospect_id)),
+    ).fetchone()
+
+
+def update_draft_run(
+    conn: sqlite3.Connection,
+    run_id: int,
+    *,
+    status: str,
+    error: str | None = None,
+    model_name: str | None = None,
+    queue_task_id: int | None = None,
+) -> None:
+    if status not in {"queued", "running", "succeeded", "failed", "skipped"}:
+        raise ValueError(f"invalid draft status: {status!r}")
+    cur = conn.execute(
+        "UPDATE draft_runs SET status = ?, subject = NULL, body = NULL, "
+        "evidence_used_json = NULL, error = ?, "
+        "model_name = COALESCE(?, model_name), queue_task_id = COALESCE(?, queue_task_id), updated_at = ? "
+        "WHERE id = ?",
+        (status, error, model_name, queue_task_id, utcnow(), int(run_id)),
+    )
+    if cur.rowcount != 1:
+        raise ValueError(f"draft run {run_id} not found")
+    conn.commit()
+
+
+def save_draft_output(
+    conn: sqlite3.Connection,
+    run_id: int,
+    *,
+    subject: str,
+    body: str,
+    evidence_used: list[str],
+    model_name: str,
+) -> None:
+    if not subject.strip() or not body.strip() or not evidence_used:
+        raise ValueError("a successful draft requires subject, body, and verified evidence")
+    evidence_json = json.dumps(
+        evidence_used, ensure_ascii=False, sort_keys=True, allow_nan=False
+    )
+    cur = conn.execute(
+        "UPDATE draft_runs SET status = 'succeeded', subject = ?, body = ?, "
+        "evidence_used_json = ?, error = NULL, model_name = ?, queue_task_id = NULL, "
+        "updated_at = ? WHERE id = ?",
+        (subject, body, evidence_json, model_name, utcnow(), int(run_id)),
+    )
+    if cur.rowcount != 1:
+        raise ValueError(f"draft run {run_id} not found")
+    conn.commit()
 
 
 def list_prospects(conn: sqlite3.Connection, product_id: int) -> list[sqlite3.Row]:
