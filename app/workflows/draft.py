@@ -8,7 +8,7 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app import db, llm_client, scoring
+from app import db, llm_client, prospects, scoring
 from app.queue_worker import register_handler
 from app.traceability import prompt_traceability
 from app.workflows.profile import BusinessProfile, validate_stored_profile
@@ -121,9 +121,24 @@ def build_draft_prompt(profile: BusinessProfile, verified_signals: list[dict[str
 
 
 def validate_draft_evidence(
-    draft: OutreachDraft, verified_signals: list[dict[str, Any]]
+    draft: OutreachDraft,
+    verified_signals: list[dict[str, Any]],
+    *,
+    page_text: str | None,
 ) -> None:
-    """Require each short evidence span to match verified source and quoted body text."""
+    """Require each cited span in the body and verified signal to exist in the stored page."""
+    if not isinstance(page_text, str) or not page_text.strip():
+        raise llm_client.ValidationFailure(
+            "stored prospect page text is unavailable for draft evidence verification",
+            details=[
+                {
+                    "field": "evidence_used",
+                    "check": "requires non-empty stored prospect page text",
+                    "value": None,
+                }
+            ],
+        )
+    normalized_page_text = _normalize_evidence_span(page_text)
     source_evidence = [
         _normalize_evidence_span(signal["evidence"])
         for signal in verified_signals
@@ -156,6 +171,17 @@ def validate_draft_evidence(
                 ],
             )
         normalized_evidence = _normalize_evidence_span(evidence)
+        if normalized_evidence not in normalized_page_text:
+            raise llm_client.ValidationFailure(
+                "evidence_used contains text not present in the prospect's stored page text",
+                details=[
+                    {
+                        "field": field_name,
+                        "check": "must be a substring of the prospect's stored page text after case and whitespace normalization",
+                        "value": evidence,
+                    }
+                ],
+            )
         if not any(normalized_evidence in source for source in source_evidence):
             raise llm_client.ValidationFailure(
                 "evidence_used contains text not present in stored verified signals for this prospect",
@@ -191,7 +217,10 @@ def validate_draft_evidence(
             )
 
 
-def _clean_verified_signals(rows) -> list[dict[str, Any]]:
+def _clean_verified_signals(rows, page_text: str | None) -> list[dict[str, Any]]:
+    """Keep only scored signals whose quote still exists in the current stored page."""
+    if not page_text:
+        return []
     verified: list[dict[str, Any]] = []
     for row in rows:
         signal_type = str(row["type"] or "").strip().lower()
@@ -200,9 +229,13 @@ def _clean_verified_signals(rows) -> list[dict[str, Any]]:
             confidence = float(row["confidence"])
         except (TypeError, ValueError, OverflowError):
             continue
+        quotes, dropped = scoring.verify_quotes(page_text, [evidence])
         if (
             signal_type in scoring.SIGNAL_WEIGHTS
             and evidence.strip()
+            and evidence in page_text
+            and not dropped
+            and bool(quotes)
             and math.isfinite(confidence)
             and 0.0 <= confidence <= 1.0
         ):
@@ -212,7 +245,25 @@ def _clean_verified_signals(rows) -> list[dict[str, Any]]:
     return verified
 
 
-def _latest_sources(product_id: int, prospect_id: int) -> tuple[int | None, int | None, list[dict[str, Any]]]:
+def _stored_page_text(conn, prospect_id: int) -> str | None:
+    try:
+        text = prospects.load_prospect_page(conn, prospect_id)
+    except (FileNotFoundError, prospects.ProspectPageError):
+        return None
+    return text if text.strip() else None
+
+
+def _no_evidence_reason(*, page_text: str | None, signal_rows: list[Any]) -> str:
+    if signal_rows and not page_text:
+        return "no verified evidence: stored prospect page text is unavailable"
+    if signal_rows:
+        return "no verified evidence: stored signal quotes do not appear in current prospect page text"
+    return NO_EVIDENCE
+
+
+def _latest_sources(
+    product_id: int, prospect_id: int
+) -> tuple[int | None, int | None, list[dict[str, Any]], str | None]:
     conn = db.connect()
     try:
         product = db.get_product(conn, product_id)
@@ -229,18 +280,29 @@ def _latest_sources(product_id: int, prospect_id: int) -> tuple[int | None, int 
         ).fetchone()
         profile_id = int(profile_row["id"]) if profile_row is not None else None
         if signal_run is None:
-            return profile_id, None, []
+            return profile_id, None, [], NO_EVIDENCE
         rows = conn.execute(
             "SELECT type, evidence, confidence FROM signals "
             "WHERE prospect_id = ? AND signal_run_id = ? ORDER BY id",
             (int(prospect_id), int(signal_run["id"])),
         ).fetchall()
-        return profile_id, int(signal_run["id"]), _clean_verified_signals(rows)
+        page_text = _stored_page_text(conn, prospect_id)
+        verified = _clean_verified_signals(rows, page_text)
+        reason = None if verified else _no_evidence_reason(page_text=page_text, signal_rows=rows)
+        return profile_id, int(signal_run["id"]), verified, reason
     finally:
         conn.close()
 
 
-def _run_inputs(run_id: int) -> tuple[dict[str, Any], BusinessProfile | None, list[dict[str, Any]]]:
+def _run_inputs(
+    run_id: int,
+) -> tuple[
+    dict[str, Any],
+    BusinessProfile | None,
+    list[dict[str, Any]],
+    str | None,
+    str | None,
+]:
     conn = db.connect()
     try:
         run = db.get_draft_run(conn, run_id)
@@ -253,7 +315,7 @@ def _run_inputs(run_id: int) -> tuple[dict[str, Any], BusinessProfile | None, li
         if product is None or prospect is None or int(prospect["product_id"]) != product_id:
             raise DraftInputError("draft run no longer matches its product and prospect")
 
-        verified_signals: list[dict[str, Any]] = []
+        signal_rows = []
         signal_run_id = run["signal_run_id"]
         if signal_run_id is not None:
             signal_run = db.get_signal_run(conn, int(signal_run_id))
@@ -268,9 +330,15 @@ def _run_inputs(run_id: int) -> tuple[dict[str, Any], BusinessProfile | None, li
                     "WHERE prospect_id = ? AND signal_run_id = ? ORDER BY id",
                     (prospect_id, int(signal_run_id)),
                 ).fetchall()
-                verified_signals = _clean_verified_signals(signal_rows)
+        page_text = _stored_page_text(conn, prospect_id)
+        verified_signals = _clean_verified_signals(signal_rows, page_text)
+        evidence_reason = (
+            None
+            if verified_signals
+            else _no_evidence_reason(page_text=page_text, signal_rows=signal_rows)
+        )
         if not verified_signals:
-            return dict(run), None, []
+            return dict(run), None, [], evidence_reason, page_text
 
         profile_id = run["business_profile_id"]
         if profile_id is None:
@@ -286,7 +354,7 @@ def _run_inputs(run_id: int) -> tuple[dict[str, Any], BusinessProfile | None, li
             stored_profile = validate_stored_profile(parsed_profile)
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise DraftInputError(f"stored business profile is invalid: {exc}") from exc
-        return dict(run), stored_profile, verified_signals
+        return dict(run), stored_profile, verified_signals, None, page_text
     finally:
         conn.close()
 
@@ -380,11 +448,13 @@ def execute_draft_run(run_id: int, model_name: str) -> OutreachDraft | None:
         )
     finally:
         conn.close()
-    run, stored_profile, verified_signals = _run_inputs(run_id)
+    run, stored_profile, verified_signals, evidence_reason, page_text = _run_inputs(run_id)
     if not verified_signals:
         conn = db.connect()
         try:
-            db.update_draft_run(conn, run_id, status="skipped", error=NO_EVIDENCE)
+            db.update_draft_run(
+                conn, run_id, status="skipped", error=evidence_reason or NO_EVIDENCE
+            )
         finally:
             conn.close()
         return None
@@ -410,9 +480,12 @@ def execute_draft_run(run_id: int, model_name: str) -> OutreachDraft | None:
         OutreachDraft,
         model=model_name,
         task=f"draft:{run_id}",
-        retries=2,
+        retries=1,
         num_ctx=NUM_CTX,
-        post_validate=lambda result: validate_draft_evidence(result, verified_signals),
+        retry_instruction="Use only stored profile and currently source-verified prospect evidence; every cited phrase must be literal and quoted in the body.",
+        post_validate=lambda result: validate_draft_evidence(
+            result, verified_signals, page_text=page_text
+        ),
     )
     if not isinstance(generated, OutreachDraft):
         raise TypeError("draft generator returned an unexpected schema type")
@@ -471,7 +544,9 @@ def submit_draft(
     product_id: int, prospect_id: int, *, model: str | None = None
 ) -> dict[str, Any]:
     """Create one unsent draft, or persist a skip/queue/failure for this pair."""
-    profile_id, signal_run_id, verified_signals = _latest_sources(product_id, prospect_id)
+    profile_id, signal_run_id, verified_signals, evidence_reason = _latest_sources(
+        product_id, prospect_id
+    )
     conn = db.connect()
     try:
         run_id = db.create_draft_run(
@@ -486,7 +561,9 @@ def submit_draft(
             repeat_penalty=llm_client.DEFAULT_REPEAT_PENALTY,
         )
         if not verified_signals:
-            db.update_draft_run(conn, run_id, status="skipped", error=NO_EVIDENCE)
+            db.update_draft_run(
+                conn, run_id, status="skipped", error=evidence_reason or NO_EVIDENCE
+            )
             return draft_run_payload(db.get_draft_run(conn, run_id))
     finally:
         conn.close()

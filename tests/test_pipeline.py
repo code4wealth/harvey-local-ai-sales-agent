@@ -4,7 +4,7 @@ import asyncio
 
 import httpx
 
-from app import db, llm_client
+from app import db, llm_client, prospects
 from app.main import app
 from app.queue_worker import QueueWorker
 from app.workflows import common, pipeline
@@ -227,11 +227,23 @@ def test_pipeline_api_queues_ordered_product_steps_and_deduplicates_active_run(
 
 
 def test_full_pipeline_runs_profile_icp_signals_problem_draft_and_ranking(
-    db_path, monkeypatch
+    db_path, monkeypatch, tmp_path
 ):
     monkeypatch.setenv("DEFAULT_MODEL", "pipeline-test-model")
     monkeypatch.setattr(app.state, "queue_worker", None, raising=False)
+    page_dir = tmp_path / "pages"
+    monkeypatch.setattr(prospects, "DEFAULT_PAGE_DIR", page_dir)
     product_id, prospect_ids = _create_product()
+    conn = db.connect()
+    try:
+        prospects.store_prospect_page(
+            conn,
+            prospect_id=prospect_ids[0],
+            text=SIGNAL["evidence"],
+            page_dir=page_dir,
+        )
+    finally:
+        conn.close()
     _patch_successful_steps(monkeypatch)
 
     queued = _request("POST", f"/api/products/{product_id}/pipeline").json()

@@ -7,7 +7,7 @@ import json
 import httpx
 import pytest
 
-from app import db, llm_client
+from app import db, llm_client, prospects
 from app.main import app
 from app.queue_worker import HANDLERS, QueueWorker
 from app.workflows import draft as draft_workflow
@@ -69,7 +69,9 @@ def _response(value: dict) -> httpx.Response:
     )
 
 
-def _create_case(db_path, *, signals: list[dict] | None) -> tuple[int, int, int | None]:
+def _create_case(
+    db_path, *, signals: list[dict] | None, page_dir=None
+) -> tuple[int, int, int | None]:
     conn = db.connect()
     try:
         product_id = db.create_product(conn, name="Private stored product")
@@ -112,6 +114,13 @@ def _create_case(db_path, *, signals: list[dict] | None) -> tuple[int, int, int 
                     ),
                 )
             conn.commit()
+        if page_dir is not None:
+            prospects.store_prospect_page(
+                conn,
+                prospect_id=prospect_id,
+                text=QUOTE,
+                page_dir=page_dir,
+            )
         return product_id, prospect_id, signal_run_id
     finally:
         conn.close()
@@ -137,11 +146,13 @@ def test_draft_schema_rejects_blank_or_multiline_subjects():
 
 
 def test_draft_uses_only_profile_and_verified_signals_and_is_never_sent(
-    db_path, monkeypatch
+    db_path, monkeypatch, tmp_path
 ):
     monkeypatch.setenv("DEFAULT_MODEL", "draft-test-model")
+    page_dir = tmp_path / "pages"
+    monkeypatch.setattr(prospects, "DEFAULT_PAGE_DIR", page_dir)
     product_id, prospect_id, signal_run_id = _create_case(
-        db_path, signals=[_verified_signal()]
+        db_path, signals=[_verified_signal()], page_dir=page_dir
     )
     payloads = []
     calls = 0
@@ -230,7 +241,7 @@ def test_draft_evidence_validation_normalizes_only_case_and_whitespace():
             "evidence_used": [QUOTE_SPAN],
         }
     )
-    draft_workflow.validate_draft_evidence(draft, [_verified_signal()])
+    draft_workflow.validate_draft_evidence(draft, [_verified_signal()], page_text=QUOTE)
 
 
 def test_draft_evidence_validation_requires_double_quotes():
@@ -242,11 +253,31 @@ def test_draft_evidence_validation_requires_double_quotes():
         }
     )
     with pytest.raises(llm_client.ValidationFailure, match="enclosed in double quotes"):
-        draft_workflow.validate_draft_evidence(draft, [_verified_signal()])
+        draft_workflow.validate_draft_evidence(draft, [_verified_signal()], page_text=QUOTE)
 
 
-def test_draft_retries_invalid_spans_and_persists_failure(db_path, monkeypatch):
-    product_id, prospect_id, _ = _create_case(db_path, signals=[_verified_signal()])
+def test_draft_citation_must_appear_in_stored_prospect_page():
+    draft = draft_workflow.OutreachDraft.model_validate(
+        {
+            "subject": "A brief note",
+            "body": f'"{QUOTE_SPAN}"',
+            "evidence_used": [QUOTE_SPAN],
+        }
+    )
+    with pytest.raises(llm_client.ValidationFailure, match="stored page text"):
+        draft_workflow.validate_draft_evidence(
+            draft,
+            [_verified_signal()],
+            page_text="The stored page now describes a different event.",
+        )
+
+
+def test_draft_retries_invalid_spans_and_persists_failure(db_path, monkeypatch, tmp_path):
+    page_dir = tmp_path / "pages"
+    monkeypatch.setattr(prospects, "DEFAULT_PAGE_DIR", page_dir)
+    product_id, prospect_id, _ = _create_case(
+        db_path, signals=[_verified_signal()], page_dir=page_dir
+    )
     outputs = [
         {
             "subject": "Unsupported evidence",
@@ -257,11 +288,6 @@ def test_draft_retries_invalid_spans_and_persists_failure(db_path, monkeypatch):
             "subject": "Paraphrased evidence",
             "body": "The organization added five support specialists.",
             "evidence_used": [QUOTE_SPAN],
-        },
-        {
-            "subject": "Too-short evidence",
-            "body": '"hired five support"',
-            "evidence_used": ["hired five support"],
         },
     ]
     prompts = []
@@ -287,14 +313,13 @@ def test_draft_retries_invalid_spans_and_persists_failure(db_path, monkeypatch):
     assert result["evidence_used"] is None
     assert "InvalidJsonResponse" in result["error"]
     assert "evidence_used[0]" in result["error"]
-    assert "between 4 and 15 words" in result["error"]
-    assert calls == 3
-    assert [item["seed"] for item in options] == [42, 43, 44]
-    assert [item["temperature"] for item in options] == [0.0, 0.2, 0.2]
-    assert "evidence_used contains text not present in stored verified signals" in prompts[1]
-    assert "must appear verbatim in the body" in prompts[2]
+    assert "must appear verbatim in the body" in result["error"]
+    assert calls == 2
+    assert [item["seed"] for item in options] == [42, 43]
+    assert [item["temperature"] for item in options] == [0.0, 0.2]
+    assert "evidence_used contains text not present in the prospect's stored page text" in prompts[1]
+    assert "This is the only retry." in prompts[1]
     assert "previous answer was invalid" in prompts[1]
-    assert "previous answer was invalid" in prompts[2]
     assert _get(f"/api/products/{product_id}/prospects/{prospect_id}/draft").json() == result
     conn = db.connect()
     try:
@@ -302,7 +327,7 @@ def test_draft_retries_invalid_spans_and_persists_failure(db_path, monkeypatch):
         row = db.get_draft_run(conn, result["id"])
         assert row["status"] == "failed"
         assert row["subject"] is None and row["body"] is None
-        assert "between 4 and 15 words" in row["error"]
+        assert "must appear verbatim in the body" in row["error"]
     finally:
         conn.close()
 
@@ -356,9 +381,57 @@ def test_no_verified_signals_skips_llm_and_persists_reason(db_path, monkeypatch)
         conn.close()
 
 
-def test_unavailable_ollama_queues_and_worker_replays_draft(db_path, monkeypatch):
+def test_draft_skips_when_saved_signal_quote_is_no_longer_in_page_text(
+    db_path, monkeypatch, tmp_path
+):
+    page_dir = tmp_path / "pages"
+    monkeypatch.setattr(prospects, "DEFAULT_PAGE_DIR", page_dir)
+    product_id, prospect_id, signal_run_id = _create_case(
+        db_path, signals=[_verified_signal()], page_dir=page_dir
+    )
+    conn = db.connect()
+    try:
+        prospects.store_prospect_page(
+            conn,
+            prospect_id=prospect_id,
+            text="The prospect page now contains different saved facts.",
+            page_dir=page_dir,
+        )
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(
+        llm_client,
+        "generate_json",
+        lambda *args, **kwargs: pytest.fail("drafting must skip stale evidence"),
+    )
+    response = _post(f"/api/products/{product_id}/prospects/{prospect_id}/draft")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "skipped"
+    assert result["signal_run_id"] == signal_run_id
+    assert result["reason"] == (
+        "no verified evidence: stored signal quotes do not appear in current prospect page text"
+    )
+    assert result["body"] is None
+    assert result["evidence_used"] is None
+    conn = db.connect()
+    try:
+        row = db.get_draft_run(conn, result["id"])
+        assert row["status"] == "skipped"
+        assert row["error"] == result["reason"]
+    finally:
+        conn.close()
+
+
+def test_unavailable_ollama_queues_and_worker_replays_draft(db_path, monkeypatch, tmp_path):
     monkeypatch.setenv("DEFAULT_MODEL", "queued-draft-model")
-    product_id, prospect_id, _ = _create_case(db_path, signals=[_verified_signal()])
+    page_dir = tmp_path / "pages"
+    monkeypatch.setattr(prospects, "DEFAULT_PAGE_DIR", page_dir)
+    product_id, prospect_id, _ = _create_case(
+        db_path, signals=[_verified_signal()], page_dir=page_dir
+    )
 
     def unavailable(request):
         raise httpx.ConnectError("mocked local outage", request=request)

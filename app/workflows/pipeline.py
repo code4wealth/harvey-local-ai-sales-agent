@@ -483,7 +483,7 @@ def _draft_run_id(step, *, product_id: int, prospect_id: int, model_name: str) -
         finally:
             conn.close()
 
-    profile_id, signal_run_id, verified = draft_workflow._latest_sources(
+    profile_id, signal_run_id, verified, evidence_reason = draft_workflow._latest_sources(
         product_id, prospect_id
     )
     conn = db.connect()
@@ -500,7 +500,12 @@ def _draft_run_id(step, *, product_id: int, prospect_id: int, model_name: str) -
             repeat_penalty=llm_client.DEFAULT_REPEAT_PENALTY,
         )
         if not verified:
-            db.update_draft_run(conn, run_id, status="skipped", error=draft_workflow.NO_EVIDENCE)
+            db.update_draft_run(
+                conn,
+                run_id,
+                status="skipped",
+                error=evidence_reason or draft_workflow.NO_EVIDENCE,
+            )
     finally:
         conn.close()
     details["draft_run_id"] = run_id
