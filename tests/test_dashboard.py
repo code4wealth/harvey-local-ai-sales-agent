@@ -30,6 +30,10 @@ def test_root_serves_embedded_local_only_dashboard():
     assert "Commit hash" in html
     assert "Email subject" in html
     assert "Reply label" in html
+    assert "Model-derived: ICP embedding similarity and signal type/confidence." in html
+    assert "Rule-based: size/title fit, quote verification, component weighting, tiers, and evidence-quality checks." in html
+    assert "Evidence quality is an audit indicator, not extra score points." in html
+    assert "Score explanation, rules, and evidence" in html
     assert "View profile" in html
     assert "View ICP" in html
     assert "View latest signals" in html

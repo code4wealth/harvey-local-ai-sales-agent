@@ -200,6 +200,15 @@
     .result-card dl div,.technical-list div{display:grid;grid-template-columns:minmax(90px,.4fr) minmax(0,1fr);gap:10px}
     .result-card dt,.technical-list dt{color:#647369;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
     .result-card dd,.technical-list dd{margin:0;color:#35483b;font-size:12px;overflow-wrap:anywhere;white-space:pre-wrap}
+    .ranking-method-note{margin:0;padding:10px 12px;border:1px solid #d7e0cf;border-radius:10px;background:#f2f6ec;color:#435847;font-size:11px;line-height:1.5}
+    .ranking-result-card{grid-column:1/-1}
+    .ranking-score-summary{margin:0 0 10px!important;color:#244d35!important;font-size:15px!important;font-weight:750}
+    .score-components{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0!important;padding:0!important;list-style:none}
+    .score-component{display:grid;gap:4px;padding:10px 11px;border:1px solid #e0e6dd;border-radius:9px;background:#fff}
+    .score-component strong{color:#465b4c;font-size:10px;letter-spacing:.055em;text-transform:uppercase}
+    .score-component span{color:#34483a;font-size:11px;line-height:1.4}
+    .ranking-missing-note{margin:10px 0 0!important;padding:8px 10px;border-radius:8px;background:#fbf3e5;color:#72501c!important;font-size:11px!important}
+    .ranking-explanation{margin-top:10px}
     .result-error{padding:12px 14px;border:1px solid #e5c9c4;border-radius:11px;background:var(--red-soft);color:#7e3028;font-size:12px;line-height:1.55}
     .result-details{border-top:1px solid #e5e9e2;padding-top:9px}
     .result-details summary{min-height:36px;display:flex;align-items:center;color:#4a5d50;font-size:11px;font-weight:700;cursor:pointer}
@@ -570,6 +579,71 @@
       container.append(list);
     }
 
+    function appendRankingResults(container, report) {
+      const note = document.createElement("p");
+      note.className = "ranking-method-note";
+      note.textContent = "Model-derived: ICP embedding similarity and signal type/confidence. Rule-based: size/title fit, quote verification, component weighting, tiers, and evidence-quality checks. Evidence quality is an audit indicator, not extra score points.";
+      container.append(note);
+      const rows = Array.isArray(report.prospects) ? report.prospects : [];
+      rows.forEach(prospect => {
+        const card = document.createElement("article");
+        card.className = "result-card ranking-result-card";
+        const heading = document.createElement("h3");
+        const rankLabel = prospect.rank === null || prospect.rank === undefined ? "Unranked" : `#${prospect.rank}`;
+        heading.textContent = `${rankLabel} · ${prospect.company_name || "Unnamed company"}`;
+        const summary = document.createElement("p");
+        const score = typeof prospect.score === "number" ? `${prospect.score.toFixed(1)} / 100` : "No score available";
+        summary.className = "ranking-score-summary";
+        summary.textContent = `${score} · ${humanLabel(prospect.tier || "unranked")}${prospect.partial ? " · Partial" : ""}`;
+        card.append(heading, summary);
+
+        const components = document.createElement("ul");
+        components.className = "score-components";
+        const breakdown = prospect.score_breakdown || {};
+        const names = ["icp_similarity", "signal_score", "size_fit", "title_fit"];
+        names.forEach(name => {
+          const row = document.createElement("li");
+          row.className = "score-component";
+          const label = document.createElement("strong");
+          label.textContent = humanLabel(name);
+          const value = breakdown[name];
+          const weight = breakdown.weights?.[name];
+          const contribution = breakdown.weighted_contributions?.[name];
+          const detail = document.createElement("span");
+          if (value === null || value === undefined) {
+            detail.textContent = `Not computed · ${weight === undefined ? "weight unavailable" : `${(Number(weight) * 100).toFixed(0)}% weight`} · missing input`;
+          } else {
+            const displayValue = name === "icp_similarity" ? `${(Number(value) * 100).toFixed(1)}%` : `${Number(value).toFixed(1)} / 100`;
+            const points = typeof contribution === "number" ? ` · +${contribution.toFixed(2)} total points` : "";
+            detail.textContent = `${displayValue} · ${(Number(weight) * 100).toFixed(0)}% weight${points}`;
+          }
+          row.append(label, detail);
+          components.append(row);
+        });
+        card.append(components);
+
+        const missing = [...(prospect.missing_inputs || []), ...(prospect.missing_components || [])];
+        if (missing.length) {
+          const missingNote = document.createElement("p");
+          missingNote.className = "ranking-missing-note";
+          missingNote.textContent = `Missing or unverified: ${[...new Set(missing)].map(humanLabel).join(", ")}`;
+          card.append(missingNote);
+        }
+        const explanations = document.createElement("details");
+        explanations.className = "result-details ranking-explanation";
+        const summaryLine = document.createElement("summary");
+        summaryLine.textContent = "Score explanation, rules, and evidence";
+        explanations.append(summaryLine);
+        explanations.append(valueNode(prospect.score_explanations || {
+          score_breakdown: breakdown,
+          verified_signal_reasons: prospect.verified_signal_reasons || [],
+          icp_field_matches: prospect.icp_field_matches || {},
+        }));
+        card.append(explanations);
+        container.append(card);
+      });
+    }
+
     function friendlyWorkflowError(error, status) {
       const message = String(error || "").trim();
       const lower = message.toLowerCase();
@@ -637,6 +711,8 @@
 
       if (payload.pipeline === true && Array.isArray(payload.steps)) {
         appendPipelineProgress(cards, payload);
+      } else if (Array.isArray(content.prospects) && content.tier_thresholds) {
+        appendRankingResults(cards, content);
       } else if (workflow === "profile" || (content.summary && content.value_proposition)) {
         Object.entries(content).forEach(([key, item]) => appendResultCard(cards, humanLabel(key), item));
       } else if (workflow === "icp" || (content.industries && content.buyer_titles)) {
