@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +28,7 @@ logger = logging.getLogger("harvey.batch")
 
 IMPORT_PROSPECTS_TASK = "prospects.import_csv"
 SCORE_PROSPECT_TASK = "prospects.score"
+_USE_STORED_SIGNALS = object()
 
 
 def _handle_import_prospects(payload: dict[str, Any]) -> None:
@@ -94,8 +95,13 @@ def _icp_data(icp) -> Mapping[str, Any]:
     return {}
 
 
-def score_and_store_prospect(conn, prospect_id: int) -> dict[str, Any]:
-    """Score only persisted inputs; missing data stays null and sets ``partial``."""
+def score_and_store_prospect(
+    conn,
+    prospect_id: int,
+    *,
+    verified_signals: Sequence[Mapping[str, Any]] | None | object = _USE_STORED_SIGNALS,
+) -> dict[str, Any]:
+    """Score persisted inputs; an explicit signal override is for verified runs."""
     prospect = db.get_prospect(conn, prospect_id)
     if prospect is None:
         raise ValueError(f"prospect {prospect_id} not found")
@@ -124,7 +130,12 @@ def score_and_store_prospect(conn, prospect_id: int) -> dict[str, Any]:
             # This field stores the normalized 0–1 component, never raw cosine.
             similarity = research["icp_similarity"]
 
-    raw_signals = [dict(row) for row in signals] if signals else None
+    if verified_signals is _USE_STORED_SIGNALS:
+        raw_signals = [dict(row) for row in signals] if signals else None
+    elif verified_signals is None:
+        raw_signals = None
+    else:
+        raw_signals = [dict(signal) for signal in verified_signals]
     company_size = icp_data.get("company_size")
     if isinstance(company_size, Mapping):
         size_range = {"min": company_size.get("min"), "max": company_size.get("max")}
@@ -158,12 +169,15 @@ def embed_and_score_prospect(
     prospect_id: int,
     *,
     page_dir: str | Path | None = None,
+    verified_signals: Sequence[Mapping[str, Any]] | None | object = _USE_STORED_SIGNALS,
 ) -> dict[str, Any]:
     """Embed available persisted ICP/page text locally, then save a score.
 
     If the model/cache or page text is unavailable, embedding similarity remains
     null and the normal partial-score rules apply. No summary or other input is
-    generated to fill the gap.
+    generated to fill the gap. ``verified_signals`` can restrict a product ranking
+    to the latest successfully persisted signal run; the default preserves the
+    ordinary score handler's stored-signal behavior.
     """
     prospect = db.get_prospect(conn, prospect_id)
     if prospect is None:
@@ -174,7 +188,9 @@ def embed_and_score_prospect(
         (prospect["product_id"],),
     ).fetchone()
     if icp is None:
-        return score_and_store_prospect(conn, prospect_id)
+        return score_and_store_prospect(
+            conn, prospect_id, verified_signals=verified_signals
+        )
 
     icp_data = _icp_data(icp)
     icp_vector = _unpack_or_none(icp["embedding"])
@@ -217,7 +233,9 @@ def embed_and_score_prospect(
         )
     if new_icp_vector is not None or new_page_vector is not None:
         conn.commit()
-    return score_and_store_prospect(conn, prospect_id)
+    return score_and_store_prospect(
+        conn, prospect_id, verified_signals=verified_signals
+    )
 
 
 def _handle_score_prospect(payload: dict[str, Any]) -> None:

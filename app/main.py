@@ -16,6 +16,7 @@ from app import batch, db, hardware, llm_client, prospects
 from app.queue_worker import QueueWorker
 from app.workflows import icp as icp_workflow
 from app.workflows import profile as profile_workflow
+from app.workflows import ranking as ranking_workflow
 from app.workflows import replies as reply_workflow
 from app.workflows import register_workflow_handlers
 from app.workflows import common as workflow_common
@@ -171,6 +172,14 @@ def api_list_prospects(product_id: int) -> list[dict]:
         return [_prospect_response(prospect) for prospect in db.list_prospects(conn, product_id)]
     finally:
         conn.close()
+
+
+@app.get("/api/products/{product_id}/ranking", tags=["ranking"])
+def api_rank_product(product_id: int) -> dict:
+    try:
+        return ranking_workflow.rank_product(product_id)
+    except ranking_workflow.ProductNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/api/products/{product_id}/prospects/import", status_code=201, tags=["prospects"])
