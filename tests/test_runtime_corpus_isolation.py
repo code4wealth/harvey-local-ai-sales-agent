@@ -23,6 +23,7 @@ REPLY_ONLY_REFERENCE = re.compile(
     re.IGNORECASE,
 )
 ALLOWED_EVALUATOR_FILE = re.compile(r"eval_[^/]+\.py\Z")
+REPLY_LABEL_PATH_REFERENCE = re.compile(r"reply[_-]labels\.csv", re.IGNORECASE)
 
 
 def _text_sources(directory: Path):
@@ -59,6 +60,21 @@ def test_only_offline_evaluators_and_validator_may_read_ground_truth() -> None:
         "Only scripts/eval_*.py and scripts/validate_corpus.py may read ground truth.\n"
         + "\n".join(violations)
     )
+
+
+def test_only_reply_evaluator_may_reference_reply_label_file() -> None:
+    script_references = {
+        path.relative_to(SCRIPTS_DIR).as_posix()
+        for path, source in _text_sources(SCRIPTS_DIR)
+        if REPLY_LABEL_PATH_REFERENCE.search(source)
+    }
+    app_references = [
+        path.relative_to(APP_DIR).as_posix()
+        for path, source in _text_sources(APP_DIR)
+        if REPLY_LABEL_PATH_REFERENCE.search(source)
+    ]
+    assert script_references == {"eval_replies.py"}
+    assert not app_references, "runtime app code must never reference reply-label ground truth"
 
 
 def test_signal_evaluator_does_not_reference_reply_data_or_labels() -> None:

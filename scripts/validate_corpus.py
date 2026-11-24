@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app import db, prospects  # noqa: E402
+from scripts import eval_replies  # noqa: E402
 
 DATA_DIR = ROOT / "data"
 PRODUCT_CSVS = {
@@ -31,16 +32,6 @@ PRODUCT_MOTIFS = {
 EXPECTED_PRODUCT_COUNTS = {"relaycue": 21, "fieldnest": 20}
 EXPECTED_SHARED_IDS = {"P029", "P030", "P031", "P032"}
 EXPECTED_REPLY_IDS = {f"R{number:03d}" for number in range(1, 61)}
-REPLY_LABELS = {
-    "interested",
-    "meeting_request",
-    "not_interested",
-    "out_of_office",
-    "wrong_person",
-    "unsubscribe",
-    "question",
-    "other",
-}
 CASE_NOTES_PATH = DATA_DIR / "eval" / "sample_case_notes.csv"
 EXPECTED_SIGNALS_PATH = DATA_DIR / "eval" / "expected_signals.csv"
 SIGNAL_HOLDOUT_EXPECTED_PATH = DATA_DIR / "eval" / "signal_holdout" / "expected.csv"
@@ -267,40 +258,11 @@ def validate_replies() -> set[str]:
     return set(reply_ids)
 
 
-def validate_optional_reply_labels(reply_ids: set[str]) -> None:
-    path = DATA_DIR / "sample" / "reply_labels.csv"
-    if not path.is_file():
-        print("reply_labels.csv not present yet")
-        return
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle)
-        fields = reader.fieldnames or []
-        rows = list(reader)
-    require(len(fields) == len(set(fields)), "reply_labels.csv contains duplicate columns")
-    label_fields = {"label", "ground_truth_label"} & set(fields)
-    allowed_fields = (
-        {"reply_id", "label"},
-        {"reply_id", "ground_truth_label"},
-        {"sample_label", "reply_id", "label"},
-        {"sample_label", "reply_id", "ground_truth_label"},
-    )
-    require(set(fields) in allowed_fields, "reply_labels.csv must contain reply_id and one label column")
-    require(len(label_fields) == 1, "reply_labels.csv must contain exactly one label column")
-    if "sample_label" in fields:
-        require(
-            all(row.get("sample_label", "").strip() == "SAMPLE" for row in rows),
-            "reply_labels.csv rows must be marked SAMPLE",
-        )
-    labelled_ids = [row.get("reply_id", "").strip() for row in rows]
-    label_field = next(iter(label_fields))
-    require(len(rows) == 60, f"reply_labels.csv must contain 60 rows, got {len(rows)}")
-    require(set(labelled_ids) == reply_ids, "reply_labels.csv IDs must match replies.csv exactly")
-    require(len(set(labelled_ids)) == 60, "reply_labels.csv contains duplicate reply IDs")
-    require(
-        all(row.get(label_field, "").strip() in REPLY_LABELS for row in rows),
-        "reply_labels.csv contains an empty or unsupported label",
-    )
-    print("PASS: optional reply_labels.csv has 60 matching IDs and valid labels")
+def validate_reply_labels(reply_ids: set[str]) -> None:
+    try:
+        eval_replies.load_reply_labels(expected_reply_ids=reply_ids)
+    except eval_replies.ReplyLabelValidationError as exc:
+        raise CorpusValidationError(str(exc)) from exc
 
 
 def _read_eval_csv(path: Path, expected_fields: list[str]) -> list[dict[str, str]]:
@@ -480,7 +442,7 @@ def validate_corpus() -> None:
     validate_real_import(grouped)
     validate_noisy_pages(page_paths)
     reply_ids = validate_replies()
-    validate_optional_reply_labels(reply_ids)
+    validate_reply_labels(reply_ids)
     validate_signal_annotations(set(page_paths))
     validate_signal_holdout()
     validate_product_distinction(grouped, page_paths)
