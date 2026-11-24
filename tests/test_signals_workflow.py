@@ -78,7 +78,11 @@ def _chat_response(content: str) -> httpx.Response:
 
 
 def _model_output(items: list[dict]) -> str:
-    return json.dumps({"signals": items}, ensure_ascii=False)
+    completed = [
+        {"confidence": 0.8, **item}
+        for item in items
+    ]
+    return json.dumps({"signals": completed}, ensure_ascii=False)
 
 
 def test_empty_signal_list_is_valid_and_schema_fields_are_ordered():
@@ -86,13 +90,46 @@ def test_empty_signal_list_is_valid_and_schema_fields_are_ordered():
     assert list(signal_workflow.ProspectSignal.model_fields) == [
         "evidence",
         "type",
+        "confidence",
         "about_company",
     ]
     schema = signal_workflow.SignalExtraction.model_json_schema()
     assert "none" not in schema["$defs"]["ProspectSignal"]["properties"]["type"]["enum"]
+    valid = signal_workflow.ProspectSignal.model_validate(
+        {
+            "evidence": "A complete source-backed sentence.",
+            "type": "funding",
+            "confidence": 0.8,
+            "about_company": True,
+        }
+    )
+    assert valid.confidence == 0.8
     with pytest.raises(ValueError):
         signal_workflow.ProspectSignal.model_validate(
-            {"evidence": "", "type": "none", "about_company": False}
+            {
+                "evidence": "",
+                "type": "none",
+                "confidence": 0.8,
+                "about_company": False,
+            }
+        )
+    for confidence in (-0.01, 1.01, float("nan"), float("inf")):
+        with pytest.raises(ValueError):
+            signal_workflow.ProspectSignal.model_validate(
+                {
+                    "evidence": "A complete source-backed sentence.",
+                    "type": "funding",
+                    "confidence": confidence,
+                    "about_company": True,
+                }
+            )
+    with pytest.raises(ValueError):
+        signal_workflow.ProspectSignal.model_validate(
+            {
+                "evidence": "A complete source-backed sentence.",
+                "type": "funding",
+                "about_company": True,
+            }
         )
 
 
@@ -169,7 +206,7 @@ def test_signal_api_validates_schema_uses_only_clean_page_and_persists_exact_rem
     assert body["prospect_id"] == prospect_id
     assert body["product_id"] == product_id
     assert body["signals"] == [
-        {"type": "expansion", "evidence": quote, "about_company": True}
+        {"type": "expansion", "evidence": quote, "confidence": 0.8, "about_company": True}
     ]
     assert body["drop_counts"] == {
         "quote": 0,
@@ -212,9 +249,10 @@ def test_signal_api_validates_schema_uses_only_clean_page_and_persists_exact_rem
     assert "Private company metadata" not in prompt
     assert "complete sentence copied exactly" in prompt
     assert "more than one year" in prompt
+    assert "confidence from 0.0 to 1.0" in prompt
     assert "<<<PROSPECT_PAGE_TEXT_START_0>>>" in prompt
     assert prompt.index("<<<PROSPECT_PAGE_TEXT_START_0>>>") < prompt.index("Rules:")
-    assert prompt.rstrip().endswith("and about_company.")
+    assert prompt.rstrip().endswith("confidence, and about_company.")
 
     assert _get(f"/api/prospects/{prospect_id}/signals").json() == body
     conn = db.connect()
@@ -231,16 +269,16 @@ def test_signal_api_validates_schema_uses_only_clean_page_and_persists_exact_rem
         assert run["created_at"]
         assert json.loads(run["signals_json"]) == body["signals"]
         stored = conn.execute(
-            "SELECT prospect_id, signal_run_id, type, evidence FROM signals"
+            "SELECT prospect_id, signal_run_id, type, evidence, confidence FROM signals"
         ).fetchall()
         assert [tuple(row) for row in stored] == [
-            (prospect_id, body["id"], "expansion", quote)
+            (prospect_id, body["id"], "expansion", quote, 0.8)
         ]
     finally:
         conn.close()
 
 
-def test_signal_schema_failures_retry_twice_and_then_succeed(db_path, monkeypatch, tmp_path):
+def test_signal_schema_failure_retries_once_with_strict_prompt(db_path, monkeypatch, tmp_path):
     monkeypatch.setenv("DEFAULT_MODEL", "signal-retry-model")
     _, prospect_id = _new_prospect(
         db_path,
@@ -251,16 +289,6 @@ def test_signal_schema_failures_retry_twice_and_then_succeed(db_path, monkeypatc
     contents = iter(
         [
             "not json",
-            json.dumps(
-                {
-                    "signals": [
-                        {
-                            "type": "tech_change",
-                            "evidence": "The observatory installed a new infrared telescope this spring.",
-                        }
-                    ]
-                }
-            ),
             _model_output(
                 [
                     {
@@ -283,16 +311,17 @@ def test_signal_schema_failures_retry_twice_and_then_succeed(db_path, monkeypatc
 
     assert response.status_code == 200
     assert response.json()["signals"][0]["type"] == "tech_change"
-    assert len(prompts) == 3
+    assert len(prompts) == 2
     assert "Your previous answer was invalid:" in prompts[1]
-    assert "Your previous answer was invalid:" in prompts[2]
+    assert "This is the only retry." in prompts[1]
+    assert "Additional workflow checks:" in prompts[1]
     conn = db.connect()
     try:
         statuses = [
             row[0]
             for row in conn.execute("SELECT status FROM inference_log ORDER BY id").fetchall()
         ]
-        assert statuses == ["error:invalid_json", "error:invalid_json", "ok"]
+        assert statuses == ["error:invalid_json", "ok"]
     finally:
         conn.close()
 
@@ -328,11 +357,12 @@ def test_glitched_quote_retries_and_keeps_the_clean_attempt(db_path, monkeypatch
     assert body["status"] == "succeeded"
     assert body["quote_retries"] == 1
     assert body["signals"] == [
-        {"type": "tech_change", "evidence": quote, "about_company": True}
+        {"type": "tech_change", "evidence": quote, "confidence": 0.8, "about_company": True}
     ]
     assert body["drop_counts"]["quote"] == 0
     assert len(prompts) == 2
-    assert prompts[0] == prompts[1]
+    assert prompts[0] != prompts[1]
+    assert "Strict evidence retry" in prompts[1]
     assert [options["seed"] for options in options_sent] == [42, 43]
     assert [options["temperature"] for options in options_sent] == [0.0, 0.2]
     assert all(options["repeat_penalty"] == 1.0 for options in options_sent)
@@ -365,7 +395,12 @@ def test_stray_token_evidence_triggers_quote_retry_without_repairing_quote(
     artifact_quote = "The team adopted B2: B2B software for its support queue."
     _, prospect_id = _new_prospect(db_path, monkeypatch, tmp_path, source_quote)
     artifact = signal_workflow.ProspectSignal.model_validate(
-        {"type": "tech_change", "evidence": artifact_quote, "about_company": True}
+        {
+            "type": "tech_change",
+            "evidence": artifact_quote,
+            "confidence": 0.8,
+            "about_company": True,
+        }
     )
     kept, drops, details = signal_workflow._kept_signals(source_quote, [artifact])
     assert kept == []
@@ -408,7 +443,7 @@ def test_stray_token_evidence_triggers_quote_retry_without_repairing_quote(
         conn.close()
 
 
-def test_fabricated_evidence_is_dropped_by_quote_verification(db_path, monkeypatch, tmp_path):
+def test_evidence_not_in_stored_page_is_rejected_after_one_strict_retry(db_path, monkeypatch, tmp_path):
     monkeypatch.setenv("DEFAULT_MODEL", "signal-quote-model")
     _, prospect_id = _new_prospect(
         db_path,
@@ -417,7 +452,10 @@ def test_fabricated_evidence_is_dropped_by_quote_verification(db_path, monkeypat
         "The organization continues its established water-quality monitoring program.",
     )
 
+    prompts = []
+
     def handler(request):
+        prompts.append(json.loads(request.content)["messages"][-1]["content"])
         return _chat_response(
             _model_output(
                 [
@@ -433,11 +471,12 @@ def test_fabricated_evidence_is_dropped_by_quote_verification(db_path, monkeypat
     _use_mock_transport(monkeypatch, handler)
     response = _post(f"/api/prospects/{prospect_id}/signals")
 
-    assert response.status_code == 200
+    assert response.status_code == 502
     body = response.json()
-    assert body["signals"] == []
-    assert body["drop_counts"]["quote"] == 1
-    assert body["quote_retries"] == 2
+    assert body["status"] == "failed"
+    assert "did not appear as a verbatim quote in stored prospect page text" in body["error"]
+    assert len(prompts) == 2
+    assert "Strict evidence retry" in prompts[1]
     conn = db.connect()
     try:
         assert conn.execute("SELECT COUNT(*) FROM signals").fetchone()[0] == 0
@@ -445,7 +484,7 @@ def test_fabricated_evidence_is_dropped_by_quote_verification(db_path, monkeypat
             "SELECT seed, temperature FROM inference_log WHERE task = ? ORDER BY id",
             (f"signals:{body['id']}",),
         ).fetchall()
-        assert [tuple(row) for row in attempts] == [(42, 0.0), (43, 0.2), (44, 0.2)]
+        assert [tuple(row) for row in attempts] == [(42, 0.0), (43, 0.2)]
     finally:
         conn.close()
 
@@ -465,9 +504,9 @@ def test_normalized_but_not_verbatim_quote_is_rejected(db_path, monkeypatch, tmp
     _use_mock_transport(monkeypatch, handler)
     response = _post(f"/api/prospects/{prospect_id}/signals")
 
-    assert response.status_code == 200
-    assert response.json()["signals"] == []
-    assert response.json()["drop_counts"]["quote"] == 1
+    assert response.status_code == 502
+    assert response.json()["status"] == "failed"
+    assert "did not appear as a verbatim quote" in response.json()["error"]
 
 
 def test_negated_signal_is_not_kept_when_quote_omits_sentence_context(
@@ -625,7 +664,7 @@ def test_invalid_output_failure_is_persisted_without_default_signals(
     assert body["signals"] is None
     assert body["drop_counts"] is None
     assert body["error"] and "InvalidJsonResponse" in body["error"]
-    assert len(calls) == 3
+    assert len(calls) == 2
     assert _get(f"/api/prospects/{prospect_id}/signals").json() == body
     conn = db.connect()
     try:

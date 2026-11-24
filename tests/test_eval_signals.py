@@ -147,6 +147,7 @@ def test_only_development_run_records_diagnostics_without_reading_or_writing_has
                     {
                         "type": "expansion",
                         "evidence": "a second customer-support shift will begin next quarteX",
+                        "confidence": 0.8,
                         "about_company": True,
                     }
                 ]
@@ -156,6 +157,7 @@ def test_only_development_run_records_diagnostics_without_reading_or_writing_has
                     {
                         "type": "expansion",
                         "evidence": "a second customer-support shift will begin next quarter",
+                        "confidence": 0.8,
                         "about_company": True,
                     }
                 ]
@@ -165,6 +167,7 @@ def test_only_development_run_records_diagnostics_without_reading_or_writing_has
                     {
                         "type": "pain_mention",
                         "evidence": "the prior shift's handoff is missing",
+                        "confidence": 0.8,
                         "about_company": True,
                     }
                 ]
@@ -174,6 +177,7 @@ def test_only_development_run_records_diagnostics_without_reading_or_writing_has
                     {
                         "type": "expansion",
                         "evidence": "A board update from August 2026 says directors decided against adding a second shift after reviewing the proposal.",
+                        "confidence": 0.8,
                         "about_company": True,
                     }
                 ]
@@ -274,7 +278,7 @@ def test_mocked_held_out_run_redacts_text_from_stdout_and_report(db_path, monkey
     monkeypatch.setattr(eval_signals, "FROZEN_PROMPT_PATH", frozen_path)
     evidence = "closed a $14 million Series B financing on October 5, 2026"
     raw_reply = json.dumps(
-        {"signals": [{"type": "funding", "evidence": evidence, "about_company": True}]}
+        {"signals": [{"type": "funding", "evidence": evidence, "confidence": 0.8, "about_company": True}]}
     )
 
     def handler(request):

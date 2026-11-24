@@ -9,6 +9,7 @@ idempotently by init_db() at app startup and in tests.
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -1456,6 +1457,7 @@ def save_signal_run(
         for signal in signals:
             signal_type = signal.get("type")
             evidence = signal.get("evidence")
+            confidence = signal.get("confidence")
             about_company = signal.get("about_company")
             if (
                 not isinstance(signal_type, str)
@@ -1463,11 +1465,19 @@ def save_signal_run(
                 or about_company is not True
             ):
                 raise ValueError("only validated company signals may be persisted")
+            if isinstance(confidence, bool):
+                raise ValueError("signal confidence must be a finite number from 0 to 1")
+            try:
+                confidence_value = float(confidence)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("signal confidence must be a finite number from 0 to 1") from exc
+            if not math.isfinite(confidence_value) or not 0.0 <= confidence_value <= 1.0:
+                raise ValueError("signal confidence must be a finite number from 0 to 1")
             conn.execute(
                 "INSERT INTO signals "
                 "(prospect_id, signal_run_id, type, evidence, confidence, created_at) "
-                "VALUES (?, ?, ?, ?, 0.0, ?)",
-                (int(prospect_id), int(run_id), signal_type, evidence, now),
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (int(prospect_id), int(run_id), signal_type, evidence, confidence_value, now),
             )
         cur = conn.execute(
             "UPDATE signal_runs SET status = 'succeeded', signals_json = ?, "
