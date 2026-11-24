@@ -25,6 +25,8 @@ def test_root_serves_embedded_local_only_dashboard():
     assert "View ICP" in html
     assert "View latest signals" in html
     assert "View latest draft" in html
+    assert "Generate problem statement" in html
+    assert "View latest problem statement" in html
     assert "Retry queued tasks" in html
     assert "id=\"hardware\"" in html
     assert "id=\"traceability\"" in html
@@ -54,6 +56,9 @@ def test_dashboard_controls_are_wired_to_same_origin_workflows_and_status():
         '$("ranking").onclick',
         '$("draft").onclick',
         '$("view-draft").onclick',
+        '$("problem-statement").onclick',
+        '$("view-problem-statement").onclick',
+        'problem-statement`',
         '$("reply-form").onsubmit',
         '$("retry-queue").onclick',
         'run(`/api/products/${productId()}/ranking`)',

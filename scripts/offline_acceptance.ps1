@@ -23,6 +23,7 @@ $client = [System.Net.Http.HttpClient]::new($handler)
 $client.Timeout = [TimeSpan]::FromSeconds([Math]::Max(180, $WaitSeconds + 30))
 $script:Steps = [System.Collections.Generic.List[object]]::new()
 $script:SignalProspectId = $null
+$script:SignalProspectIds = @()
 $script:Evidence = [ordered]@{
     created_at = (Get-Date).ToString("o")
     base_host = $baseUri.Host
@@ -218,6 +219,7 @@ try {
                     error_class = Get-ErrorClass $signalResult.Final.Payload.error
                 })
             }
+            $script:SignalProspectIds = @($candidates | ForEach-Object { [int]$_.id })
             $script:SignalProspectId = [int]$candidates[0].id
         } else {
             Add-Step "Signals for stored-page prospects" $false ([ordered]@{ product_id = $relayId; prospect_count = 0; status = "no stored-page candidates" })
@@ -257,6 +259,43 @@ try {
         })
     } else {
         Add-Step "Unsent draft" $false ([ordered]@{ status = "no RelayCue prospect selected" })
+    }
+
+    $problemRows = [System.Collections.Generic.List[object]]::new()
+    $problemTargets = @($script:SignalProspectIds | Select-Object -First 3)
+    if ($relayId -and $problemTargets.Count -gt 0) {
+        foreach ($prospectId in $problemTargets) {
+            $problemPath = "/api/products/$relayId/prospects/$prospectId/problem-statement"
+            $problemResult = Invoke-And-Wait $problemPath $problemPath
+            $problemRows.Add([pscustomobject]@{
+                prospect_id = [int]$prospectId
+                status = Get-PayloadStatus $problemResult.Final
+                evidence_count = @($problemResult.Final.Payload.evidence).Count
+                http_ok = $problemResult.Post.StatusCode -in @(200, 202)
+            })
+        }
+        $problemIds = @($problemRows | ForEach-Object { $_.prospect_id })
+        $problemStatuses = @($problemRows | ForEach-Object { $_.status })
+        $problemEvidenceCount = [int](($problemRows | Measure-Object -Property evidence_count -Sum).Sum)
+        $problemPassed = $problemRows.Count -gt 0 -and
+            @($problemRows | Where-Object { -not $_.http_ok -or $_.status -notin @("succeeded", "skipped") }).Count -eq 0
+        Add-Step "Problem statements (IDs, statuses, counts only)" ([bool]$problemPassed) ([ordered]@{
+            prospect_ids = $problemIds
+            statuses = $problemStatuses
+            requested_count = $problemRows.Count
+            succeeded_count = @($problemRows | Where-Object { $_.status -eq "succeeded" }).Count
+            skipped_count = @($problemRows | Where-Object { $_.status -eq "skipped" }).Count
+            evidence_span_count = $problemEvidenceCount
+        })
+    } else {
+        Add-Step "Problem statements (IDs, statuses, counts only)" $false ([ordered]@{
+            prospect_ids = @()
+            statuses = @("not_run")
+            requested_count = 0
+            succeeded_count = 0
+            skipped_count = 0
+            evidence_span_count = 0
+        })
     }
 
     $replyResult = Invoke-And-Wait "/api/replies/$ReplyId/classification" "/api/replies/$ReplyId/classification"

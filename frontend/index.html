@@ -53,6 +53,8 @@
           <button id="signals">Extract signals</button><button id="view-signals">View latest signals</button>
           <button id="ranking">Refresh ranking</button><button id="draft">Create unsent draft</button>
           <button id="view-draft">View latest draft</button>
+          <button id="problem-statement">Generate problem statement</button>
+          <button id="view-problem-statement">View latest problem statement</button>
         </div>
       </section>
     </div>
@@ -115,6 +117,8 @@
     $("ranking").onclick=()=>{if(!productId())return show("Select a product first.");run(`/api/products/${productId()}/ranking`)};
     $("draft").onclick=()=>selectedAction((product,id)=>`/api/products/${product}/prospects/${id}/draft`);
     $("view-draft").onclick=()=>selectedView((product,id)=>`/api/products/${product}/prospects/${id}/draft`);
+    $("problem-statement").onclick=()=>selectedAction((product,id)=>`/api/products/${product}/prospects/${id}/problem-statement`);
+    $("view-problem-statement").onclick=()=>selectedView((product,id)=>`/api/products/${product}/prospects/${id}/problem-statement`);
     $("retry-queue").onclick=async()=>{await run("/api/queue/retry","POST");await refreshStatus()};
     $("reply-form").onsubmit=async event=>{event.preventDefault();const id=encodeURIComponent($("reply-id").value.trim());await run(`/api/replies/${id}/classification`,"POST")};
     loadProducts().catch(error=>show(`Load failed: ${error.message}`));refreshStatus();
