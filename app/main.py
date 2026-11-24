@@ -24,6 +24,7 @@ from app.workflows import replies as reply_workflow
 from app.workflows import register_workflow_handlers
 from app.workflows import common as workflow_common
 from app.workflows import draft as draft_workflow
+from app.workflows import problem_statement as problem_statement_workflow
 from app.workflows import signals as signal_workflow
 
 
@@ -338,6 +339,58 @@ def api_get_draft(product_id: int, prospect_id: int) -> dict:
     except draft_workflow.DraftProductNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except draft_workflow.DraftProspectNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+def _problem_statement_run_response(run_id: int) -> dict:
+    try:
+        return problem_statement_workflow.read_problem_statement_payload(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="problem statement run not found") from exc
+
+
+@app.post(
+    "/api/products/{product_id}/prospects/{prospect_id}/problem-statement",
+    tags=["problem statements"],
+)
+def api_create_problem_statement(
+    product_id: int, prospect_id: int, model: str | None = None
+) -> JSONResponse:
+    try:
+        payload = problem_statement_workflow.submit_problem_statement(
+            product_id, prospect_id, model=model
+        )
+    except problem_statement_workflow.ProblemStatementProductNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except problem_statement_workflow.ProblemStatementProspectNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except llm_client.OllamaUnavailable as exc:
+        run_id = getattr(exc, "problem_statement_run_id", None)
+        if run_id is None:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return JSONResponse(
+            status_code=202, content=_problem_statement_run_response(int(run_id))
+        )
+    except problem_statement_workflow.ProblemStatementRunError as exc:
+        return JSONResponse(
+            status_code=502, content=_problem_statement_run_response(exc.run_id)
+        )
+    status_code = 202 if payload["status"] == "queued" else 200
+    return JSONResponse(status_code=status_code, content=payload)
+
+
+@app.get(
+    "/api/products/{product_id}/prospects/{prospect_id}/problem-statement",
+    tags=["problem statements"],
+)
+def api_get_problem_statement(product_id: int, prospect_id: int) -> dict:
+    try:
+        return problem_statement_workflow.latest_problem_statement_payload(
+            product_id, prospect_id
+        )
+    except problem_statement_workflow.ProblemStatementProductNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except problem_statement_workflow.ProblemStatementProspectNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 

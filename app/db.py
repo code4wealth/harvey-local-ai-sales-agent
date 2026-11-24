@@ -116,10 +116,25 @@ CREATE TABLE IF NOT EXISTS signals (
 CREATE INDEX IF NOT EXISTS idx_signals_prospect ON signals(prospect_id);
 
 CREATE TABLE IF NOT EXISTS problem_statements (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    prospect_id INTEGER NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
-    statement   TEXT NOT NULL,
-    created_at  TEXT NOT NULL
+    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id             INTEGER REFERENCES products(id) ON DELETE CASCADE,
+    prospect_id            INTEGER NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+    business_profile_id    INTEGER REFERENCES business_profiles(id) ON DELETE SET NULL,
+    icp_id                 INTEGER REFERENCES icps(id) ON DELETE SET NULL,
+    signal_run_id          INTEGER REFERENCES signal_runs(id) ON DELETE SET NULL,
+    source_signal_ids_json TEXT NOT NULL DEFAULT '[]',
+    status                 TEXT NOT NULL DEFAULT 'running'
+                           CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'skipped')),
+    statement              TEXT NOT NULL DEFAULT '',
+    evidence_json          TEXT,
+    error                  TEXT,
+    model_name             TEXT,
+    temperature            REAL NOT NULL DEFAULT 0.0,
+    seed                   INTEGER NOT NULL DEFAULT 42,
+    repeat_penalty         REAL NOT NULL DEFAULT 1.0,
+    queue_task_id          INTEGER,
+    created_at             TEXT NOT NULL,
+    updated_at             TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_problems_prospect ON problem_statements(prospect_id, created_at DESC);
 
@@ -317,6 +332,49 @@ def init_db(conn: sqlite3.Connection) -> None:
         )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_signals_run ON signals(signal_run_id, id)"
+    )
+
+    problem_columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(problem_statements)")
+    }
+    problem_migrations = {
+        "product_id": "INTEGER REFERENCES products(id) ON DELETE CASCADE",
+        "business_profile_id": (
+            "INTEGER REFERENCES business_profiles(id) ON DELETE SET NULL"
+        ),
+        "icp_id": "INTEGER REFERENCES icps(id) ON DELETE SET NULL",
+        "signal_run_id": "INTEGER REFERENCES signal_runs(id) ON DELETE SET NULL",
+        "source_signal_ids_json": "TEXT NOT NULL DEFAULT '[]'",
+        "status": (
+            "TEXT NOT NULL DEFAULT 'succeeded' CHECK "
+            "(status IN ('queued', 'running', 'succeeded', 'failed', 'skipped'))"
+        ),
+        "evidence_json": "TEXT",
+        "error": "TEXT",
+        "model_name": "TEXT",
+        "temperature": "REAL NOT NULL DEFAULT 0.0",
+        "seed": "INTEGER NOT NULL DEFAULT 42",
+        "repeat_penalty": "REAL NOT NULL DEFAULT 1.0",
+        "queue_task_id": "INTEGER",
+        "updated_at": "TEXT NOT NULL DEFAULT ''",
+    }
+    for column, definition in problem_migrations.items():
+        if column not in problem_columns:
+            conn.execute(
+                f"ALTER TABLE problem_statements ADD COLUMN {column} {definition}"
+            )
+    conn.execute(
+        "UPDATE problem_statements SET product_id = ("
+        "SELECT product_id FROM prospects WHERE prospects.id = problem_statements.prospect_id) "
+        "WHERE product_id IS NULL"
+    )
+    conn.execute(
+        "UPDATE problem_statements SET updated_at = created_at "
+        "WHERE updated_at IS NULL OR updated_at = ''"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_problem_statements_product_prospect "
+        "ON problem_statements(product_id, prospect_id, created_at DESC, id DESC)"
     )
 
     score_columns = list(conn.execute("PRAGMA table_info(scores)"))
@@ -656,6 +714,13 @@ def latest_business_profile(conn: sqlite3.Connection, product_id: int) -> sqlite
     ).fetchone()
 
 
+def latest_icp(conn: sqlite3.Connection, product_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM icps WHERE product_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+        (int(product_id),),
+    ).fetchone()
+
+
 def save_workflow_output(
     conn: sqlite3.Connection,
     *,
@@ -772,6 +837,155 @@ def latest_signal_run(conn: sqlite3.Connection, prospect_id: int) -> sqlite3.Row
         "ORDER BY created_at DESC, id DESC LIMIT 1",
         (int(prospect_id),),
     ).fetchone()
+
+
+def create_problem_statement_run(
+    conn: sqlite3.Connection,
+    *,
+    product_id: int,
+    prospect_id: int,
+    business_profile_id: int | None,
+    icp_id: int | None,
+    signal_run_id: int | None,
+    source_signal_ids: list[int],
+    model_name: str | None,
+    temperature: float = 0.0,
+    seed: int = 42,
+    repeat_penalty: float = 1.0,
+) -> int:
+    product = get_product(conn, product_id)
+    prospect = get_prospect(conn, prospect_id)
+    if product is None:
+        raise LookupError(f"product {product_id} not found")
+    if prospect is None or int(prospect["product_id"]) != int(product_id):
+        raise LookupError(f"prospect {prospect_id} not found for product {product_id}")
+    for table, row_id, label in (
+        ("business_profiles", business_profile_id, "business profile"),
+        ("icps", icp_id, "ICP"),
+    ):
+        if row_id is None:
+            continue
+        source = conn.execute(
+            f"SELECT product_id FROM {table} WHERE id = ?", (int(row_id),)
+        ).fetchone()
+        if source is None or int(source["product_id"]) != int(product_id):
+            raise ValueError(f"{label} does not belong to the product")
+    normalized_signal_ids = sorted({int(signal_id) for signal_id in source_signal_ids})
+    if signal_run_id is None and normalized_signal_ids:
+        raise ValueError("source signal IDs require a source signal run")
+    if signal_run_id is not None:
+        signal_run = get_signal_run(conn, signal_run_id)
+        if (
+            signal_run is None
+            or signal_run["status"] != "succeeded"
+            or int(signal_run["prospect_id"]) != int(prospect_id)
+            or int(signal_run["product_id"]) != int(product_id)
+        ):
+            raise ValueError("signal run does not belong to the product and prospect")
+        if normalized_signal_ids:
+            placeholders = ", ".join("?" for _ in normalized_signal_ids)
+            matched = conn.execute(
+                "SELECT COUNT(*) FROM signals WHERE id IN (" + placeholders + ") "
+                "AND prospect_id = ? AND signal_run_id = ?",
+                (*normalized_signal_ids, int(prospect_id), int(signal_run_id)),
+            ).fetchone()[0]
+            if int(matched) != len(normalized_signal_ids):
+                raise ValueError("source signal IDs do not belong to the selected signal run")
+    now = utcnow()
+    cur = conn.execute(
+        "INSERT INTO problem_statements "
+        "(product_id, prospect_id, business_profile_id, icp_id, signal_run_id, "
+        "source_signal_ids_json, status, statement, model_name, temperature, seed, "
+        "repeat_penalty, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, 'running', '', ?, ?, ?, ?, ?, ?)",
+        (
+            int(product_id),
+            int(prospect_id),
+            int(business_profile_id) if business_profile_id is not None else None,
+            int(icp_id) if icp_id is not None else None,
+            int(signal_run_id) if signal_run_id is not None else None,
+            json.dumps(normalized_signal_ids, separators=(",", ":")),
+            model_name,
+            float(temperature),
+            int(seed),
+            float(repeat_penalty),
+            now,
+            now,
+        ),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def get_problem_statement_run(
+    conn: sqlite3.Connection, run_id: int
+) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM problem_statements WHERE id = ?", (int(run_id),)
+    ).fetchone()
+
+
+def latest_problem_statement_run(
+    conn: sqlite3.Connection, *, product_id: int, prospect_id: int
+) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM problem_statements WHERE product_id = ? AND prospect_id = ? "
+        "ORDER BY created_at DESC, id DESC LIMIT 1",
+        (int(product_id), int(prospect_id)),
+    ).fetchone()
+
+
+def update_problem_statement_run(
+    conn: sqlite3.Connection,
+    run_id: int,
+    *,
+    status: str,
+    error: str | None = None,
+    statement: str | None = None,
+    evidence: list[str] | None = None,
+    model_name: str | None = None,
+    temperature: float | None = None,
+    seed: int | None = None,
+    repeat_penalty: float | None = None,
+    queue_task_id: int | None = None,
+) -> None:
+    if status not in {"queued", "running", "succeeded", "failed", "skipped"}:
+        raise ValueError(f"invalid problem statement status: {status!r}")
+    if status == "succeeded" and (
+        not isinstance(statement, str) or not statement.strip() or not evidence
+    ):
+        raise ValueError("a succeeded problem statement requires text and verified evidence")
+    if status == "skipped" and not (isinstance(error, str) and error.strip()):
+        raise ValueError("a skipped problem statement requires a reason")
+    evidence_json = (
+        json.dumps(evidence, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        if evidence is not None
+        else None
+    )
+    cur = conn.execute(
+        "UPDATE problem_statements SET status = ?, "
+        "statement = COALESCE(?, statement), evidence_json = COALESCE(?, evidence_json), "
+        "error = ?, model_name = COALESCE(?, model_name), "
+        "temperature = COALESCE(?, temperature), seed = COALESCE(?, seed), "
+        "repeat_penalty = COALESCE(?, repeat_penalty), "
+        "queue_task_id = COALESCE(?, queue_task_id), updated_at = ? WHERE id = ?",
+        (
+            status,
+            statement,
+            evidence_json,
+            error,
+            model_name,
+            float(temperature) if temperature is not None else None,
+            int(seed) if seed is not None else None,
+            float(repeat_penalty) if repeat_penalty is not None else None,
+            int(queue_task_id) if queue_task_id is not None else None,
+            utcnow(),
+            int(run_id),
+        ),
+    )
+    if cur.rowcount != 1:
+        raise ValueError(f"problem statement run {run_id} not found")
+    conn.commit()
 
 
 def update_signal_run(
