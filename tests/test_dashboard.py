@@ -44,6 +44,9 @@ def test_dashboard_controls_are_wired_to_same_origin_workflows_and_status():
 
     html = asyncio.run(request()).text
     expected_bindings = (
+        '$("product-form").onsubmit',
+        'products.onchange=()=>loadProspects()',
+        'await api(`/api/products/${productId()}/prospects`)',
         'document.querySelectorAll("[data-workflow]")',
         'document.querySelectorAll("[data-view-workflow]")',
         '$("signals").onclick',
