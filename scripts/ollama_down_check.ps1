@@ -221,7 +221,7 @@ try {
 } finally {
     $script:Evidence["steps"] = @($script:Steps.ToArray())
     $root = Split-Path -Parent $PSScriptRoot
-    $outputDirectory = Join-Path $root "test_evidence\offline"
+    $outputDirectory = Join-Path $root "test_evidence\ollama_outage"
     New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
     $outputPath = Join-Path $outputDirectory ("ollama-down-{0}.json" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
     $script:Evidence | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $outputPath -Encoding UTF8

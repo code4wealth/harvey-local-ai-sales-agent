@@ -12,4 +12,4 @@ run:
 	uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 offline:
-	HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 $(MAKE) verify
+	OFFLINE_STRICT=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 $(MAKE) verify

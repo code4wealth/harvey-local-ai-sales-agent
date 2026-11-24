@@ -74,6 +74,37 @@ def test_model_load_forces_hugging_face_and_transformers_offline(monkeypatch):
     }
 
 
+def test_offline_strict_forces_cache_only_model_loading_and_disables_telemetry(monkeypatch):
+    observed = {}
+
+    class LocalOnlyModel:
+        def __init__(self, model_name):
+            observed["model_name"] = model_name
+            observed["hf_offline"] = os.environ.get("HF_HUB_OFFLINE")
+            observed["transformers_offline"] = os.environ.get("TRANSFORMERS_OFFLINE")
+            observed["hub_telemetry"] = os.environ.get("HF_HUB_DISABLE_TELEMETRY")
+            observed["implicit_token"] = os.environ.get("HF_HUB_DISABLE_IMPLICIT_TOKEN")
+
+    module = ModuleType("sentence_transformers")
+    module.SentenceTransformer = LocalOnlyModel
+    monkeypatch.setitem(sys.modules, "sentence_transformers", module)
+    monkeypatch.setenv("OFFLINE_STRICT", "1")
+    monkeypatch.setenv("HF_HUB_OFFLINE", "0")
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "0")
+    monkeypatch.setenv("HF_HUB_DISABLE_TELEMETRY", "0")
+    monkeypatch.setenv("HF_HUB_DISABLE_IMPLICIT_TOKEN", "0")
+
+    embeddings._load_model(embeddings.DEFAULT_MODEL)
+
+    assert observed == {
+        "model_name": embeddings.DEFAULT_MODEL,
+        "hf_offline": "1",
+        "transformers_offline": "1",
+        "hub_telemetry": "1",
+        "implicit_token": "1",
+    }
+
+
 def test_embed_long_text_chunks_averages_normalizes_and_caps_at_six(monkeypatch):
     model = StubSentenceTransformer()
     monkeypatch.setattr(embeddings, "_MODEL_CACHE", {})

@@ -31,10 +31,23 @@ class EmbeddingModelUnavailable(EmbeddingError):
     """The model or its required files are not available locally."""
 
 
-def _load_model(model_name: str) -> Any:
+def _strict_offline_enabled() -> bool:
+    return os.environ.get("OFFLINE_STRICT", "").strip().casefold() in {
+        "1", "true", "yes", "on"
+    }
+
+
+def _configure_offline_environment() -> None:
     # Do not let a missing cache trigger an outbound Hub download from an AI path.
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    if _strict_offline_enabled():
+        os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+        os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
+
+
+def _load_model(model_name: str) -> Any:
+    _configure_offline_environment()
     try:
         from sentence_transformers import SentenceTransformer
     except ImportError as exc:

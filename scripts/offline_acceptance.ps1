@@ -6,7 +6,8 @@ param(
     [int]$SecondIcpProductId = 0,
     [int]$SignalLimit = 3,
     [string]$ReplyId = "R001",
-    [int]$WaitSeconds = 300
+    [int]$WaitSeconds = 300,
+    [int]$PipelineWaitSeconds = 900
 )
 
 $ErrorActionPreference = "Stop"
@@ -88,6 +89,23 @@ function Invoke-And-Wait {
         do {
             Start-Sleep -Seconds 2
             $final = Invoke-LocalApi -Method "GET" -Path $GetPath
+            $state = Get-PayloadStatus $final
+        } while ($state -in @("queued", "running", "pending") -and (Get-Date) -lt $deadline)
+    }
+    return [pscustomobject]@{ Post = $posted; Final = $final }
+}
+
+function Invoke-Pipeline-And-Wait {
+    param([int]$ProductId, [int]$TimeoutSeconds)
+    $posted = Invoke-LocalApi -Method "POST" -Path "/api/products/$ProductId/pipeline"
+    $final = $posted
+    $runId = if ($posted.Payload) { [int]$posted.Payload.id } else { 0 }
+    $state = Get-PayloadStatus $final
+    if ($runId -gt 0 -and $state -in @("queued", "running", "pending")) {
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+        do {
+            Start-Sleep -Seconds 2
+            $final = Invoke-LocalApi -Method "GET" -Path "/api/pipeline-runs/$runId"
             $state = Get-PayloadStatus $final
         } while ($state -in @("queued", "running", "pending") -and (Get-Date) -lt $deadline)
     }
@@ -308,6 +326,34 @@ try {
         status = $replyState
         error_class = Get-ErrorClass $replyResult.Final.Payload.error
     })
+
+    if ($ProfileProductId -gt 0) {
+        $pipelineResult = Invoke-Pipeline-And-Wait `
+            -ProductId $ProfileProductId -TimeoutSeconds $PipelineWaitSeconds
+        $pipelineState = Get-PayloadStatus $pipelineResult.Final
+        $pipelineStepCounts = $pipelineResult.Final.Payload.step_counts
+        $pipelineStepCount = 0
+        if ($pipelineStepCounts) {
+            foreach ($countName in @("queued", "running", "done", "failed", "skipped")) {
+                $pipelineStepCount += [int]$pipelineStepCounts.$countName
+            }
+        }
+        $pipelinePass = $pipelineResult.Post.StatusCode -eq 202 -and
+            $pipelineResult.Final.StatusCode -eq 200 -and
+            $pipelineState -eq "done" -and $pipelineStepCount -gt 0
+        Add-Step "Full product pipeline" ([bool]$pipelinePass) ([ordered]@{
+            product_id = $ProfileProductId
+            http_status = $pipelineResult.Post.StatusCode
+            run_id = $pipelineResult.Final.Payload.id
+            queue_task_id = $pipelineResult.Final.Payload.queue_task_id
+            status = $pipelineState
+            step_count = $pipelineStepCount
+            step_counts = $pipelineStepCounts
+            error_class = Get-ErrorClass $pipelineResult.Final.Payload.error
+        })
+    } else {
+        Add-Step "Full product pipeline" $false ([ordered]@{ status = "no pipeline product resolved" })
+    }
 
     $finalStatus = Invoke-LocalApi -Method "GET" -Path "/api/status"
     $lastInference = $finalStatus.Payload.ollama.last_inference
