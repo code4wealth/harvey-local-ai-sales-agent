@@ -149,6 +149,27 @@ CREATE TABLE IF NOT EXISTS replies (
     created_at  TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sample_replies (
+    reply_id    TEXT PRIMARY KEY,
+    reply_text  TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reply_classifications (
+    reply_id     TEXT PRIMARY KEY REFERENCES sample_replies(reply_id) ON DELETE CASCADE,
+    status       TEXT NOT NULL CHECK (status IN ('pending', 'queued', 'running', 'succeeded', 'failed')),
+    label        TEXT,
+    confidence   REAL,
+    rationale    TEXT,
+    model_name   TEXT,
+    error        TEXT,
+    queue_task_id INTEGER,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reply_classifications_status
+  ON reply_classifications(status, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS inference_log (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     task          TEXT NOT NULL,
@@ -298,6 +319,111 @@ def init_db(conn: sqlite3.Connection) -> None:
     if "load_seconds" not in columns:
         conn.execute("ALTER TABLE inference_log ADD COLUMN load_seconds REAL")
     conn.commit()
+
+
+# ---------------- imported sample replies ----------------
+
+def upsert_sample_replies(conn: sqlite3.Connection, rows: list[dict[str, str]]) -> int:
+    """Store reply IDs and text only; labels remain in the offline evaluator."""
+    now = utcnow()
+    for row in rows:
+        reply_id = str(row.get("reply_id", "")).strip()
+        reply_text = row.get("text")
+        if not reply_id or not isinstance(reply_text, str) or not reply_text.strip():
+            raise ValueError("sample reply requires a non-empty reply_id and text")
+        conn.execute(
+            "INSERT INTO sample_replies (reply_id, reply_text, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT(reply_id) DO UPDATE SET "
+            "reply_text = excluded.reply_text, updated_at = excluded.updated_at",
+            (reply_id, reply_text, now, now),
+        )
+    conn.commit()
+    return len(rows)
+
+
+def get_sample_reply(conn: sqlite3.Connection, reply_id: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT reply_id, reply_text, created_at, updated_at FROM sample_replies WHERE reply_id = ?",
+        (str(reply_id).strip(),),
+    ).fetchone()
+
+
+def list_sample_replies(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            "SELECT reply_id, reply_text, created_at, updated_at FROM sample_replies ORDER BY reply_id"
+        ).fetchall()
+    )
+
+
+def start_reply_classification(
+    conn: sqlite3.Connection, *, reply_id: str, model_name: str
+) -> None:
+    reply_id = str(reply_id).strip()
+    if get_sample_reply(conn, reply_id) is None:
+        raise LookupError(f"reply {reply_id} not found; import replies first")
+    now = utcnow()
+    conn.execute(
+        "INSERT INTO reply_classifications "
+        "(reply_id, status, model_name, created_at, updated_at) VALUES (?, 'running', ?, ?, ?) "
+        "ON CONFLICT(reply_id) DO UPDATE SET status = 'running', label = NULL, "
+        "confidence = NULL, rationale = NULL, model_name = excluded.model_name, "
+        "error = NULL, queue_task_id = NULL, updated_at = excluded.updated_at",
+        (reply_id, str(model_name), now, now),
+    )
+    conn.commit()
+
+
+def update_reply_classification(
+    conn: sqlite3.Connection,
+    *,
+    reply_id: str,
+    status: str,
+    model_name: str | None = None,
+    label: str | None = None,
+    confidence: float | None = None,
+    rationale: str | None = None,
+    error: str | None = None,
+    queue_task_id: int | None = None,
+) -> None:
+    if status not in {"pending", "queued", "running", "succeeded", "failed"}:
+        raise ValueError(f"invalid reply classification status: {status!r}")
+    if status == "succeeded" and (label is None or confidence is None or rationale is None):
+        raise ValueError("a succeeded reply classification requires a validated result")
+    cur = conn.execute(
+        "UPDATE reply_classifications SET status = ?, model_name = COALESCE(?, model_name), "
+        "label = ?, confidence = ?, rationale = ?, error = ?, queue_task_id = ?, updated_at = ? "
+        "WHERE reply_id = ?",
+        (
+            status,
+            model_name,
+            label,
+            float(confidence) if confidence is not None else None,
+            rationale,
+            error,
+            int(queue_task_id) if queue_task_id is not None else None,
+            utcnow(),
+            str(reply_id).strip(),
+        ),
+    )
+    if cur.rowcount != 1:
+        raise LookupError(f"reply classification {reply_id} not found")
+    conn.commit()
+
+
+def get_reply_classification(conn: sqlite3.Connection, reply_id: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM reply_classifications WHERE reply_id = ?",
+        (str(reply_id).strip(),),
+    ).fetchone()
+
+
+def list_reply_classifications(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            "SELECT * FROM reply_classifications ORDER BY reply_id"
+        ).fetchall()
+    )
 
 
 # ---------------- inference log ----------------

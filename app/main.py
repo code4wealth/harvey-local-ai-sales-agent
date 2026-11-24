@@ -16,6 +16,7 @@ from app import batch, db, hardware, llm_client, prospects
 from app.queue_worker import QueueWorker
 from app.workflows import icp as icp_workflow
 from app.workflows import profile as profile_workflow
+from app.workflows import replies as reply_workflow
 from app.workflows import register_workflow_handlers
 from app.workflows import common as workflow_common
 from app.workflows import signals as signal_workflow
@@ -279,6 +280,31 @@ def api_get_signals(prospect_id: int) -> dict:
         return signal_workflow.signal_run_payload(row)
     finally:
         conn.close()
+
+
+def _reply_classification_response(reply_id: str) -> dict:
+    try:
+        return reply_workflow.reply_classification_payload(reply_id)
+    except reply_workflow.ReplyNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/replies/{reply_id}/classification", tags=["replies"])
+def api_classify_reply(reply_id: str, model: str | None = None) -> JSONResponse:
+    try:
+        result = reply_workflow.submit_reply_classification(reply_id, model=model)
+    except reply_workflow.ReplyNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except llm_client.OllamaUnavailable:
+        return JSONResponse(status_code=202, content=_reply_classification_response(reply_id))
+    except reply_workflow.ReplyClassificationError:
+        return JSONResponse(status_code=502, content=_reply_classification_response(reply_id))
+    return JSONResponse(status_code=200, content=result)
+
+
+@app.get("/api/replies/{reply_id}/classification", tags=["replies"])
+def api_get_reply_classification(reply_id: str) -> dict:
+    return _reply_classification_response(reply_id)
 
 
 @app.post("/api/prospects/{prospect_id}/score", status_code=202, tags=["prospects"])
