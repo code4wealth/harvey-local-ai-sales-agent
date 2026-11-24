@@ -4,8 +4,9 @@ A local-first, multi-product sales-prospect research and drafting service. The
 FastAPI backend uses SQLite for storage, Ollama at `127.0.0.1:11434` for local
 LLM inference, and sentence-transformers for local embeddings. There is no
 cloud inference, external enrichment API, email delivery, or paid-token
-service. Paid API cost is **$0**; local hardware, electricity, and one-time
-model-download bandwidth are user-provided resources and are not priced here.
+service. No paid APIs are called or required; paid API cost is **$0**. Local
+hardware, electricity, and one-time model-download bandwidth are user-provided
+resources and are not priced here.
 
 > Upstream attribution: Harvey/Sellbird was created by Ethan Rogers and the
 > Sellbird contributors, AGPL-3.0-only (earlier releases MIT). See `NOTICE` and
@@ -61,29 +62,38 @@ The service stores its SQLite database at `data/harvey.db` by default. Override
 running AI workflows; tests use mocked Ollama responses and do not need a live
 model.
 
-### Windows PowerShell setup
+### Windows PowerShell setup (under 10 commands)
 
-Install Python 3.11+ and Ollama first. From the repository root:
+Install Python 3.11+, Ollama, and GNU Make first. From the repository root, run
+these eight commands in PowerShell:
 
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
+make verify
 ollama pull qwen3:4b
 $env:DEFAULT_MODEL = "qwen3:4b"
 $env:DB_PATH = "$PWD\data\harvey.db"
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-If Ollama is not already running as a desktop service, start it in another
-PowerShell window with `ollama serve`. Keep the API on `127.0.0.1`; do not expose
-it to a LAN. Set `$env:OFFLINE_STRICT = "1"` before starting the API to disable
-Hugging Face Hub telemetry and implicit-token use during local embedding loads;
-model files must already be cached. The loader always enforces Hugging Face and
-Transformers offline flags. To run checks without GNU Make, use
-`python scripts/verify_no_cloud.py`, `python scripts/validate_corpus.py`, then
-`python -m pytest -q`. The API and test suite do not automatically read a `.env`
-file; set environment variables in the current shell.
+If Ollama is not already running as a desktop service, start it with `ollama
+serve` in a separate PowerShell window (ninth command). `make verify` requires
+GNU Make on `PATH`; if it is not available in PowerShell, run that command in
+Git Bash or WSL with the repository's Python environment active. The check suite
+uses mocked Ollama responses and fake embeddings; it does not need a live model.
+
+The Windows count supplied for this repository is **224 passed, 1 skipped**.
+This Linux session did not reproduce that Windows result; the current Windows
+count after these changes remains unverified. Run `make verify` to obtain a
+current count. Keep the API on
+`127.0.0.1`; do not expose it to a LAN. Set `$env:OFFLINE_STRICT = "1"` before
+starting the API to disable Hugging Face Hub telemetry and implicit-token use
+during local embedding loads; model files must already be cached. The loader
+always enforces Hugging Face and Transformers offline flags. The API and test
+suite do not automatically read a `.env` file; set environment variables in the
+current shell.
 
 The API has no user authentication and is intended for one local operator:
 bind it to `127.0.0.1` (as above), not `0.0.0.0` or a LAN address. Mutating
