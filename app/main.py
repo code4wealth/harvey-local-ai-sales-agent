@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
 from app import batch, db, hardware, llm_client, prospects
@@ -141,6 +141,8 @@ def api_create_product(request: ProductCreate) -> dict:
         conn.commit()
         product = db.get_product(conn, product_id)
         return dict(product)
+    except db.ProductAlreadyExists as exc:
+        raise HTTPException(status_code=409, detail="Product already exists") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     finally:
@@ -152,6 +154,20 @@ def api_list_products() -> list[dict]:
     conn = db.connect()
     try:
         return [dict(product) for product in db.list_products(conn)]
+    finally:
+        conn.close()
+
+
+@app.delete("/api/products/{product_id}", status_code=204, tags=["products"])
+def api_delete_product(product_id: int) -> Response:
+    conn = db.connect()
+    try:
+        if db.get_product(conn, product_id) is None:
+            raise HTTPException(status_code=404, detail="product not found")
+        db.fail_tasks_for_product(conn, product_id)
+        conn.execute("DELETE FROM products WHERE id = ?", (int(product_id),))
+        conn.commit()
+        return Response(status_code=204)
     finally:
         conn.close()
 

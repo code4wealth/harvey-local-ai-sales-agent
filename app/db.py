@@ -306,6 +306,117 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
     return conn
 
 
+def merge_duplicate_products(conn: sqlite3.Connection) -> int:
+    """Merge products with case-folded duplicate names into their oldest row.
+
+    Every table column named ``product_id`` is re-pointed before duplicate
+    product rows are deleted. Queue payloads store product IDs in JSON, so
+    those references are updated separately. Prospect IDs stay stable, which
+    also preserves their signals, drafts, replies, scores, and research rows.
+    """
+    product_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(products)")}
+    optional_columns = ("description", "docs_path", "created_at", "updated_at")
+    select_columns = ["id", "name"] + [
+        column if column in product_columns else f"'' AS {column}"
+        for column in optional_columns
+    ]
+    rows = conn.execute(
+        f"SELECT {', '.join(select_columns)} FROM products ORDER BY id"
+    ).fetchall()
+    groups: dict[str, list[sqlite3.Row | tuple]] = {}
+    for row in rows:
+        key = str(row["name"] if isinstance(row, sqlite3.Row) else row[1]).strip().casefold()
+        groups.setdefault(key, []).append(row)
+    duplicate_groups = [group for group in groups.values() if len(group) > 1]
+    if not duplicate_groups:
+        return 0
+
+    remap: dict[int, int] = {}
+    conn.execute("SAVEPOINT merge_duplicate_products")
+    try:
+        for group in duplicate_groups:
+            get = (lambda row, key: row[key]) if isinstance(group[0], sqlite3.Row) else (
+                lambda row, key: row[{"id": 0, "name": 1, "description": 2, "docs_path": 3,
+                                      "created_at": 4, "updated_at": 5}[key]]
+            )
+            keeper_id = int(get(group[0], "id"))
+            canonical_name = str(get(group[0], "name") or "").strip()
+            description = next(
+                (str(get(row, "description") or "").strip() for row in group
+                 if str(get(row, "description") or "").strip()),
+                "",
+            )
+            docs_path = next(
+                (str(get(row, "docs_path") or "").strip() for row in group
+                 if str(get(row, "docs_path") or "").strip()),
+                "",
+            )
+            updated_at = max(str(get(row, "updated_at") or "") for row in group)
+            updates = {"name": canonical_name}
+            if "description" in product_columns:
+                updates["description"] = description
+            if "docs_path" in product_columns:
+                updates["docs_path"] = docs_path
+            if "updated_at" in product_columns:
+                updates["updated_at"] = updated_at
+            set_clause = ", ".join(f'"{column}" = ?' for column in updates)
+            conn.execute(
+                f"UPDATE products SET {set_clause} WHERE id = ?",
+                (*updates.values(), keeper_id),
+            )
+            for duplicate in group[1:]:
+                remap[int(get(duplicate, "id"))] = keeper_id
+
+        table_names = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            )
+        ]
+        for table in table_names:
+            if table == "products":
+                continue
+            escaped_table = table.replace('"', '""')
+            columns = {str(row[1]) for row in conn.execute(f'PRAGMA table_info("{escaped_table}")')}
+            if "product_id" in columns:
+                for old_id, keeper_id in remap.items():
+                    conn.execute(
+                        f'UPDATE "{escaped_table}" SET product_id = ? WHERE product_id = ?',
+                        (keeper_id, old_id),
+                    )
+
+        if "task_queue" in table_names:
+            task_rows = conn.execute("SELECT id, payload_json FROM task_queue").fetchall()
+            for task in task_rows:
+                try:
+                    payload = json.loads(task["payload_json"] if isinstance(task, sqlite3.Row) else task[1])
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                try:
+                    old_id = int(payload.get("product_id"))
+                except (TypeError, ValueError):
+                    continue
+                if old_id not in remap:
+                    continue
+                payload["product_id"] = remap[old_id]
+                task_id = task["id"] if isinstance(task, sqlite3.Row) else task[0]
+                conn.execute(
+                    "UPDATE task_queue SET payload_json = ? WHERE id = ?",
+                    (json.dumps(payload, ensure_ascii=False, sort_keys=True), int(task_id)),
+                )
+
+        for duplicate_id in remap:
+            conn.execute("DELETE FROM products WHERE id = ?", (duplicate_id,))
+        conn.execute("RELEASE SAVEPOINT merge_duplicate_products")
+    except Exception:
+        conn.execute("ROLLBACK TO SAVEPOINT merge_duplicate_products")
+        conn.execute("RELEASE SAVEPOINT merge_duplicate_products")
+        raise
+    return len(remap)
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     for table in ("business_profiles", "icps"):
@@ -433,6 +544,12 @@ def init_db(conn: sqlite3.Connection) -> None:
         )
     if "load_seconds" not in columns:
         conn.execute("ALTER TABLE inference_log ADD COLUMN load_seconds REAL")
+
+    merge_duplicate_products(conn)
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_name_nocase "
+        "ON products(name COLLATE NOCASE)"
+    )
     conn.commit()
 
 
@@ -616,18 +733,33 @@ def latest_inference(conn: sqlite3.Connection) -> sqlite3.Row | None:
 
 # ---------------- products, prospects, and deterministic scores ----------------
 
+class ProductAlreadyExists(ValueError):
+    """A product already uses this name, ignoring case."""
+
+
 def create_product(
     conn: sqlite3.Connection, *, name: str, description: str = "", docs_path: str = ""
 ) -> int:
     name = str(name).strip()
     if not name:
         raise ValueError("product name must not be empty")
+    normalized_name = name.casefold()
+    if any(
+        str(row[0]).strip().casefold() == normalized_name
+        for row in conn.execute("SELECT name FROM products")
+    ):
+        raise ProductAlreadyExists("Product already exists")
     now = utcnow()
-    cur = conn.execute(
-        "INSERT INTO products (name, description, docs_path, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (name, str(description).strip(), str(docs_path).strip(), now, now),
-    )
+    try:
+        cur = conn.execute(
+            "INSERT INTO products (name, description, docs_path, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (name, str(description).strip(), str(docs_path).strip(), now, now),
+        )
+    except sqlite3.IntegrityError as exc:
+        if "products.name" in str(exc).casefold():
+            raise ProductAlreadyExists("Product already exists") from exc
+        raise
     return int(cur.lastrowid)
 
 
@@ -1392,6 +1524,29 @@ def fail_task(conn: sqlite3.Connection, task_id: int, error: str) -> None:
     if cur.rowcount != 1:
         raise ValueError(f"task {task_id} not found")
     conn.commit()
+
+
+def fail_tasks_for_product(conn: sqlite3.Connection, product_id: int) -> int:
+    """Fail queued/running task records whose JSON payload targets a product."""
+    changed = 0
+    rows = conn.execute(
+        "SELECT id, payload_json FROM task_queue WHERE status IN ('queued', 'running')"
+    ).fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"])
+            referenced_id = int(payload.get("product_id")) if isinstance(payload, dict) else None
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if referenced_id != int(product_id):
+            continue
+        cur = conn.execute(
+            "UPDATE task_queue SET status = 'failed', last_error = ?, updated_at = ? "
+            "WHERE id = ? AND status IN ('queued', 'running')",
+            ("Product was deleted before the queued task completed", utcnow(), int(row["id"])),
+        )
+        changed += int(cur.rowcount)
+    return changed
 
 
 def reset_stale_running(conn: sqlite3.Connection) -> int:

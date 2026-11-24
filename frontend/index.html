@@ -137,6 +137,7 @@
     .create-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:12px}
     .create-grid .field:first-child{grid-column:1/-1}
     .field-hint{margin:0;color:#6b786f;font-size:11px}
+    .form-error{grid-column:1/-1;margin:0;padding:9px 11px;border:1px solid #e5c9c4;border-radius:8px;background:var(--red-soft);color:#7e3028;font-size:12px;font-weight:650}
     .create-submit{grid-column:1/-1;justify-self:start}
     .count-pill{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:25px;padding:0 7px;border-radius:99px;background:#eff3e9;color:#36513b;font-size:11px;font-weight:750}
     #prospects{display:grid;gap:7px;max-height:400px;overflow:auto;padding-right:3px}
@@ -324,6 +325,7 @@
                   <button class="button button-outline" data-view-workflow="profile" type="button" disabled>View profile</button>
                   <button class="button button-outline" data-workflow="icp" type="button" disabled>Generate ICP</button>
                   <button class="button button-outline" data-view-workflow="icp" type="button" disabled>View ICP</button>
+                  <button class="button button-outline" id="delete-product" type="button" data-requires-product disabled>Delete product</button>
                 </div>
                 <details class="create-product">
                   <summary>Create a product</summary>
@@ -332,7 +334,8 @@
                     <div class="field"><label for="product-description">Description</label><input id="product-description" name="description" maxlength="500"></div>
                     <div class="field"><label for="docs-path">Local company-info path</label><input id="docs-path" name="docs_path" autocomplete="off"><p class="field-hint">Use a repository-relative file path.</p></div>
                     <p id="product-form-status" class="sr-only" role="status" aria-live="polite"></p>
-                    <button class="button button-primary create-submit" type="submit">Create product</button>
+                    <p id="product-form-error" class="form-error" role="alert" hidden></p>
+                    <button id="create-product-button" class="button button-primary create-submit" type="submit">Create product</button>
                   </form>
                 </details>
               </div>
@@ -415,6 +418,21 @@
       try { data = text ? JSON.parse(text) : null; } catch { data = text; }
       if (!response.ok) throw new Error(`HTTP ${response.status}: ${typeof data === "string" ? data : JSON.stringify(data)}`);
       return data;
+    }
+
+    function humanErrorMessage(error) {
+      const message = String(error?.message || error || "Request failed");
+      const separator = message.indexOf(": ");
+      if (message.startsWith("HTTP ") && separator >= 0) {
+        const body = message.slice(separator + 2);
+        try {
+          const parsed = JSON.parse(body);
+          if (parsed && typeof parsed.detail === "string") return parsed.detail;
+          if (parsed && typeof parsed.message === "string") return parsed.message;
+        } catch { /* Keep the plain response text below. */ }
+        return body;
+      }
+      return message;
     }
 
     function show(value) {
@@ -643,20 +661,57 @@
       event.preventDefault();
       const form = event.currentTarget;
       const formStatus = $("product-form-status");
+      const formError = $("product-form-error");
+      const submitButton = $("create-product-button");
+      if (submitButton.disabled) return;
       formStatus.textContent = "Creating product.";
+      formError.textContent = "";
+      formError.hidden = true;
+      submitButton.disabled = true;
       const payload = {
         name: $("product-name").value,
         description: $("product-description").value,
         docs_path: $("docs-path").value,
       };
-      const created = await run("/api/products", "POST", { headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      if (created?.id) {
+      try {
+        const created = await api("/api/products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        show(created);
         formStatus.textContent = `Created ${created.name || "product"}.`;
         form.reset();
         form.closest("details").open = false;
         await loadProducts(created.id);
-      } else {
-        formStatus.textContent = "Product creation failed. See the latest result.";
+      } catch (error) {
+        const message = humanErrorMessage(error);
+        formError.textContent = message;
+        formError.hidden = false;
+        formStatus.textContent = `Product creation failed: ${message}`;
+      } finally {
+        submitButton.disabled = false;
+      }
+    };
+
+    $("delete-product").onclick = async () => {
+      const id = productId();
+      if (!id) return;
+      const selected = productRows.find(row => String(row.id) === String(id));
+      const name = selected?.name || `product ${id}`;
+      if (!window.confirm(`Delete ${name} and its stored prospects, research, drafts, and workflow history?`)) return;
+      const button = $("delete-product");
+      button.disabled = true;
+      try {
+        await api(`/api/products/${id}`, { method: "DELETE" });
+        await loadProducts();
+        output.textContent = `Deleted ${name}.`;
+        $("result-status").textContent = "Product deleted";
+      } catch (error) {
+        output.textContent = `Could not delete product: ${humanErrorMessage(error)}`;
+        $("result-status").textContent = "Product deletion failed";
+      } finally {
+        updateActionState();
       }
     };
 

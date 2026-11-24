@@ -17,7 +17,8 @@ def _new_prospect(db_path, monkeypatch, tmp_path, page_text: str) -> tuple[int, 
     monkeypatch.setattr(prospects, "DEFAULT_PAGE_DIR", page_dir)
     conn = db.connect()
     try:
-        product_id = db.create_product(conn, name="Private product metadata")
+        product_number = int(conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]) + 1
+        product_id = db.create_product(conn, name=f"Signal unit test product {product_number}")
         prospect_id = db.create_prospect(
             conn,
             product_id=product_id,

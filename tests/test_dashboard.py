@@ -18,6 +18,9 @@ def test_root_serves_embedded_local_only_dashboard():
     assert response.headers["content-type"].startswith("text/html")
     html = response.text
     assert "Create product" in html
+    assert 'id="create-product-button"' in html
+    assert 'id="product-form-error" class="form-error" role="alert"' in html
+    assert "Delete product" in html
     assert "/api/products" in html
     assert "/api/replies/" in html
     assert "Create unsent draft" in html
@@ -55,6 +58,10 @@ def test_dashboard_controls_are_wired_to_same_origin_workflows_and_status():
     expected_bindings = (
         '$("product-form").onsubmit =',
         'const form = event.currentTarget;',
+        'submitButton.disabled = true;',
+        'formError.textContent = message;',
+        'window.confirm(`Delete ${name} and its stored prospects, research, drafts, and workflow history?`)',
+        'await api(`/api/products/${id}`, { method: "DELETE" });',
         'formStatus.textContent = "Creating product."',
         'Reply classification complete.',
         'products.onchange = () => loadProspects()',

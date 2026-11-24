@@ -1,4 +1,7 @@
+import json
 import sqlite3
+
+import pytest
 
 from app import db
 
@@ -172,5 +175,112 @@ def test_crash_recovery_requeues_or_fails_stale_tasks(db_path):
         exhausted = db.get_task(conn, exhausted_id)
         assert exhausted["status"] == "failed"
         assert "max attempts reached" in exhausted["last_error"]
+    finally:
+        conn.close()
+
+
+def test_init_db_merges_casefold_duplicate_products_and_repoints_all_records(tmp_path):
+    conn = sqlite3.connect(tmp_path / "duplicate-products.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        conn.executescript(db.SCHEMA)
+        now = "2026-01-01T00:00:00Z"
+        later = "2026-01-02T00:00:00Z"
+        conn.executemany(
+            "INSERT INTO products (id, name, description, docs_path, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (1, "Dairy Milk", "", "", now, now),
+                (2, "  dAiRy mIlK  ", "merged description", "company.md", later, later),
+            ],
+        )
+        conn.execute(
+            "INSERT INTO prospects (id, product_id, company_name, created_at) VALUES (10, 2, 'Acme', ?) ",
+            (later,),
+        )
+        conn.execute(
+            "INSERT INTO business_profiles (product_id, profile_json, model_name, created_at) "
+            "VALUES (2, '{\"summary\":\"saved\"}', 'qwen3:4b', ?)",
+            (later,),
+        )
+        conn.execute(
+            "INSERT INTO icps (product_id, icp_json, model_name, created_at) "
+            "VALUES (2, '{\"industries\":[]}', 'qwen3:4b', ?)",
+            (later,),
+        )
+        conn.execute(
+            "INSERT INTO signal_runs (id, prospect_id, product_id, status, created_at, updated_at) "
+            "VALUES (20, 10, 2, 'succeeded', ?, ?)",
+            (later, later),
+        )
+        conn.execute(
+            "INSERT INTO signals (prospect_id, signal_run_id, type, evidence, confidence, created_at) "
+            "VALUES (10, 20, 'hiring', 'stored evidence', 0.9, ?)",
+            (later,),
+        )
+        conn.execute(
+            "INSERT INTO workflow_runs (id, product_id, workflow, status, created_at, updated_at) "
+            "VALUES (30, 2, 'profile', 'queued', ?, ?)",
+            (later, later),
+        )
+        task_id = db.enqueue_task(
+            conn,
+            "workflow.profile",
+            {"product_id": 2, "workflow_run_id": 30, "model_name": "qwen3:4b"},
+        )
+        conn.execute("UPDATE workflow_runs SET queue_task_id = ? WHERE id = 30", (task_id,))
+        conn.execute(
+            "INSERT INTO draft_runs (product_id, prospect_id, status, subject, body, created_at, updated_at) "
+            "VALUES (2, 10, 'succeeded', 'Subject', 'Body', ?, ?)",
+            (later, later),
+        )
+        conn.execute(
+            "INSERT INTO problem_statements (product_id, prospect_id, status, statement, created_at, updated_at) "
+            "VALUES (2, 10, 'succeeded', 'Problem', ?, ?)",
+            (later, later),
+        )
+        conn.execute(
+            "INSERT INTO replies (prospect_id, reply_text, label, confidence, created_at) "
+            "VALUES (10, 'Reply text', 'interested', 0.9, ?)",
+            (later,),
+        )
+        conn.execute(
+            "INSERT INTO emails (prospect_id, subject, body, word_count, created_at) "
+            "VALUES (10, 'Saved draft', 'Stored draft body', 3, ?)",
+            (later,),
+        )
+        conn.execute(
+            "INSERT INTO pipeline_runs (product_id, status, created_at) VALUES (2, 'queued', ?)",
+            (later,),
+        )
+        conn.commit()
+
+        db.init_db(conn)
+
+        products = conn.execute("SELECT id, name, description, docs_path FROM products").fetchall()
+        assert [tuple(row) for row in products] == [(1, "Dairy Milk", "merged description", "company.md")]
+        for table in (
+            "business_profiles", "icps", "prospects", "signal_runs", "workflow_runs",
+            "draft_runs", "problem_statements", "pipeline_runs",
+        ):
+            assert conn.execute(f"SELECT COUNT(*) FROM {table} WHERE product_id = 1").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM prospects WHERE product_id = 2").fetchone()[0] == 0
+        assert conn.execute("SELECT prospect_id FROM signals").fetchone()[0] == 10
+        assert conn.execute("SELECT signal_run_id FROM signals").fetchone()[0] == 20
+        assert conn.execute("SELECT prospect_id FROM draft_runs").fetchone()[0] == 10
+        assert conn.execute("SELECT prospect_id FROM replies").fetchone()[0] == 10
+        assert conn.execute("SELECT prospect_id FROM emails").fetchone()[0] == 10
+        problem = conn.execute("SELECT product_id, prospect_id FROM problem_statements").fetchone()
+        assert tuple(problem) == (1, 10)
+        payload = conn.execute("SELECT payload_json FROM task_queue WHERE id = ?", (task_id,)).fetchone()[0]
+        assert json.loads(payload)["product_id"] == 1
+        assert json.loads(payload)["workflow_run_id"] == 30
+        assert conn.execute("SELECT product_id FROM workflow_runs WHERE id = 30").fetchone()[0] == 1
+        with pytest.raises(sqlite3.IntegrityError, match="UNIQUE constraint failed"):
+            conn.execute(
+                "INSERT INTO products (name, created_at, updated_at) VALUES ('DAIRY MILK', ?, ?)",
+                (later, later),
+            )
     finally:
         conn.close()
