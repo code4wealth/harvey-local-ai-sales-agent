@@ -38,8 +38,9 @@ python scripts/import_replies.py --db-path "$DB_PATH"
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Leave the API running. All AI inference is routed to local Ollama at
-`127.0.0.1:11434`; this application has no cloud fallback.
+Leave the API running. The embedded dashboard is at `http://127.0.0.1:8000/`.
+All AI inference is routed to local Ollama at `127.0.0.1:11434`; this
+application has no cloud fallback.
 
 ```text
 RESULT: fill after live run — record the actual reply-import count and API startup result.

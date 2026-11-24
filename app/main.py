@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app import batch, db, hardware, llm_client, prospects
@@ -49,6 +50,14 @@ app = FastAPI(
     description="Local-only sales research and outreach backend. AI runs through local Ollama.",
     lifespan=lifespan,
 )
+
+
+FRONTEND_INDEX = Path(__file__).resolve().parents[1] / "frontend" / "index.html"
+
+
+@app.get("/", include_in_schema=False)
+def api_dashboard() -> FileResponse:
+    return FileResponse(FRONTEND_INDEX, media_type="text/html")
 
 
 class ProductCreate(BaseModel):

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harvey · Local sales workspace</title>
+  <style>
+    :root{color-scheme:dark;--bg:#101817;--panel:#192321;--line:#34433f;--ink:#edf3ef;--muted:#a8b6ae;--accent:#86d7af}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
+    header,main{max-width:1000px;margin:auto;padding:24px}header{display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--line)}
+    h1,h2,p{margin-top:0}h1{font-size:1.4rem;margin-bottom:2px}h2{font-size:1rem}small,.muted{color:var(--muted)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin:18px 0}
+    section,.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+    label{display:block;margin:10px 0 4px;color:var(--muted)}input,select,button{font:inherit;color:var(--ink);background:#101817;border:1px solid var(--line);border-radius:7px;padding:9px;width:100%}
+    button{cursor:pointer;background:#263b34}button:hover{border-color:var(--accent)}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.actions button{width:auto}
+    #status{white-space:nowrap;color:var(--accent)}#prospects{display:grid;gap:6px;max-height:320px;overflow:auto}.prospect{text-align:left}
+    pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0b1110;border:1px solid var(--line);border-radius:8px;padding:14px;min-height:90px}
+    @media(max-width:600px){header{align-items:flex-start;flex-direction:column}header,main{padding:16px}}
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1>Harvey</h1><small>Local-first sales workspace · drafts are never sent</small></div>
+    <div id="status" role="status">Checking local service…</div>
+  </header>
+  <main>
+    <div class="grid">
+      <section>
+        <h2>Products</h2>
+        <form id="product-form">
+          <label for="product-name">Product name</label><input id="product-name" required maxlength="200">
+          <label for="docs-path">Local company-info path</label><input id="docs-path" placeholder="data/company_info/relaycue.md">
+          <label for="product-description">Description</label><input id="product-description">
+          <div class="actions"><button>Create product</button></div>
+        </form>
+        <label for="products">Select product</label><select id="products"><option value="">Choose a product</option></select>
+        <div class="actions"><button data-workflow="profile">Generate profile</button><button data-workflow="icp">Generate ICP</button></div>
+      </section>
+      <section>
+        <h2>Prospects</h2>
+        <p class="muted">Choose a product to load its stored prospects.</p>
+        <div id="prospects" aria-live="polite"></div>
+        <div class="actions"><button id="signals">Extract signals</button><button id="ranking">Refresh ranking</button><button id="draft">Create unsent draft</button></div>
+      </section>
+    </div>
+    <section>
+      <h2>Reply classification</h2>
+      <form id="reply-form" class="actions"><input id="reply-id" aria-label="Sample reply ID" placeholder="R001" pattern="R[0-9]{3}" required><button>Classify stored reply</button></form>
+    </section>
+    <section style="margin-top:16px">
+      <h2>Latest API result</h2><pre id="output" aria-live="polite">Select a product to begin. All requests stay on this service origin.</pre>
+    </section>
+  </main>
+  <script>
+    const $=id=>document.getElementById(id), output=$("output"), products=$("products"), prospects=$("prospects");
+    let selectedProspect=null;
+    async function api(url,options={}){
+      const response=await fetch(url,options), text=await response.text();
+      let data;try{data=text?JSON.parse(text):null}catch{data=text}
+      if(!response.ok)throw new Error(typeof data==="string"?data:JSON.stringify(data));
+      return data;
+    }
+    function show(value){output.textContent=typeof value==="string"?value:JSON.stringify(value,null,2)}
+    function productId(){return products.value}
+    async function loadProducts(chooseId=""){
+      const rows=await api("/api/products");products.replaceChildren(new Option("Choose a product",""));
+      rows.forEach(row=>products.add(new Option(row.name,row.id)));
+      if(chooseId)products.value=String(chooseId);
+      if(products.value)await loadProspects();
+    }
+    async function loadProspects(){
+      selectedProspect=null;prospects.replaceChildren();if(!productId())return;
+      const rows=await api(`/api/products/${productId()}/prospects`);
+      rows.forEach(row=>{const button=document.createElement("button");button.className="prospect";button.type="button";button.textContent=`${row.company_name} · ${row.contact_title||"title not stored"}`;button.onclick=()=>{selectedProspect=row;show(row)};prospects.append(button)});
+      show({product_id:Number(productId()),prospects:rows.length});
+    }
+    async function run(url,method="GET"){try{show(await api(url,{method}))}catch(error){show(`Request failed: ${error.message}`)}}
+    async function selectedAction(path){if(!productId()||!selectedProspect){show("Select a product and prospect first.");return}await run(path(Number(productId()),selectedProspect.id),"POST")}
+    async function refreshStatus(){try{const s=await api("/api/status");$("status").textContent=`Ollama: ${s.ollama?.state||"unknown"}`}catch{$("status").textContent="API status unavailable"}}
+    $("product-form").onsubmit=async event=>{event.preventDefault();try{const row=await api("/api/products",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:$("product-name").value,description:$("product-description").value,docs_path:$("docs-path").value})});show(row);await loadProducts(row.id)}catch(error){show(`Create failed: ${error.message}`)}};
+    products.onchange=()=>loadProspects().catch(error=>show(`Load failed: ${error.message}`));
+    document.querySelectorAll("[data-workflow]").forEach(button=>button.onclick=()=>{if(!productId())return show("Select a product first.");run(`/api/products/${productId()}/${button.dataset.workflow}`,"POST")});
+    $("signals").onclick=()=>selectedAction((_product,id)=>`/api/prospects/${id}/signals`);
+    $("ranking").onclick=()=>{if(!productId())return show("Select a product first.");run(`/api/products/${productId()}/ranking`)};
+    $("draft").onclick=()=>selectedAction((product,id)=>`/api/products/${product}/prospects/${id}/draft`);
+    $("reply-form").onsubmit=async event=>{event.preventDefault();const id=encodeURIComponent($("reply-id").value.trim());await run(`/api/replies/${id}/classification`,"POST")};
+    loadProducts().catch(error=>show(`Load failed: ${error.message}`));refreshStatus();
+  </script>
+</body>
+</html>

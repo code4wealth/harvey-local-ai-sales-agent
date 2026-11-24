@@ -18,7 +18,8 @@ retained as context. See `docs/WORKFLOWS.md` for detailed data contracts.
 - [ ] Optionally run held-out evaluation only after reviewing/freezing the
   prompt; this roadmap has not performed held-out evaluation.
 - [ ] Problem-statement generation, full pipeline orchestration, and a polished
-  product UI remain outside the completed workflow slice.
+  product UI remain outside the completed workflow slice; a small static API
+  dashboard is available at `/`.
 
 ## Phase 0 — Recon and setup
 

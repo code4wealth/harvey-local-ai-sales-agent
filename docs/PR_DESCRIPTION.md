@@ -22,11 +22,13 @@ active Arena branch:
   evidence, drafting skips inference and records `no verified evidence`.
 - Adds product-scoped POST/GET draft API routes and mocked tests. Email is never
   transmitted.
+- Serves a static, no-build, no-external-network dashboard from `/`; all browser
+  requests use relative same-origin API paths.
 - Updates workflow, architecture, limitations, demo, and setup documentation.
 
 ## Validation
 
-- `PATH="$PWD/.venv/bin:$PATH" make verify` — passed; corpus checks and **143 tests**.
+- `PATH="$PWD/.venv/bin:$PATH" make verify` — passed; corpus checks and **144 tests**.
 - `git diff --check` — passed.
 - Signal-extraction prompt SHA-256 remains
   `73fa8d3444e458a90d67b641ea93712faf42b6a4f198b86510a6ff82f269ca71`.

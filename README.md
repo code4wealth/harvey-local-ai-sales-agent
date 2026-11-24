@@ -13,6 +13,7 @@ service.
 
 ## Current capabilities
 
+- Small, static, no-build/no-external-network dashboard served at `/`.
 - Product-scoped profile and ICP generation from local product information.
 - Product-scoped CSV prospect import and explicit local page-text storage.
 - Buying-signal extraction with source-grounded evidence and persisted runs.
