@@ -119,9 +119,10 @@ curl -fsS "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/prospects/${PROSPECT
 Drafts are persisted locally with `sent=false` and are never sent. If there are
 no valid signals, the draft status is `skipped` with reason `no verified evidence`;
 no LLM call is made. The fixed workflow allows `1` or `2` evidence spans of `4`–`15`
-words each; each must be a substring of verified signal evidence and the body after
-case and whitespace normalization, with each span enclosed in double quotes in
-the body. Problem statements use the stored business profile and ICP plus this
+words each; each must be a substring of both verified signal evidence and the
+prospect's current stored page text after case and whitespace normalization,
+then appear enclosed in double quotes in the body. Problem statements use the
+stored business profile and ICP plus this
 prospect's latest successful verified-signal run. Their one- or two-sentence
 statement must contain each of `1` or `2` verbatim `4`–`15`-word spans, and each
 span must also occur in the verified signal evidence, after case/whitespace
@@ -129,8 +130,12 @@ normalization only. Without verified evidence, the result is `skipped` with
 `no verified evidence` and no model call is made. Ranking reports an explicit
 missing-input status when no signal run exists.
 
+The model scores below are historical operator-reported results from earlier
+prompts. They predate the Problem 7 confidence field and do not verify the
+current schema or retry behavior; no new live or held-out run is claimed.
+
 ```text
-RESULT: Signals development (37 prospects; signal prompt hash prefix 73fa8d34...):
+RESULT: Signals development (37 prospects; historical signal prompt hash prefix 73fa8d34...):
 expected-signal recall 14/16 (87.5%); 34/37 prospects passed; 1 implied-signal
 false positive (P010); misses P001 (quote glitch persisted after 2 quote retries)
 and P022 (model returned nothing); 8 quote-verification retries in total.
@@ -208,8 +213,9 @@ These PowerShell scripts use only the local Harvey API over a loopback HTTP
 connection. They do not call `pip`, `git`, or an external network service, and
 they do not include response text, page text, reply text, rationale, or model
 output in their evidence files. Evidence contains timestamps, statuses, counts,
-model/settings/hash metadata, error classes, and record IDs only. Files are
-written to `test_evidence/offline/` and ignored by Git.
+model/settings/hash metadata, error classes, and record IDs only. The main
+acceptance log is written to `test_evidence/offline/`; the separate outage log
+is written to `test_evidence/ollama_outage/`. Both are ignored by Git.
 
 ### Prepare the local demo data
 
@@ -231,33 +237,33 @@ From PowerShell in the repository root, with the API and Ollama running:
 ```
 
 The script checks API/hardware/status fields and the dashboard route at `/`,
-resolves product IDs, runs profile and ICP workflows, extracts signals for up to
-three stored-page RelayCue
-prospects, checks deterministic rankings for both products, creates an unsent
-draft and problem statements, classifies `R001`, and checks the reported Ollama
-host and established API-process peers. Problem-statement evidence reports at
-most three prospect IDs, workflow statuses, and counts only; it omits statement
-and evidence text. The script prints `[PASS]` or `[FAIL]` per step and writes a
-second-resolution timestamped `acceptance-*.json` evidence file. You can
-increase the signal sample with `-SignalLimit` or adjust the workflow wait with
-`-WaitSeconds`.
+resolves product IDs, runs all eight workflows (business profile, ICP, signals,
+deterministic ranking, unsent draft, problem statement, reply classification,
+and the full resumable product pipeline), and checks the reported Ollama host
+and established API-process peers. Standalone signals are run for up to three
+stored-page RelayCue prospects. Problem-statement evidence reports at most three
+prospect IDs, workflow statuses, and counts only; it omits statement and
+source text. The pipeline summary records only step counts/statuses, not child
+results or model output. The script prints `[PASS]` or `[FAIL]` per step and
+writes a timestamped `acceptance-*.json` file. Use `-SignalLimit` to change the
+standalone signal sample, `-WaitSeconds` for individual workflows, and
+`-PipelineWaitSeconds` for the full pipeline (default 900 seconds).
 
 ### Check outage, deterministic ranking, and retry
 
-With the Harvey API left running, stop Ollama before starting this script. It
-will prompt you to confirm the outage and later prompt you to start Ollama
-again. It tests an AI signal request, persisted queued status/error and IDs,
-ranking during the outage, queue counts, a worker wake request, and completion
-of the same queued signal run after recovery:
+With the Harvey API left running, start this script and follow its prompts to
+stop Ollama before the task and restart it after the queued state is recorded.
+It tests an AI signal request, confirms the queued status and IDs, checks
+ranking during the outage, records queue counts, requests a worker wake, and
+polls for completion of the same queued signal run after recovery:
 
 ```powershell
 .\scripts\ollama_down_check.ps1
 ```
 
 If Ollama was already stopped, use `-OllamaAlreadyStopped`. It writes a
-second-resolution timestamped `ollama-down-*.json` file under the same evidence
-directory. The script's maximum recovery wait is configurable with
-`-WaitSeconds`.
+timestamped `ollama-down-*.json` file under `test_evidence/ollama_outage/`.
+The recovery wait is configurable with `-WaitSeconds`.
 
 ### Offline acceptance results
 

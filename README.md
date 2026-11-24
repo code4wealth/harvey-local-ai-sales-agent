@@ -4,7 +4,8 @@ A local-first, multi-product sales-prospect research and drafting service. The
 FastAPI backend uses SQLite for storage, Ollama at `127.0.0.1:11434` for local
 LLM inference, and sentence-transformers for local embeddings. There is no
 cloud inference, external enrichment API, email delivery, or paid-token
-service.
+service. Paid API cost is **$0**; local hardware, electricity, and one-time
+model-download bandwidth are user-provided resources and are not priced here.
 
 > Upstream attribution: Harvey/Sellbird was created by Ethan Rogers and the
 > Sellbird contributors, AGPL-3.0-only (earlier releases MIT). See `NOTICE` and
@@ -34,12 +35,14 @@ service.
   available without an LLM call.
 
 All model calls pass through `app/llm_client.py`, which is fixed to the local
-Ollama endpoint. Structured responses are validated, retried at most twice,
-and logged. Read `docs/WORKFLOWS.md` for contracts, `docs/HARDWARE.md` for
-recommendations, `docs/FAILURE_HANDLING.md` for outage recovery,
+Ollama endpoint. Every structured response is schema-validated; invalid output
+gets one stricter retry, then fails with a stored reason. Read
+`docs/WORKFLOWS.md` for contracts, `docs/HARDWARE.md` for recommendations,
+`docs/FAILURE_HANDLING.md` for outage recovery,
 `docs/NETWORK_AUDIT.md` for the outbound-client inventory,
 `docs/COST_AND_DEPENDENCIES.md` for service costs and network needs,
-`docs/LICENSES.md` for the audited licence/version inventory, and
+`docs/LICENSES.md` for the licence/version inventory and outstanding `VERIFY`
+items, and
 `docs/KNOWN_LIMITATIONS.md` for heuristic and model-evaluation caveats.
 
 ## Quickstart
@@ -57,6 +60,30 @@ The service stores its SQLite database at `data/harvey.db` by default. Override
 `DB_PATH` if needed. Ollama and downloaded local models must be installed before
 running AI workflows; tests use mocked Ollama responses and do not need a live
 model.
+
+### Windows PowerShell setup
+
+Install Python 3.11+ and Ollama first. From the repository root:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev]"
+ollama pull qwen3:4b
+$env:DEFAULT_MODEL = "qwen3:4b"
+$env:DB_PATH = "$PWD\data\harvey.db"
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+If Ollama is not already running as a desktop service, start it in another
+PowerShell window with `ollama serve`. Keep the API on `127.0.0.1`; do not expose
+it to a LAN. Set `$env:OFFLINE_STRICT = "1"` before starting the API to disable
+Hugging Face Hub telemetry and implicit-token use during local embedding loads;
+model files must already be cached. The loader always enforces Hugging Face and
+Transformers offline flags. To run checks without GNU Make, use
+`python scripts/verify_no_cloud.py`, `python scripts/validate_corpus.py`, then
+`python -m pytest -q`. The API and test suite do not automatically read a `.env`
+file; set environment variables in the current shell.
 
 The API has no user authentication and is intended for one local operator:
 bind it to `127.0.0.1` (as above), not `0.0.0.0` or a LAN address. Mutating
@@ -92,7 +119,11 @@ snapshot. The offline acceptance procedure is in
 `docs/DEMO.md#offline-acceptance-test`; unavailable outputs are marked `not run`
 and unreported outcomes are marked `not supplied`.
 
-## Reported live-run snapshot
+## Historical reported live-run snapshot
+
+The figures below were reported for earlier prompts and are not evidence for
+Problem 7's confidence-field schema, stricter retry behavior, or current
+Windows/offline acceptance. No new live-model run is claimed here.
 
 Configuration: `qwen3:4b`, temperature `0`, seed `42`, `repeat_penalty=1.0`,
 retry temperature `0.2`, Windows laptop, about 18 tokens/s. All data is fictional

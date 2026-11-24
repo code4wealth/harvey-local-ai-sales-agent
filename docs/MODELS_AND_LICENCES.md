@@ -1,9 +1,9 @@
 # Models and dependency licences
 
-The exact versions and locally available licence metadata observed in the
-current sandbox are recorded in [`LICENSES.md`](LICENSES.md). Values that could
-not be inspected there are explicitly marked `not run`; intended licences are
-not presented as verified metadata.
+The observed versions and licence metadata are recorded in
+[`LICENSES.md`](LICENSES.md). Unverified values are explicitly marked
+**VERIFY**; user-reported or intended licences are not presented as independently
+verified metadata.
 
 ## Local models
 
@@ -11,10 +11,12 @@ not presented as verified metadata.
   The installed Ollama version, local model list, model-card licence metadata,
   and live model availability were not run in the audit sandbox. See
   `LICENSES.md` for the observation and limitations.
-- Embeddings use `sentence-transformers/all-MiniLM-L6-v2`. Model files must be
+- Embeddings use `sentence-transformers/all-MiniLM-L6-v2`; its model revision
+  and model-card licence are **VERIFY** in `LICENSES.md`. Model files must be
   cached before use. The application sets `HF_HUB_OFFLINE=1` and
-  `TRANSFORMERS_OFFLINE=1` before the model loader runs; it does not download
-  them or use a hosted inference endpoint.
+  `TRANSFORMERS_OFFLINE=1` before the model loader runs; `OFFLINE_STRICT=1`
+  additionally disables Hub telemetry and implicit-token use. It does not
+  download model files or use a hosted inference endpoint.
 
 All model inference is directed to the hard-coded loopback Ollama URL in
 `app/llm_client.py`. Harvey's AGPL-3.0-only notice and upstream attribution

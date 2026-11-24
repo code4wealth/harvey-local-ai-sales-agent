@@ -74,9 +74,11 @@ workflow milestones; prompt tuning and live results remain operator-owned.
   of about 800 characters, embeds at most six chunks, averages their vectors,
   and renormalizes the result. Text beyond six chunks is omitted.
 - The application sets both `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`
-  inside the lazy loader before importing the model library. Cache the model
-  files separately before starting the application; the AI path never downloads
-  them. `python scripts/smoke_embeddings.py` reports `max_seq_length` and vector
+  inside the lazy loader before importing the model library. With
+  `OFFLINE_STRICT=1`, it also sets `HF_HUB_DISABLE_TELEMETRY=1` and
+  `HF_HUB_DISABLE_IMPLICIT_TOKEN=1`; `make offline` enables this mode. Cache the
+  model files separately before starting the application; the AI path never
+  downloads them. `python scripts/smoke_embeddings.py` reports `max_seq_length` and vector
   dimension only when the model is already available locally. Missing files
   raise `EmbeddingModelUnavailable`, and no embedding output is fabricated.
   Failed model loads are not cached, so a later call retries the local load.
@@ -105,20 +107,31 @@ their original evidence strings. Its return value is
 including legacy `none` items in older stored runs, are dropped and counted
 separately from evidence failures.
 
-## Scoring — deterministic
+## Scoring — explainable hybrid
+
+The API and dashboard expose the component values, weights, weighted points,
+missing inputs, model/rule provenance, and evidence-quality audit. Model-derived
+inputs are the local embedding vectors used for ICP similarity and the signal
+type/confidence returned by signal extraction. The conversions and aggregation
+below are deterministic, rule-based steps; they are not model output.
 
 ### ICP similarity
 
-Compute cosine similarity between the local ICP and prospect embeddings, then
-map it linearly from cosine `0.15 → 0` to `0.65 → 1`; clamp below and above
-that interval to `0` and `1`. Missing, mismatched, or zero-length vectors make
-the component `null`.
+The local embedding model produces ICP and prospect-page vectors. A deterministic
+cosine-similarity calculation maps them linearly from cosine `0.15 → 0` to
+`0.65 → 1`, clamping below and above that interval to `0` and `1`. Embedding
+inference is model-derived; cosine calculation, scaling, and score weighting
+are rule-based. Missing, mismatched, or zero-length vectors make the component
+`null`.
 
 ### Signal score
 
-Each signal type contributes at most once, using the highest valid confidence
-for that type. The contribution is `weight × confidence`; the total is capped
-at 100. The existing baseline weights are:
+Signal extraction returns model-generated types, confidence values in `[0,1]`,
+and evidence quotes. The quote checks against the current stored page are
+rule-based. Scoring aggregation is also rule-based: each signal type contributes
+at most once, using the highest valid model confidence for that type. The
+contribution is `weight × confidence`; the total is capped at 100. The baseline
+rule weights are:
 
 | Signal type | Weight |
 |---|---:|
@@ -132,7 +145,7 @@ at 100. The existing baseline weights are:
 An explicit `none` signal contributes zero. An absent signal record or an
 unknown/unweighted type is uncomputable (`null`), not an invented zero.
 
-### Size fit
+### Size fit — rule-based
 
 Use the ICP's flat `company_size_min` and `company_size_max` fields and the
 prospect's recorded `employee_count`. Fit is 100 inside the inclusive range.
@@ -141,7 +154,7 @@ above the range, `min / employees` below it). Fit decays logarithmically as
 `100 × (1 − ln(r) / ln(3))`, reaching zero at a 3× ratio. Missing or invalid
 inputs make the component `null`.
 
-### Title fit
+### Title fit — rule-based
 
 Use only the ICP's `buyer_titles` keywords. A substantive buyer-title phrase
 appearing contiguously in the contact title scores 100 (decision-maker); any
@@ -153,9 +166,11 @@ the score at 20. If the contact title or buyer-title list is missing, the
 component is `null`. This remains a deterministic keyword heuristic; see
 `docs/KNOWN_LIMITATIONS.md`.
 
-### Overall score and missing inputs
+### Overall score and missing inputs — rule-based
 
-The complete formula is:
+The final weighting, partial-score handling, ranking order, and tier thresholds
+are deterministic rules; evidence quality is separately exposed as an audit
+indicator and does not add points. The complete formula is:
 
 `0.35 × icp_similarity × 100 + 0.35 × signal_score + 0.15 × size_fit + 0.15 × title_fit`
 
@@ -175,18 +190,24 @@ is reported as the latest run state but does not replace the prior successful
 signal snapshot. No LLM is called and no missing component is invented.
 
 The response identifies missing inputs/components, deterministic ICP field
-matches and supporting evidence reasons, component scores, rank, and tier.
-Complete totals map to `high` at 70+, `medium` at 40+, and `low` below 40;
-incomplete inputs remain partial. A product with no usable ICP is unranked
-with a null score. This route is distinct from the older batch score writer.
+matches and supporting evidence reasons, component scores, rank, and tier. Its
+`score_explanations` object separates the model-derived embedding/signal inputs
+from rule-based title/size fit, quote checks, weighting, and tier logic. It
+shows ICP fit, signal strength, and evidence quality; evidence quality is a
+rule-based audit metric that is not part of the total. Complete totals map to
+`high` at 70+, `medium` at 40+, and `low` below 40; incomplete inputs remain
+partial. A product with no usable ICP is unranked with a null score. This route
+is distinct from the older batch score writer.
 
 ## LLM workflow status
 
-All inference uses the local `app/llm_client.py` path. Structured outputs are
-Pydantic-validated and retried at most twice; workflow-specific grounding
-validators participate in those same three total attempts. No workflow calls
-a model or service directly. Temperature is `0`, seed is `42`, and workflows
-pass explicit context budgets.
+All inference uses the local `app/llm_client.py` path. Every model response is
+validated against a Pydantic schema and any workflow-specific grounding checks.
+An invalid response gets at most one stricter-prompt retry (two total attempts);
+a second invalid response fails and its reason is persisted. Signal quote
+verification shares that same retry budget. Transport failures are not hot-loop
+retried; local Ollama outages are queued. The first request uses temperature
+`0` and seed `42`; the retry uses temperature `0.2` and the next seed.
 
 Implemented:
 
@@ -205,26 +226,30 @@ Implemented:
    `not stated`; numeric size bounds require explicit numeric support. A
    trigger must describe a concrete external event, not a product feature.
 3. **Buying signals:** local prospect page; `{signals: [...]}` where each
-   item is `{type, evidence, about_company}`. Evidence is checked against the
-   source and filtered for unrelated-company, negated, and stale events before
-   persistence. The extraction prompt is frozen by its existing hash contract
-   and must not be changed during these milestones.
+   item is `{type, evidence, confidence, about_company}`. The schema constrains
+   confidence to finite `[0,1]`; evidence must be a complete exact sentence in
+   the stored page. A single stricter retry covers schema and quote failures;
+   unrelated-company, negated, and stale events are filtered before persistence.
+   The held-out prompt hash was refrozen for this confidence-field change; no
+   held-out model evaluation was run for the update.
 4. **Reply classification:** `POST` / `GET /api/replies/{reply_id}/classification`.
    The model sees only stored inbound reply text, not reply ID or evaluation
    metadata. It returns one of eight strict labels, confidence in `[0,1]`, and
-   a rationale of at most 200 characters. Invalid results retry twice; outage
-   tasks are persisted and replayed. Ground-truth labels are in
+   a rationale of at most 200 characters. Invalid results get one stricter
+   retry; outage tasks are persisted and replayed. Ground-truth labels are in
    `data/eval/reply_labels.csv`, never in the runtime sample-reply table.
 5. **Outreach draft:** `POST` / `GET
    /api/products/{product_id}/prospects/{prospect_id}/draft`. The prompt uses
    only the product's stored business profile and valid signals from the
-   latest successful signal run. The draft uses one or two 4-to-15-word spans,
-   each a substring of verified signal evidence for this prospect after case
-   and whitespace normalization only and quoted verbatim inside double quotes in
-   the body; no other prospect claims are allowed. Invalid drafts retry twice;
-   persistent failure is returned and stored. With no verified signal,
-   the workflow skips the model and persists `no verified evidence`. Drafts are
-   local records only; no send API exists.
+   latest successful signal run. The draft must include one or two 4-to-15-word
+   evidence spans, each a substring of both the prospect's current stored page
+   text and verified signal evidence after case/whitespace normalization, quoted
+   inside double quotes in the body. The prompt prohibits other prospect claims;
+   only cited spans are mechanically verified, so human review remains required.
+   Invalid drafts get one stricter retry; persistent failure is returned and
+   stored. If no signal quote remains verified against the current page, the
+   workflow skips inference and persists a reason. Drafts are local records only;
+   no send API exists.
 6. **Problem statement:** `POST` / `GET
    /api/products/{product_id}/prospects/{prospect_id}/problem-statement`. It
    uses the product's latest stored business profile and ICP plus this
@@ -232,14 +257,18 @@ Implemented:
    those source IDs and up to two verbatim 4-to-15-word evidence spans. Every
    span must occur in both the verified signal evidence and the one- or
    two-sentence statement after case and whitespace normalization only.
-   Invalid model results retry twice; terminal failures are persisted, and
-   Ollama-unavailable runs are queued for worker retry. With no verified
+   Invalid model results get one stricter retry; terminal failures are persisted,
+   and Ollama-unavailable runs are queued for worker retry. With no verified
    evidence, it stores `skipped` / `no verified evidence` and does not resolve
    or call a model. The dashboard can generate and view the latest result. This
    workflow does not add problem-statement context to the existing draft prompt;
    draft prompt text and its hash are kept unchanged.
-7. **Scoring and ranking:** deterministic; see the formula above and the
-   product-specific ranking contract.
+7. **Scoring and ranking:** explainable hybrid; local embedding/signal outputs
+   feed rule-based fit, evidence checks, weighted aggregation, and tiering. See
+   the formula and provenance above.
+8. **Full product pipeline:** resumable local workflow that sequences profile,
+   ICP, per-prospect signals, problem statements, drafts, and final ranking. It
+   persists step-level status and resumes queued work after Ollama recovers.
 
 ## Offline evaluators
 

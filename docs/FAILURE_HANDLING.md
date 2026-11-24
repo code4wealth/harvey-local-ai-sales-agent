@@ -14,8 +14,9 @@ embedding loads are also offline-only; model files must already be cached.
   work is persisted with status `queued`, a queue-task ID, and an error field;
   their API response uses HTTP `202` and a JSON run/classification payload.
 - Timeouts and invalid model responses remain distinct from connection
-  failures. Invalid responses are validated and retried; a persistent failure
-  remains visible in the stored run rather than silently switching providers.
+  failures. Every model response is schema-validated; an invalid response gets
+  one stricter-prompt retry, then a terminal failure with its validation reason
+  is stored. The client never silently switches providers.
 - `GET /api/products/{product_id}/ranking` is deterministic and does not call
   Ollama. Missing or unavailable local embedding inputs remain partial/missing
   rather than being filled through a hosted service.
@@ -35,6 +36,11 @@ The endpoint returns `status: scheduled` and current queue counts. Check
 `GET /api/status` and the original workflow's `GET` route for its terminal run
 status. Queue tasks are retained after completion/failure for diagnosis.
 
-The dashboard's **Retry queued tasks** button calls the same endpoint. The
-`test_evidence/offline/` acceptance scripts exercise the outage and recovery
-path without recording reply or page text; see `docs/DEMO.md`.
+The dashboard's **Retry queued tasks** button calls the same endpoint.
+`scripts/offline_acceptance.ps1` exercises the eight supported workflows and
+writes redacted evidence under `test_evidence/offline/`. The guided
+`scripts/ollama_down_check.ps1` prompts the operator to stop and restart Ollama,
+verifies queueing and recovery, and writes redacted evidence under
+`test_evidence/ollama_outage/`; neither script records reply or page text. See
+`docs/DEMO.md` for setup and the fact that Windows/live acceptance remains
+unrun in this environment.

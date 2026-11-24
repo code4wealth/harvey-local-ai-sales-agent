@@ -1,5 +1,14 @@
 # Known limitations
 
+## Research and verification scope
+
+Research reads only prospect page text already stored locally; the app does not
+fetch fresh web pages or crawl prospects. Automated tests use mocked Ollama
+responses, fake embeddings, and isolated local fixtures. `make verify` validates
+source boundaries and deterministic/mock behavior, but it does not prove live
+Ollama quality, Windows/PowerShell execution, Wi-Fi-off behavior, or a real
+Ollama outage/recovery. Those remain target-machine acceptance checks.
+
 ## Deterministic title fit
 
 Title fit is a token heuristic, not an org-chart or synonym model. Contact-title
@@ -27,10 +36,13 @@ character target before the model's token limit is applied.
 
 The embedding model is loaded lazily. A failed model load is not cached, so a
 later request tries loading again. The loader sets `HF_HUB_OFFLINE=1` and
-`TRANSFORMERS_OFFLINE=1` before importing the model library. If model files are
-not cached, loading fails locally and ranking falls back to its existing partial
-result; the app does not download them from a model hub. Pre-cache the model
-before starting the offline application.
+`TRANSFORMERS_OFFLINE=1` before importing the model library. With
+`OFFLINE_STRICT=1`, it also disables Hub telemetry and implicit-token use. If
+model files are not cached, loading fails locally and ranking falls back to its
+existing partial result; the app does not download them from a model hub.
+Pre-cache the model before starting the offline application. These environment
+flags and mocked loader tests do not prove Wi-Fi-off isolation or behavior of
+all transitive dependencies.
 
 ## Profile and ICP grounding heuristics
 
@@ -40,8 +52,9 @@ and compares distinct content words against the company-info source. General
 profile claims require at least 60% overlap; each non-`not stated`
 `pain_points_solved` item requires at least **80%**. This reduces unsupported
 pain claims, but can accept a partially invented sentence or reject a valid
-paraphrase that uses different vocabulary. Invalid outputs are sent back for
-up to two retries; a response that still fails grounding is not saved.
+paraphrase that uses different vocabulary. Invalid outputs get one stricter
+retry; a response that still fails grounding is not saved and its reason is
+persisted.
 
 ICP list items use an 80% content-word overlap against field-specific profile
 support: industries use `summary`, `value_proposition`, `typical_team_size`,
@@ -64,7 +77,10 @@ runs (the dynamic UTC date is normalized out of the hash). The operator freezes
 it explicitly with standalone `--freeze-prompt`; replacing a different hash
 requires `--refreeze`. Development runs do not read or write the hash file, and
 held-out runs only read and enforce it. This detects prompt-text drift, not
-changes to the evaluator, local model weights, or Ollama implementation.
+changes to the evaluator, local model weights, or Ollama implementation. Signal
+types and confidence values are model output; confidence is not calibrated and
+must not be treated as a probability guarantee. Aggregating those values into a
+signal score uses deterministic rule weights.
 `think=false` and `num_ctx=4096` are reported per run. Model-empty-list counts
 come only from successfully parsed empty `signals` arrays; returned signals
 that are later filtered are counted separately with per-reason drops. Held-out
@@ -83,9 +99,11 @@ does not freeze model weights, Ollama, decoding implementation, or evaluator
 code. All replies are synthetic SAMPLE examples, so their accuracy is not a
 customer-data benchmark.
 
-Reported live configuration was `qwen3:4b`, temperature `0`, seed `42`,
-`repeat_penalty=1.0`, retry temperature `0.2`, on a Windows laptop at about
-18 tokens/s. Signal development (37 prospects; prompt hash prefix `73fa8d34...`)
+Historical reported live configuration was `qwen3:4b`, temperature `0`, seed
+`42`, `repeat_penalty=1.0`, retry temperature `0.2`, on a Windows laptop at
+about 18 tokens/s. Those signal results predate the required confidence field
+and do not validate the current prompt/schema; the frozen hash was updated for
+future held-out use, but no new live evaluation is claimed. Signal development (37 prospects; historical prompt hash prefix `73fa8d34...`)
 had expected-signal recall `14/16 (87.5%)`; `34/37` prospects passed, with one
 implied-signal false positive (`P010`), misses `P001` (quote glitch persisted
 after two quote retries) and `P022` (model returned nothing), and `8`
@@ -143,19 +161,20 @@ entailment check: it cannot establish that the complete statement, or an
 inferred connection between a signal and a product/ICP pain point, is true.
 Review generated statements before using them. With no verified evidence the
 workflow records `skipped` / `no verified evidence` without model inference;
-invalid outputs retry twice and terminal failures are persisted.
+invalid outputs get one stricter retry, then terminal failures are persisted
+with their reason.
 
 ## Evidence-grounded outreach drafts
 
-The validator checks that each `evidence_used` span is a substring of this
-prospect's stored verified signal evidence and appears in the body inside double
-quotes, after case and whitespace normalization only. Generated drafts must
-contain `1`–`2` spans of `4`–`15` words. This does **not** verify that other
-sentences in the body are grounded in the product profile or prospect evidence.
-Spans can be as short as `4` words, so drafts can be weak or include unsupported
-pitch sentences; the prompt's grounding instruction does not make the remaining
-body semantically verified. Every draft is stored with `sent=false` and requires
-human review; the workflow has no email-send capability.
+The validator checks that each `evidence_used` span is a substring of both the
+prospect's current stored page text and its verified signal evidence, and appears
+inside double quotes in the body, after case and whitespace normalization only.
+Generated drafts must contain `1`–`2` spans of `4`–`15` words. This proves the
+cited spans exist in stored prospect data, but does **not** semantically verify
+every other sentence in the body. The prompt prohibits uncited prospect claims,
+but a model could still produce an unsupported pitch sentence; review every
+draft. Every draft is stored with `sent=false` and the workflow has no
+email-send capability.
 
 On the first attempt, `9` prospects were tried: `6` drafts were skipped with
 `no verified evidence`, and `3` failed the verbatim-evidence check because the

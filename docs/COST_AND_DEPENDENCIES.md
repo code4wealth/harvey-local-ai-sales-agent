@@ -2,8 +2,10 @@
 
 ## Cost and network requirements
 
-- **Paid services: none.** The application does not use a paid AI API, hosted
-  inference service, or metered enrichment provider.
+- **Paid service/API cost: $0.** The application does not use a paid AI API,
+  hosted inference service, or metered enrichment provider. Local hardware,
+  electricity, and one-time model-download bandwidth are user-provided resources
+  and are not monetized or estimated by this project.
 - **Inference is local only.** Model requests go to the local Ollama service;
   embeddings run from the locally cached sentence-transformer model. There is
   no cloud fallback.

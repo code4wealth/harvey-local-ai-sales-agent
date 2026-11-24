@@ -5,7 +5,7 @@
 | Source / client | Activity | AI path? | Destination / control |
 |---|---|---:|---|
 | `app/llm_client.py` (`httpx.Client`) | Ollama health/version probes and model inference | Yes | The `OLLAMA_URL` constant is `http://127.0.0.1:11434`; there is no environment/config override and the HTTPX client sets `trust_env=False`. |
-| `app/embeddings.py` (`SentenceTransformer`) | Loads the local sentence-transformer model and encodes product/page text for deterministic ranking | Yes | The loader forces `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` before importing/loading the model. Model files must be cached in advance; no hosted inference endpoint is used. |
+| `app/embeddings.py` (`SentenceTransformer`) | Loads the local sentence-transformer model and encodes product/page text for ranking | Yes | The loader forces `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` before import/load. With `OFFLINE_STRICT=1`, Hub telemetry and implicit-token use are disabled too. Cache model files in advance; no hosted inference endpoint is used. |
 | `frontend/index.html` (`fetch`) | Dashboard calls the Harvey API | No direct model call | All URLs are relative `/api/...` paths and therefore use the service's same origin. AI requests are delegated to the backend above. |
 | Other `app/**/*.py` source in the audited checkout | Static scan for URLs, cloud SDK imports, and common HTTP client imports/calls | No outbound client found | No other explicit external client or non-local URL was found by the audit scan. |
 
@@ -29,8 +29,9 @@ external research client in this checkout.
 - Prospect CSV uploads are capped at 5 MiB and local prospect-page text at
   1 MiB. These checks run while streaming request bodies, not only after a full
   in-memory read.
-- `make offline` sets both Hugging Face/Transformers offline flags and runs the
-  deterministic verification suite. It is not proof that Wi-Fi was disabled;
+- `make offline` sets `OFFLINE_STRICT=1` plus both Hugging Face/Transformers
+  offline flags and runs the deterministic verification suite. It is not proof
+  that Wi-Fi was disabled;
   the target-machine offline acceptance and network-isolation checks remain
   operator-run and are not claimed here.
 
@@ -41,8 +42,9 @@ external research client in this checkout.
   non-local values. `tests/test_ai_network_boundary.py` scans app source for
   cloud SDK imports, non-local URLs, and HTTP clients without a fixed loopback
   destination. `make verify` also runs `scripts/verify_no_cloud.py`.
-- `tests/test_embeddings.py` mocks the sentence-transformer loader and verifies
-  both offline-mode variables are set before the model constructor runs.
+- No-cloud coverage includes `tests/test_smoke.py::test_verify_script_exists_and_mentions_local_only` and `tests/test_ai_network_boundary.py::test_ai_path_has_no_cloud_sdk_imports_or_nonlocal_urls`; `make verify` also runs `scripts/verify_no_cloud.py`.
+- `tests/test_embeddings.py::test_model_load_forces_hugging_face_and_transformers_offline` and `tests/test_embeddings.py::test_offline_strict_forces_cache_only_model_loading_and_disables_telemetry` mock the sentence-transformer loader and verify offline flags are set before the model constructor runs.
+- Hardware behavior is covered by `tests/test_hardware.py::test_tiering_from_fake_ram_and_vram_values`, `test_context_budget_is_keyed_to_hardware_tier`, `test_detect_caches_hardware_for_process_lifetime`, and `test_hardware_endpoint_reports_detected_fields`.
 - `scripts/offline_acceptance.ps1` records the configured Ollama host and
   checks established peers belonging to the API process. This live check is
   intentionally left for the user; the script has not been run here.
