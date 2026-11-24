@@ -277,6 +277,37 @@ def test_init_db_merges_casefold_duplicate_products_and_repoints_all_records(tmp
         assert json.loads(payload)["product_id"] == 1
         assert json.loads(payload)["workflow_run_id"] == 30
         assert conn.execute("SELECT product_id FROM workflow_runs WHERE id = 30").fetchone()[0] == 1
+
+        # Every product reference must point to the retained row; prospect/run
+        # relationships must remain valid across the merge, not merely present.
+        table_names = [
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            )
+        ]
+        for table in table_names:
+            columns = {row[1] for row in conn.execute(f'PRAGMA table_info("{table}")')}
+            if "product_id" in columns and table != "products":
+                assert conn.execute(
+                    f'SELECT COUNT(*) FROM "{table}" WHERE product_id = 2'
+                ).fetchone()[0] == 0
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert conn.execute(
+            "SELECT COUNT(*) FROM signals s "
+            "LEFT JOIN prospects p ON p.id = s.prospect_id "
+            "LEFT JOIN signal_runs r ON r.id = s.signal_run_id "
+            "WHERE p.id IS NULL OR r.id IS NULL OR r.prospect_id != s.prospect_id "
+            "OR r.product_id != p.product_id"
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM draft_runs d LEFT JOIN prospects p ON p.id = d.prospect_id "
+            "WHERE p.id IS NULL OR d.product_id != p.product_id"
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM workflow_runs r LEFT JOIN products p ON p.id = r.product_id "
+            "WHERE p.id IS NULL"
+        ).fetchone()[0] == 0
         with pytest.raises(sqlite3.IntegrityError, match="UNIQUE constraint failed"):
             conn.execute(
                 "INSERT INTO products (name, created_at, updated_at) VALUES ('DAIRY MILK', ?, ?)",
