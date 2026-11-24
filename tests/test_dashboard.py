@@ -24,6 +24,12 @@ def test_root_serves_embedded_local_only_dashboard():
     assert "/api/products" in html
     assert "/api/replies/" in html
     assert "Create unsent draft" in html
+    assert 'id="output" class="result-content"' in html
+    assert "Technical details" in html
+    assert "Prompt hash" in html
+    assert "Commit hash" in html
+    assert "Email subject" in html
+    assert "Reply label" in html
     assert "View profile" in html
     assert "View ICP" in html
     assert "View latest signals" in html
@@ -85,7 +91,9 @@ def test_dashboard_controls_are_wired_to_same_origin_workflows_and_status():
         'const WORKFLOW_MAX_WAIT_MS = 10 * 60 * 1000;',
         'api(`/api/workflow-runs/${current.id}`)',
         'Queued · waiting for local Ollama',
-        'Request failed: ${error.message}',
+        'function friendlyWorkflowError(error, status)',
+        'Ollama is not running. Task queued. Start Ollama, then click Retry queued tasks.',
+        'The local model returned data that did not match the required format.',
         'latest.seed',
         'latest.model',
         'hashes.signals',

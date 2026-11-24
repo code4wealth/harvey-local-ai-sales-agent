@@ -170,11 +170,33 @@
     .section-note{max-width:58ch;margin:0;color:#68766e;font-size:12px;line-height:1.55}
     .result-panel{margin-top:18px;overflow:hidden}
     .result-head{align-items:center}
-    .result-state{display:inline-flex;align-items:center;gap:7px;color:#637168;font-size:11px}
-    .result-state::before{content:"";width:7px;height:7px;border-radius:50%;background:#a8b5a9}
+    .result-state{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid #d8dfd5;border-radius:99px;background:#f5f7f2;color:#526257;font-size:10px;font-weight:700}
+    .result-state::before{content:"";width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:#a8b5a9}
+    .result-state[data-state="succeeded"]{border-color:#c2d4bb;background:#edf4e8;color:#2f6a3f}
+    .result-state[data-state="failed"]{border-color:#e5c9c4;background:var(--red-soft);color:#8b342b}
+    .result-state[data-state="queued"],.result-state[data-state="running"]{border-color:#e7d7b9;background:#fbf3e5;color:#795318}
     .result-state[data-waiting="true"]::before{width:10px;height:10px;border:2px solid #c4d2bd;border-top-color:#294b37;border-radius:50%;background:transparent;animation:spin .8s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
-    pre{min-height:138px;max-height:430px;overflow:auto;margin:0;padding:17px 19px;border:1px solid #26392e;border-radius:12px;background:#182a21;color:#e8f0e4;font:12px/1.65 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;tab-size:2;white-space:pre-wrap;overflow-wrap:anywhere}
+    .result-content{display:grid;gap:12px}
+    .result-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#66756b;font-size:11px}
+    .result-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border:1px solid #d8dfd5;border-radius:99px;background:#f5f7f2;color:#45564b;font-weight:750;text-transform:capitalize}
+    .result-badge[data-state="succeeded"]{border-color:#c2d4bb;background:#edf4e8;color:#2f6a3f}
+    .result-badge[data-state="failed"]{border-color:#e5c9c4;background:var(--red-soft);color:#8b342b}
+    .result-badge[data-state="queued"],.result-badge[data-state="running"]{border-color:#e7d7b9;background:#fbf3e5;color:#795318}
+    .result-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+    .result-card{min-width:0;padding:14px 15px;border:1px solid #dce3d9;border-radius:12px;background:#fbfcf8}
+    .result-card h3{margin:0 0 7px;color:#334b3a;font-size:12px;font-weight:750;letter-spacing:.015em}
+    .result-card p{margin:0;color:#35483b;font-size:13px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
+    .result-card ul{display:grid;gap:6px;margin:0;padding-left:19px;color:#35483b;font-size:12px;line-height:1.55}
+    .result-card dl,.technical-list{display:grid;gap:7px;margin:0}
+    .result-card dl div,.technical-list div{display:grid;grid-template-columns:minmax(90px,.4fr) minmax(0,1fr);gap:10px}
+    .result-card dt,.technical-list dt{color:#647369;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+    .result-card dd,.technical-list dd{margin:0;color:#35483b;font-size:12px;overflow-wrap:anywhere;white-space:pre-wrap}
+    .result-error{padding:12px 14px;border:1px solid #e5c9c4;border-radius:11px;background:var(--red-soft);color:#7e3028;font-size:12px;line-height:1.55}
+    .result-details{border-top:1px solid #e5e9e2;padding-top:9px}
+    .result-details summary{min-height:36px;display:flex;align-items:center;color:#4a5d50;font-size:11px;font-weight:700;cursor:pointer}
+    .technical-list{margin:8px 0 12px}
+    pre{max-height:430px;overflow:auto;margin:0;padding:14px 15px;border:1px solid #d7ddd4;border-radius:10px;background:#f2f5ee;color:#34473a;font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;tab-size:2;white-space:pre-wrap;overflow-wrap:anywhere}
     .output-wrap{padding:0 22px 22px}
     .footer-bar{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-top:18px;padding-top:15px;border-top:1px solid #d8ded6;color:#536258}
     .footer-bar p{margin:0;font-size:10px;line-height:1.6;overflow-wrap:anywhere}
@@ -392,7 +414,7 @@
 
         <section class="panel result-panel" id="result-panel" aria-labelledby="result-heading">
           <div class="panel-head result-head"><div><h2 id="result-heading">Latest result</h2></div><span class="result-state" id="result-status" role="status" aria-live="polite">Waiting for a workflow</span></div>
-          <div class="output-wrap"><pre id="output" aria-live="polite">Choose a product and prospect, then run a workflow. Results appear here.</pre></div>
+          <div class="output-wrap"><div id="output" class="result-content" aria-live="polite">Choose a product and prospect, then run a workflow. Results appear here.</div></div>
         </section>
 
         <footer class="footer-bar">
@@ -435,9 +457,207 @@
       return message;
     }
 
+    function humanLabel(key) {
+      const labels = {
+        summary: "Summary",
+        value_proposition: "Value proposition",
+        key_features: "Key features",
+        pain_points_solved: "Problems addressed",
+        differentiators: "Differentiators",
+        typical_buyer: "Typical buyer",
+        typical_team_size: "Typical team size",
+        working_situation: "Working situation",
+        not_for: "Not a fit for",
+        industries: "Industries",
+        company_size: "Company size",
+        buyer_titles: "Buyer titles",
+        pain_points: "Pain points",
+        trigger_events: "Trigger events",
+        disqualifiers: "Disqualifiers",
+        evidence_used: "Facts used",
+        evidence: "Evidence",
+        confidence: "Confidence",
+        rationale: "Reasoning",
+        score_breakdown: "Score breakdown",
+        steps: "Workflow steps",
+      };
+      return labels[key] || String(key).replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase());
+    }
+
+    function valueNode(value) {
+      if (Array.isArray(value)) {
+        const list = document.createElement("ul");
+        value.forEach(item => {
+          const entry = document.createElement("li");
+          entry.append(valueNode(item));
+          list.append(entry);
+        });
+        return list;
+      }
+      if (value && typeof value === "object") {
+        const details = document.createElement("dl");
+        Object.entries(value).forEach(([key, item]) => {
+          const row = document.createElement("div");
+          const term = document.createElement("dt");
+          term.textContent = humanLabel(key);
+          const description = document.createElement("dd");
+          description.append(valueNode(item));
+          row.append(term, description);
+          details.append(row);
+        });
+        return details;
+      }
+      const text = document.createElement("p");
+      text.textContent = value === null || value === undefined || value === "" ? "Not available" : String(value);
+      return text;
+    }
+
+    function appendResultCard(container, title, value) {
+      if (value === null || value === undefined || value === "") return;
+      const card = document.createElement("article");
+      card.className = "result-card";
+      const heading = document.createElement("h3");
+      heading.textContent = title;
+      card.append(heading, valueNode(value));
+      container.append(card);
+    }
+
+    function friendlyWorkflowError(error, status) {
+      const message = String(error || "").trim();
+      const lower = message.toLowerCase();
+      if (lower.includes("ollamaunavailable") || lower.includes("not reachable") || lower.includes("connection refused")) {
+        return status === "queued"
+          ? "Ollama is not running. Task queued. Start Ollama, then click Retry queued tasks."
+          : "Ollama is not running. Start Ollama, then retry this task.";
+      }
+      if (lower.includes("ollamatimeout") || lower.includes("timed out") || lower.includes("timeout")) {
+        return "Local Ollama did not respond before the time limit. Check that the model is loaded, then retry.";
+      }
+      if (lower.includes("invalidjsonresponse") || lower.includes("validationfailure")) {
+        return "The local model returned data that did not match the required format. The task was not saved as a successful result.";
+      }
+      return message || "The workflow failed without an error message.";
+    }
+
+    function statusLabel(status) {
+      return ({
+        queued: "Queued",
+        running: "Running",
+        succeeded: "Complete",
+        done: "Complete",
+        failed: "Failed",
+        skipped: "Skipped",
+        not_started: "Not started",
+        selected: "Selected",
+      })[status] || (status ? humanLabel(status) : "Result received");
+    }
+
+    function formatTimestamp(value) {
+      if (!value) return "Timestamp unavailable";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+    }
+
     function show(value) {
-      output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-      $("result-status").textContent = value?.status ? `Status · ${value.status}` : "Result received";
+      output.replaceChildren();
+      if (typeof value === "string") {
+        const message = document.createElement("p");
+        message.textContent = value;
+        output.append(message);
+        $("result-status").textContent = "Result received";
+        clearWaitingStatus();
+        return;
+      }
+      const payload = value && typeof value === "object" ? value : {};
+      const status = String(payload.status || "");
+      const state = $("result-status");
+      const badge = statusLabel(status);
+      state.dataset.state = status || "unknown";
+      state.textContent = `${badge} · ${formatTimestamp(payload.updated_at || payload.created_at || payload.scored_at || payload.timestamp)}`;
+      clearWaitingStatus();
+
+      const message = document.createElement("p");
+      message.textContent = "Choose a product and prospect, then run a workflow. Results appear here.";
+      if (!value) {
+        output.append(message);
+        return;
+      }
+      const content = payload.result && typeof payload.result === "object" ? payload.result : payload;
+      const cards = document.createElement("div");
+      cards.className = "result-cards";
+      const workflow = String(payload.workflow || "").toLowerCase();
+
+      if (workflow === "profile" || (content.summary && content.value_proposition)) {
+        Object.entries(content).forEach(([key, item]) => appendResultCard(cards, humanLabel(key), item));
+      } else if (workflow === "icp" || (content.industries && content.buyer_titles)) {
+        Object.entries(content).forEach(([key, item]) => appendResultCard(cards, humanLabel(key), item));
+      } else if (Array.isArray(content.signals)) {
+        if (!content.signals.length) appendResultCard(cards, "Verified signals", "No verified signals were found in the saved page text.");
+        content.signals.forEach((signal, index) => {
+          appendResultCard(cards, `Signal ${index + 1} · ${humanLabel(signal.type || "unknown")}`, {
+            evidence: signal.evidence,
+            confidence: signal.confidence,
+          });
+        });
+      } else if (content.statement !== undefined) {
+        appendResultCard(cards, "Problem statement", content.statement || payload.reason || "No statement was generated.");
+        appendResultCard(cards, "Evidence", content.evidence);
+      } else if (content.subject !== undefined || content.body !== undefined) {
+        appendResultCard(cards, "Email subject", content.subject);
+        appendResultCard(cards, "Unsent draft", content.body);
+        appendResultCard(cards, "Facts used", content.evidence_used);
+        if (content.sent === false) appendResultCard(cards, "Sending", "Not sent · saved for review only");
+      } else if (content.label !== undefined || content.reply_id !== undefined) {
+        appendResultCard(cards, "Reply label", content.label || "Not classified yet");
+        appendResultCard(cards, "Confidence", content.confidence);
+        appendResultCard(cards, "Reason", content.rationale);
+      } else {
+        const omitted = new Set(["result", "error", "reason", "status", "updated_at", "created_at", "model_name", "model", "temperature", "seed", "repeat_penalty", "prompt_hash", "commit_hash"]);
+        Object.entries(content).forEach(([key, item]) => {
+          if (!omitted.has(key)) appendResultCard(cards, humanLabel(key), item);
+        });
+      }
+
+      if (cards.childElementCount) output.append(cards);
+      if (payload.error || payload.reason) {
+        const errorCard = document.createElement("div");
+        errorCard.className = "result-error";
+        errorCard.textContent = friendlyWorkflowError(payload.error || payload.reason, status);
+        output.append(errorCard);
+      } else if (status === "queued" && !cards.childElementCount) {
+        const queued = document.createElement("p");
+        queued.textContent = "Task is queued for local Ollama processing.";
+        output.append(queued);
+      } else if (!cards.childElementCount) {
+        output.append(message);
+      }
+
+      const technical = document.createElement("details");
+      technical.className = "result-details";
+      const summary = document.createElement("summary");
+      summary.textContent = "Technical details";
+      const metadata = document.createElement("dl");
+      metadata.className = "technical-list";
+      const technicalFields = [
+        ["Model", payload.model_name || payload.model],
+        ["Seed", payload.seed],
+        ["Temperature", payload.temperature],
+        ["Prompt hash", payload.prompt_hash],
+        ["Commit hash", payload.commit_hash],
+      ];
+      technicalFields.forEach(([label, item]) => {
+        const row = document.createElement("div");
+        const term = document.createElement("dt");
+        term.textContent = label;
+        const description = document.createElement("dd");
+        description.textContent = item === null || item === undefined || item === "" ? "Not recorded" : String(item);
+        row.append(term, description);
+        metadata.append(row);
+      });
+      const raw = document.createElement("pre");
+      raw.textContent = JSON.stringify(payload, null, 2);
+      technical.append(summary, metadata, raw);
+      output.append(technical);
     }
 
     function productId() { return products.value; }
@@ -605,9 +825,8 @@
         }
         return result;
       } catch (error) {
-        const message = `Request failed: ${error.message}`;
-        output.textContent = message;
-        status.textContent = "Request failed";
+        const message = humanErrorMessage(error);
+        show({ status: "failed", error: message, updated_at: new Date().toISOString() });
         return null;
       } finally {
         if (ticker !== null) window.clearInterval(ticker);
