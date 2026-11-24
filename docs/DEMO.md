@@ -88,7 +88,22 @@ trigger event and disqualifier, and the failure was stored with its reason.
 Product IDs, prospect import counts, and queued-retry counts: not run.
 ```
 
-## 4. Inspect ranking, signals, and an unsent draft
+## 4. Run the product pipeline and inspect its saved progress
+
+For the one-click workflow (which regenerates profile and ICP, processes every
+currently imported prospect, and refreshes ranking), submit the product run and
+use the returned ID to poll progress:
+
+```bash
+PIPELINE_ID="$(curl -fsS -X POST "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/pipeline" \
+  | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+curl -fsS "http://127.0.0.1:8000/api/pipeline-runs/${PIPELINE_ID}"
+```
+
+The run and its profile, ICP, per-prospect signal/problem/draft, and ranking
+steps remain available after a browser reload. While Ollama is unavailable,
+queued work resumes through the local worker after recovery. The commands below
+remain useful when demonstrating individual steps instead of the full run.
 
 ```bash
 PROSPECT_ID="$(curl -fsS "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/prospects" \

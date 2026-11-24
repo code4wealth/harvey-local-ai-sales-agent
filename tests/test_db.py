@@ -332,3 +332,34 @@ def test_init_db_merges_casefold_duplicate_products_and_repoints_all_records(tmp
             )
     finally:
         conn.close()
+
+
+def test_init_db_migrates_pipeline_progress_columns_on_existing_tables(tmp_path):
+    conn = sqlite3.connect(tmp_path / "legacy-pipeline.db")
+    try:
+        conn.executescript(
+            "CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT NOT NULL);"
+            "CREATE TABLE prospects (id INTEGER PRIMARY KEY, product_id INTEGER NOT NULL);"
+            "CREATE TABLE pipeline_runs (id INTEGER PRIMARY KEY, product_id INTEGER NOT NULL, "
+            "status TEXT NOT NULL, started_at TEXT, finished_at TEXT, created_at TEXT NOT NULL);"
+            "CREATE TABLE pipeline_steps (id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL, "
+            "step_name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', last_error TEXT, "
+            "started_at TEXT, finished_at TEXT, UNIQUE(run_id, step_name));"
+            "INSERT INTO products VALUES (1, 'Legacy product');"
+            "INSERT INTO prospects VALUES (2, 1);"
+            "INSERT INTO pipeline_runs VALUES (3, 1, 'queued', NULL, NULL, 'then');"
+            "INSERT INTO pipeline_steps VALUES (4, 3, 'profile', 'queued', NULL, NULL, NULL);"
+        )
+
+        db.init_db(conn)
+
+        run_columns = {row[1] for row in conn.execute("PRAGMA table_info(pipeline_runs)")}
+        step_columns = {row[1] for row in conn.execute("PRAGMA table_info(pipeline_steps)")}
+        assert {"model_name", "queue_task_id"} <= run_columns
+        assert {"step_order", "prospect_id", "result_json"} <= step_columns
+        row = conn.execute(
+            "SELECT step_order, prospect_id, result_json FROM pipeline_steps WHERE id = 4"
+        ).fetchone()
+        assert tuple(row) == (0, None, "{}")
+    finally:
+        conn.close()

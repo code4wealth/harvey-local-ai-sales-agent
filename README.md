@@ -64,6 +64,15 @@ browser requests with a cross-origin `Origin` or `Sec-Fetch-Site: cross-site`
 header are rejected. Product company-info paths are confined to
 `data/company_info/`; CSV and prospect-page request bodies are size-limited.
 
+From the dashboard, choose a product and use **Run full product workflow** to
+queue profile and ICP generation, process each imported prospect's local page
+for signals, grounded problem statement and unsent draft, then refresh product
+ranking. The dashboard polls persisted per-step progress; the API equivalents
+are `POST /api/products/{id}/pipeline`, `GET /api/pipeline-runs/{run_id}`, and
+`GET /api/products/{id}/pipeline`. Import prospects and store their local page
+text before starting. If Ollama is unavailable, the run stays queued and resumes
+through the local worker when available. Individual steps remain available too.
+
 ## Useful commands
 
 ```bash

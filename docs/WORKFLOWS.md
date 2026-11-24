@@ -35,6 +35,34 @@ workflow milestones; prompt tuning and live results remain operator-owned.
   scores. If a required vector cannot be computed or loaded, similarity stays
   null and the result is partial.
 
+### Product-level pipeline
+
+- `POST /api/products/{product_id}/pipeline` snapshots the product's currently
+  imported prospects and queues one persistent, resumable local run. A second
+  POST while that product already has a queued/running pipeline returns the
+  active run rather than creating a duplicate. Newly imported prospects are
+  included in the next run, not added to an existing snapshot.
+- Steps run in order: business profile, ICP, then for each snapshotted prospect
+  local-page signal extraction, evidence-grounded problem statement, and
+  evidence-grounded unsent draft; product-specific ranking runs last. Page
+  text is read only from repository-local prospect files. This is not a scraper
+  and does not import CSVs or fetch the web.
+- The persistent `pipeline_runs` / `pipeline_steps` records include run status,
+  ordered per-prospect step status, timestamps, error/skip reason, and child
+  workflow run IDs. `GET /api/pipeline-runs/{run_id}` polls a run;
+  `GET /api/products/{product_id}/pipeline` reads the latest one. The dashboard
+  exposes a one-click run and saved step-by-step progress.
+- If Ollama becomes unavailable during inference, the in-progress child run and
+  pipeline step return to `queued`; the same product pipeline resumes at that
+  step after worker retry. Completed steps are not repeated. Other per-step
+  failures are persisted and do not prevent independent prospects from being
+  processed; dependent steps are marked skipped, ranking still runs when
+  possible, and the overall run is `failed` if any step failed. No verified
+  signal evidence skips problem-statement and draft model calls, while the
+  pipeline continues.
+- A pipeline is queued only when work is requested; no background research or
+  email sending is performed. Drafts remain local and unsent.
+
 ### Local embeddings
 
 - `app/embeddings.py` uses the

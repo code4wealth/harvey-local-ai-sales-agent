@@ -1,6 +1,6 @@
 """Local-only, product-scoped AI workflows."""
 
-from . import draft, icp, profile, problem_statement, replies, signals
+from . import draft, icp, pipeline, profile, problem_statement, replies, signals
 
 
 def register_workflow_handlers() -> None:
@@ -11,12 +11,14 @@ def register_workflow_handlers() -> None:
     replies.register_reply_handler()
     draft.register_draft_handler()
     problem_statement.register_problem_statement_handler()
+    pipeline.register_pipeline_handler()
 
 
 __all__ = [
     "draft",
     "icp",
     "profile",
+    "pipeline",
     "problem_statement",
     "replies",
     "signals",

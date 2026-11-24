@@ -86,7 +86,7 @@
     .workflow-map-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:13px}
     .workflow-map-title{margin:0;color:#627168;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
     .workflow-map-note{color:#68776d;font-size:11px}
-    .workflow-track{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:center;list-style:none;margin:0;padding:0}
+    .workflow-track{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:center;list-style:none;margin:0;padding:0}
     .workflow-track li{position:relative;min-width:0;display:flex;align-items:center;gap:7px;color:#33483a;font-size:11px;font-weight:650;white-space:nowrap}
     .workflow-track li:not(:last-child)::after{content:"";height:1px;flex:1;min-width:8px;margin:0 6px;background:#bdcbb7}
     .step-mark{width:23px;height:23px;flex:0 0 auto;display:grid;place-items:center;border-radius:8px;background:#edf2e5;color:#37543c;font-size:10px;font-weight:800}
@@ -172,7 +172,7 @@
     .result-head{align-items:center}
     .result-state{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid #d8dfd5;border-radius:99px;background:#f5f7f2;color:#526257;font-size:10px;font-weight:700}
     .result-state::before{content:"";width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:#a8b5a9}
-    .result-state[data-state="succeeded"]{border-color:#c2d4bb;background:#edf4e8;color:#2f6a3f}
+    .result-state[data-state="succeeded"],.result-state[data-state="done"]{border-color:#c2d4bb;background:#edf4e8;color:#2f6a3f}
     .result-state[data-state="failed"]{border-color:#e5c9c4;background:var(--red-soft);color:#8b342b}
     .result-state[data-state="queued"],.result-state[data-state="running"]{border-color:#e7d7b9;background:#fbf3e5;color:#795318}
     .result-state[data-waiting="true"]::before{width:10px;height:10px;border:2px solid #c4d2bd;border-top-color:#294b37;border-radius:50%;background:transparent;animation:spin .8s linear infinite}
@@ -184,6 +184,14 @@
     .result-badge[data-state="failed"]{border-color:#e5c9c4;background:var(--red-soft);color:#8b342b}
     .result-badge[data-state="queued"],.result-badge[data-state="running"]{border-color:#e7d7b9;background:#fbf3e5;color:#795318}
     .result-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+    .pipeline-progress{display:grid;gap:7px;max-height:520px;overflow:auto;margin:0;padding:0;list-style:none}
+    .pipeline-step{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:10px 12px;border:1px solid #dce3d9;border-radius:10px;background:#fbfcf8}
+    .pipeline-step strong{color:#334b3a;font-size:12px;font-weight:700}
+    .pipeline-step small{grid-column:1/-1;color:#66756b;font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+    .pipeline-step-status{align-self:start;padding:3px 7px;border-radius:99px;background:#eef1eb;color:#56655b;font-size:9px;font-weight:750;text-transform:uppercase}
+    .pipeline-step[data-state="done"] .pipeline-step-status{background:#edf4e8;color:#2f6a3f}
+    .pipeline-step[data-state="failed"] .pipeline-step-status{background:var(--red-soft);color:#8b342b}
+    .pipeline-step[data-state="queued"] .pipeline-step-status,.pipeline-step[data-state="running"] .pipeline-step-status{background:#fbf3e5;color:#795318}
     .result-card{min-width:0;padding:14px 15px;border:1px solid #dce3d9;border-radius:12px;background:#fbfcf8}
     .result-card h3{margin:0 0 7px;color:#334b3a;font-size:12px;font-weight:750;letter-spacing:.015em}
     .result-card p{margin:0;color:#35483b;font-size:13px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
@@ -305,7 +313,7 @@
           <div class="intro-copy">
             <p class="eyebrow">Harvey · Local sales workspace</p>
             <h1 id="page-title">Prospect workflows</h1>
-            <p class="intro-lede">Use stored product context to research prospects, verify signals and prepare unsent drafts.</p>
+            <p class="intro-lede">Run the full product workflow locally, from stored company context through explainable ranking and reviewed, unsent drafts.</p>
           </div>
           <div class="workflow-map" role="group" aria-label="Workflow sequence">
             <div class="workflow-map-top"><p class="workflow-map-title">Workflow sequence</p><span class="workflow-map-note">Stored context to reviewed outreach</span></div>
@@ -314,6 +322,7 @@
               <li><span class="step-mark">S</span><span>Signals</span></li>
               <li><span class="step-mark">PS</span><span>Problem</span></li>
               <li><span class="step-mark">D</span><span>Draft</span></li>
+              <li><span class="step-mark">R</span><span>Ranking</span></li>
             </ol>
           </div>
         </section>
@@ -343,12 +352,15 @@
                   <div class="product-count"><strong id="prospect-count">—</strong><span>prospects</span></div>
                 </div>
                 <div class="product-tools">
+                  <button class="button button-primary" id="run-pipeline" type="button" data-requires-product disabled>Run full product workflow</button>
+                  <button class="button button-outline" id="view-pipeline" type="button" data-requires-product disabled>View latest progress</button>
                   <button class="button button-outline" data-workflow="profile" type="button" disabled>Generate profile</button>
                   <button class="button button-outline" data-view-workflow="profile" type="button" disabled>View profile</button>
                   <button class="button button-outline" data-workflow="icp" type="button" disabled>Generate ICP</button>
                   <button class="button button-outline" data-view-workflow="icp" type="button" disabled>View ICP</button>
                   <button class="button button-outline" id="delete-product" type="button" data-requires-product disabled>Delete product</button>
                 </div>
+                <p class="helper-line">The full run uses this product’s imported prospects and local page text. It may take time on a laptop model; progress is saved per step.</p>
                 <details class="create-product">
                   <summary>Create a product</summary>
                   <form id="product-form" class="create-grid">
@@ -522,6 +534,42 @@
       container.append(card);
     }
 
+    function appendPipelineProgress(container, payload) {
+      const steps = Array.isArray(payload.steps) ? payload.steps : [];
+      const counts = payload.step_counts || {};
+      const finished = (counts.done || 0) + (counts.failed || 0) + (counts.skipped || 0);
+      const pending = (counts.queued || 0) + (counts.running || 0);
+      appendResultCard(container, "Pipeline progress", `${finished} of ${steps.length} steps finished · ${counts.done || 0} complete · ${counts.failed || 0} failed · ${counts.skipped || 0} skipped · ${pending} pending`);
+      const list = document.createElement("ol");
+      list.className = "pipeline-progress";
+      list.setAttribute("aria-label", "Product workflow step progress");
+      steps.forEach(step => {
+        const item = document.createElement("li");
+        item.className = "pipeline-step";
+        item.dataset.state = step.status || "queued";
+        const title = document.createElement("strong");
+        title.textContent = step.label || humanLabel(step.step_name || "workflow step");
+        const badge = document.createElement("span");
+        badge.className = "pipeline-step-status";
+        badge.textContent = statusLabel(step.status || "queued");
+        const detail = document.createElement("small");
+        const result = step.result && typeof step.result === "object" ? step.result : {};
+        const notes = [];
+        if (step.error) notes.push(friendlyWorkflowError(step.error, step.status));
+        else if (result.reason) notes.push(String(result.reason));
+        if (result.signal_count !== undefined) notes.push(`${result.signal_count} verified signal${result.signal_count === 1 ? "" : "s"}`);
+        if (result.prospect_count !== undefined) notes.push(`${result.scored_count || 0} scored of ${result.prospect_count} prospects · ICP ${result.icp_status || "unknown"}`);
+        if (result.workflow_run_id) notes.push(`Workflow run ${result.workflow_run_id}`);
+        if (result.signal_run_id) notes.push(`Signal run ${result.signal_run_id}`);
+        if (result.problem_statement_id) notes.push(`Problem statement ${result.problem_statement_id}`);
+        if (result.draft_run_id) notes.push(`Draft ${result.draft_run_id}`);
+        detail.textContent = notes.join(" · ") || (step.status === "running" ? "Running locally…" : "Waiting for this step.");
+        item.append(title, badge, detail);
+        list.append(item);
+      });
+      container.append(list);
+    }
+
     function friendlyWorkflowError(error, status) {
       const message = String(error || "").trim();
       const lower = message.toLowerCase();
@@ -587,7 +635,9 @@
       cards.className = "result-cards";
       const workflow = String(payload.workflow || "").toLowerCase();
 
-      if (workflow === "profile" || (content.summary && content.value_proposition)) {
+      if (payload.pipeline === true && Array.isArray(payload.steps)) {
+        appendPipelineProgress(cards, payload);
+      } else if (workflow === "profile" || (content.summary && content.value_proposition)) {
         Object.entries(content).forEach(([key, item]) => appendResultCard(cards, humanLabel(key), item));
       } else if (workflow === "icp" || (content.industries && content.buyer_titles)) {
         Object.entries(content).forEach(([key, item]) => appendResultCard(cards, humanLabel(key), item));
@@ -773,6 +823,10 @@
       return run && ["queued", "running"].includes(run.status);
     }
 
+    function pendingPipeline(run) {
+      return run && run.pipeline === true && ["queued", "running"].includes(run.status);
+    }
+
     function setWaitingStatus(label, startedAt) {
       const seconds = Math.floor((Date.now() - startedAt) / 1000);
       const status = $("result-status");
@@ -830,6 +884,45 @@
         return null;
       } finally {
         if (ticker !== null) window.clearInterval(ticker);
+        clearWaitingStatus();
+      }
+    }
+
+    async function pollPipelineRun(initial, startedAt) {
+      let current = initial;
+      while (pendingPipeline(current)) {
+        const counts = current.step_counts || {};
+        const finished = (counts.done || 0) + (counts.failed || 0) + (counts.skipped || 0);
+        setWaitingStatus(`Product pipeline · ${finished}/${(current.steps || []).length} steps`, startedAt);
+        if (Date.now() - startedAt >= WORKFLOW_MAX_WAIT_MS) {
+          show(current);
+          $("result-status").textContent = `Still ${current.status} · run continues on the local server`;
+          clearWaitingStatus();
+          return current;
+        }
+        await delay(WORKFLOW_POLL_INTERVAL_MS);
+        current = await api(`/api/pipeline-runs/${current.id}`);
+        show(current);
+      }
+      clearWaitingStatus();
+      return current;
+    }
+
+    async function runPipeline(product, viewLatest = false) {
+      if (!product) return null;
+      const startedAt = Date.now();
+      $("result-status").dataset.waiting = "true";
+      $("result-status").textContent = viewLatest ? "Loading saved pipeline progress" : "Queueing full product workflow";
+      try {
+        const result = viewLatest
+          ? await api(`/api/products/${product}/pipeline`)
+          : await api(`/api/products/${product}/pipeline`, { method: "POST" });
+        show(result);
+        return pendingPipeline(result) ? await pollPipelineRun(result, startedAt) : result;
+      } catch (error) {
+        show({ status: "failed", error: humanErrorMessage(error), updated_at: new Date().toISOString() });
+        return null;
+      } finally {
         clearWaitingStatus();
       }
     }
@@ -938,6 +1031,8 @@
       output.textContent = `Load failed: ${error.message}`;
       $("result-status").textContent = "Load failed";
     });
+    $("run-pipeline").onclick = () => runPipeline(productId());
+    $("view-pipeline").onclick = () => runPipeline(productId(), true);
     document.querySelectorAll("[data-workflow]").forEach(button => button.onclick = () => {
       if (!productId()) return;
       run(`/api/products/${productId()}/${button.dataset.workflow}`, "POST");

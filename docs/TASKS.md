@@ -17,9 +17,9 @@ retained as context. See `docs/WORKFLOWS.md` for detailed data contracts.
   the `RESULT: fill after live run` placeholders. No live run is claimed.
 - [ ] Optionally run held-out evaluation only after reviewing/freezing the
   prompt; this roadmap has not performed held-out evaluation.
-- [ ] Problem-statement generation, full pipeline orchestration, and a polished
-  product UI remain outside the completed workflow slice; a small static API
-  dashboard is available at `/`.
+- [x] Evidence-grounded problem statements and a persistent product-level
+  pipeline now run from the dashboard with per-step progress; the static local
+  dashboard remains available at `/`.
 
 ## Phase 0 — Recon and setup
 
@@ -79,5 +79,5 @@ retained as context. See `docs/WORKFLOWS.md` for detailed data contracts.
 - [x] Add a reply evaluator with redacted reports, prompt freezing, and a held-out gate.
 - [ ] Run full live Ollama demos and record actual results; do not substitute mocked results.
 - [ ] Run the network-isolation and Ollama-stop/drain demonstrations on the target machine.
-- [ ] Problem-statement generation and full pipeline orchestration remain unimplemented.
+- [x] Problem-statement generation and full pipeline orchestration are implemented with persistent per-step status, retry, and resume behavior.
 - [ ] Review model/dependency licence metadata and complete release checklist before release.

@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from app import batch, db, hardware, llm_client, local_paths, prospects
 from app.queue_worker import QueueWorker
 from app.workflows import icp as icp_workflow
+from app.workflows import pipeline as pipeline_workflow
 from app.workflows import profile as profile_workflow
 from app.workflows import ranking as ranking_workflow
 from app.workflows import replies as reply_workflow
@@ -310,6 +311,38 @@ def _get_workflow(product_id: int, workflow: str) -> dict:
         return workflow_common.workflow_run_payload(row)
     finally:
         conn.close()
+
+
+@app.post("/api/products/{product_id}/pipeline", tags=["workflows"])
+def api_start_product_pipeline(product_id: int, model: str | None = None) -> JSONResponse:
+    try:
+        payload = pipeline_workflow.submit_pipeline(product_id, model=model)
+    except pipeline_workflow.PipelineProductNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except pipeline_workflow.PipelineQueueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    worker = getattr(app.state, "queue_worker", None)
+    if worker is not None:
+        worker.wake()
+    return JSONResponse(status_code=202, content=payload)
+
+
+@app.get("/api/pipeline-runs/{run_id}", tags=["workflows"])
+def api_get_pipeline_run(run_id: int) -> dict:
+    try:
+        return pipeline_workflow.read_pipeline_run_payload(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="pipeline run not found") from exc
+
+
+@app.get("/api/products/{product_id}/pipeline", tags=["workflows"])
+def api_get_product_pipeline(product_id: int) -> dict:
+    try:
+        return pipeline_workflow.latest_pipeline_payload(product_id)
+    except pipeline_workflow.PipelineProductNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/api/products/{product_id}/profile", tags=["workflows"])

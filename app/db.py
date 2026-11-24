@@ -231,6 +231,8 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     status      TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'done', 'failed')),
+    model_name  TEXT,
+    queue_task_id INTEGER,
     started_at  TEXT,
     finished_at TEXT,
     created_at  TEXT NOT NULL
@@ -241,8 +243,11 @@ CREATE TABLE IF NOT EXISTS pipeline_steps (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id      INTEGER NOT NULL REFERENCES pipeline_runs(id) ON DELETE CASCADE,
     step_name   TEXT NOT NULL,
+    step_order  INTEGER NOT NULL DEFAULT 0,
+    prospect_id INTEGER REFERENCES prospects(id) ON DELETE SET NULL,
     status      TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'done', 'failed', 'skipped')),
     last_error  TEXT,
+    result_json TEXT NOT NULL DEFAULT '{}',
     started_at  TEXT,
     finished_at TEXT,
     UNIQUE (run_id, step_name)
@@ -441,6 +446,25 @@ def merge_duplicate_products(conn: sqlite3.Connection) -> int:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    pipeline_run_columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(pipeline_runs)")
+    }
+    for column, definition in {
+        "model_name": "TEXT",
+        "queue_task_id": "INTEGER",
+    }.items():
+        if column not in pipeline_run_columns:
+            conn.execute(f"ALTER TABLE pipeline_runs ADD COLUMN {column} {definition}")
+    pipeline_step_columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(pipeline_steps)")
+    }
+    for column, definition in {
+        "step_order": "INTEGER NOT NULL DEFAULT 0",
+        "prospect_id": "INTEGER REFERENCES prospects(id) ON DELETE SET NULL",
+        "result_json": "TEXT NOT NULL DEFAULT '{}'",
+    }.items():
+        if column not in pipeline_step_columns:
+            conn.execute(f"ALTER TABLE pipeline_steps ADD COLUMN {column} {definition}")
     for table in ("business_profiles", "icps"):
         columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         if "model_name" not in columns:
@@ -832,6 +856,133 @@ def get_product(conn: sqlite3.Connection, product_id: int) -> sqlite3.Row | None
 
 def list_products(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return list(conn.execute("SELECT * FROM products ORDER BY id").fetchall())
+
+
+def create_pipeline_run(
+    conn: sqlite3.Connection,
+    *,
+    product_id: int,
+    model_name: str | None,
+    steps: list[dict[str, Any]],
+) -> int:
+    """Persist one product pipeline and its ordered, prospect-scoped steps."""
+    if get_product(conn, product_id) is None:
+        raise LookupError(f"product {product_id} not found")
+    now = utcnow()
+    cur = conn.execute(
+        "INSERT INTO pipeline_runs (product_id, status, model_name, created_at) "
+        "VALUES (?, 'queued', ?, ?)",
+        (int(product_id), model_name, now),
+    )
+    run_id = int(cur.lastrowid)
+    for index, step in enumerate(steps):
+        step_name = str(step.get("step_name", "")).strip()
+        if not step_name:
+            raise ValueError("pipeline step_name must not be empty")
+        prospect_id = step.get("prospect_id")
+        if prospect_id is not None:
+            prospect = get_prospect(conn, int(prospect_id))
+            if prospect is None or int(prospect["product_id"]) != int(product_id):
+                raise ValueError("pipeline step prospect does not belong to the product")
+        conn.execute(
+            "INSERT INTO pipeline_steps (run_id, step_name, step_order, prospect_id, status) "
+            "VALUES (?, ?, ?, ?, 'queued')",
+            (run_id, step_name, int(step.get("step_order", index)), prospect_id),
+        )
+    conn.commit()
+    return run_id
+
+
+def update_pipeline_run(
+    conn: sqlite3.Connection,
+    run_id: int,
+    *,
+    status: str,
+    model_name: str | None = None,
+    queue_task_id: int | None = None,
+) -> None:
+    if status not in {"queued", "running", "done", "failed"}:
+        raise ValueError(f"invalid pipeline status: {status!r}")
+    now = utcnow()
+    cur = conn.execute(
+        "UPDATE pipeline_runs SET status = ?, model_name = COALESCE(?, model_name), "
+        "queue_task_id = COALESCE(?, queue_task_id), "
+        "started_at = CASE WHEN ? = 'running' THEN COALESCE(started_at, ?) ELSE started_at END, "
+        "finished_at = CASE WHEN ? IN ('done', 'failed') THEN ? ELSE NULL END "
+        "WHERE id = ?",
+        (
+            status,
+            model_name,
+            int(queue_task_id) if queue_task_id is not None else None,
+            status,
+            now,
+            status,
+            now,
+            int(run_id),
+        ),
+    )
+    if cur.rowcount != 1:
+        raise ValueError(f"pipeline run {run_id} not found")
+    conn.commit()
+
+
+def update_pipeline_step(
+    conn: sqlite3.Connection,
+    step_id: int,
+    *,
+    status: str,
+    last_error: str | None = None,
+    result: dict[str, Any] | None = None,
+) -> None:
+    if status not in {"queued", "running", "done", "failed", "skipped"}:
+        raise ValueError(f"invalid pipeline step status: {status!r}")
+    result_json = (
+        json.dumps(result, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        if result is not None
+        else None
+    )
+    now = utcnow()
+    cur = conn.execute(
+        "UPDATE pipeline_steps SET status = ?, last_error = ?, "
+        "result_json = COALESCE(?, result_json), "
+        "started_at = CASE WHEN ? = 'running' THEN COALESCE(started_at, ?) ELSE started_at END, "
+        "finished_at = CASE WHEN ? IN ('done', 'failed', 'skipped') THEN ? ELSE NULL END "
+        "WHERE id = ?",
+        (status, last_error, result_json, status, now, status, now, int(step_id)),
+    )
+    if cur.rowcount != 1:
+        raise ValueError(f"pipeline step {step_id} not found")
+    conn.commit()
+
+
+def get_pipeline_run(conn: sqlite3.Connection, run_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM pipeline_runs WHERE id = ?", (int(run_id),)).fetchone()
+
+
+def latest_pipeline_run(conn: sqlite3.Connection, product_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM pipeline_runs WHERE product_id = ? ORDER BY id DESC LIMIT 1",
+        (int(product_id),),
+    ).fetchone()
+
+
+def list_pipeline_steps(conn: sqlite3.Connection, run_id: int) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            "SELECT pipeline_steps.*, prospects.company_name AS prospect_name "
+            "FROM pipeline_steps LEFT JOIN prospects ON prospects.id = pipeline_steps.prospect_id "
+            "WHERE pipeline_steps.run_id = ? "
+            "ORDER BY pipeline_steps.step_order, pipeline_steps.id",
+            (int(run_id),),
+        ).fetchall()
+    )
+
+
+def get_pipeline_step(conn: sqlite3.Connection, run_id: int, step_name: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM pipeline_steps WHERE run_id = ? AND step_name = ?",
+        (int(run_id), str(step_name)),
+    ).fetchone()
 
 
 def create_workflow_run(
