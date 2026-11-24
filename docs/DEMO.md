@@ -13,13 +13,19 @@ From the repository root (Python 3.11+ and Ollama must already be installed):
 python -m venv .venv
 . .venv/bin/activate
 pip install -e '.[dev]'
-ollama pull qwen3:4b
 ```
 
 In terminal 1, start Ollama if the desktop/service is not already running:
 
 ```bash
 ollama serve
+```
+
+In terminal 2, from the repository root, pull the model:
+
+```bash
+. .venv/bin/activate
+ollama pull qwen3:4b
 ```
 
 ```text
