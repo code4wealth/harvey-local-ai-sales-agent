@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import re
-import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -52,7 +51,7 @@ LEGACY_PROFILE_DEFAULTS: dict[str, Any] = {
 }
 
 PROFILE_EXAMPLE = {
-    "summary": "A bakery prepares seasonal pastries for neighborhood markets.",
+    "summary": "A neighborhood food business prepares seasonal pastries for local markets.",
     "value_proposition": "Offers made-to-order cakes for community events.",
     "key_features": ["seasonal menu", "pre-order pickup"],
     "pain_points_solved": ["not stated"],
@@ -102,7 +101,9 @@ def _word_coverage(claim: str, source_words: set[str]) -> float:
 def validate_profile_grounding(
     profile: BusinessProfile, document: str, product_name: str
 ) -> None:
-    """Reject unsupported claims and summaries without the exact stored product name."""
+    """Reject unsupported claims and summaries containing the stored product name
+    or a near-variant.
+    """
     if not isinstance(profile, BusinessProfile):
         raise TypeError("profile grounding requires a BusinessProfile")
     if not isinstance(product_name, str) or not product_name:
@@ -121,25 +122,34 @@ def validate_profile_grounding(
             validation_details.append(
                 {"field": field_path, "check": check, "value": matched_text}
             )
-    name_suffix = (
-        profile.summary[len(product_name) : len(product_name) + 1]
-        if profile.summary.startswith(product_name)
-        else ""
+    exact_name_matches = list(
+        re.finditer(re.escape(product_name), profile.summary, flags=re.IGNORECASE)
     )
-    if not name_suffix or not (
-        name_suffix == " " or unicodedata.category(name_suffix).startswith("P")
-    ):
-        issues.append(
-            f"summary must start with the exact product name {product_name!r} "
-            "followed by a space or punctuation"
-        )
+    for match in exact_name_matches:
+        check = "must not contain the product name; display name comes from the products table"
+        issues.append(f"summary {check}")
         validation_details.append(
-            {
-                "field": "summary",
-                "check": f"must start with exact product name {product_name!r} followed by a space or punctuation",
-                "value": profile.summary,
-            }
+            {"field": "summary", "check": check, "value": match.group(0)}
         )
+
+    name_prefixes = [
+        product_name[:length]
+        for length in range(len(product_name) - 1, 3, -1)
+    ]
+    if name_prefixes:
+        prefix_pattern = re.compile(
+            "(?:" + "|".join(re.escape(prefix) for prefix in name_prefixes) + "):",
+            flags=re.IGNORECASE,
+        )
+        for match in prefix_pattern.finditer(profile.summary):
+            check = (
+                "must not contain a case-insensitive prefix of at least four characters "
+                "of the product name followed by a colon"
+            )
+            issues.append(f"summary {check}")
+            validation_details.append(
+                {"field": "summary", "check": check, "value": match.group(0)}
+            )
     fields = (
         "summary",
         "value_proposition",
@@ -162,10 +172,7 @@ def validate_profile_grounding(
         for index, statement in enumerate(statements):
             if _is_not_stated(statement):
                 continue
-            support_words = source_words | (
-                _content_words(product_name) if field_name == "summary" else set()
-            )
-            coverage = _word_coverage(statement, support_words)
+            coverage = _word_coverage(statement, source_words)
             if coverage < threshold:
                 location = f"{field_name}[{index}]" if isinstance(value, list) else field_name
                 issues.append(
@@ -199,17 +206,22 @@ def validate_stored_profile(value: Any) -> BusinessProfile:
     return BusinessProfile.model_validate(compatible)
 
 
-def build_profile_prompt(document: str) -> str:
+def build_profile_prompt(document: str, product_name: str) -> str:
     example = json.dumps(PROFILE_EXAMPLE, ensure_ascii=False, separators=(",", ":"))
     return (
         "Create a business profile using only facts stated in the company-info document. "
         "Do not infer or add outside facts. Return every field in the schema. For unsupported "
         "text fields, write \"not stated\"; for unsupported list fields, write [\"not stated\"]. "
+        f"For the summary, describe what the product is and does without using the product name "
+        f"{product_name!r}, for example, 'This workspace...' or 'A browser-based tool...'. "
+        "The summary must not contain the product name or a case-insensitive prefix of at least "
+        "four characters of that name followed by a colon. The display name always comes from "
+        "the products table, never from model output. "
         "Include pain_points_solved only when the source states a problem or need. For each "
         "pain-point item, at least 80 percent of its distinct content words must also occur in "
         "the source text. Do not convert features or general benefits into an unstated pain. "
         "Return only JSON matching the schema.\n"
-        f"Example JSON (fictional bakery; format only): {example}\n"
+        f"Example JSON (fictional food business; format only): {example}\n"
         f"Company-info document:\n{document[:MAX_DOCUMENT_CHARS]}"
     )
 
@@ -244,7 +256,7 @@ def execute_profile_run(product_id: int, run_id: int, model_name: str) -> Busine
     common.update_run(run_id, status="running", model_name=model_name)
     product_name, document = _profile_inputs(product_id)
     generated = llm_client.generate_json(
-        build_profile_prompt(document),
+        build_profile_prompt(document, product_name),
         BusinessProfile,
         model=model_name,
         task=f"profile:{run_id}",
@@ -252,9 +264,6 @@ def execute_profile_run(product_id: int, run_id: int, model_name: str) -> Busine
         num_ctx=NUM_CTX,
         post_validate=lambda result: validate_profile_grounding(
             result, document, product_name
-        ),
-        retry_instruction=(
-            f"The summary must start with the exact product name {product_name}."
         ),
     )
     if not isinstance(generated, BusinessProfile):

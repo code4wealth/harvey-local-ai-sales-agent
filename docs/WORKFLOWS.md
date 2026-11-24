@@ -170,8 +170,9 @@ Implemented:
    General claims need 60% normalized content-word overlap with the source;
    each pain-point item needs 80%. Missing fields on previously saved profiles
    are supplied as `not stated` for ICP generation without rewriting the
-   stored profile. The exact stored product name is required at the beginning
-   of the summary.
+   stored profile. The summary must omit the stored product name and any
+   case-insensitive prefix of four or more characters of that name followed by
+   a colon; the display name always comes from the products table, not the model.
 2. **ICP:** uses the stored profile's buyer, team-size, working-situation,
    pain-point, and `not_for` fields. Every list item is grounded in its
    field-specific profile support; unsupported lists may be empty or contain

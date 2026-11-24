@@ -24,6 +24,10 @@ PROFILE_BAKERY = {
     "working_situation": "Owners plan seasonal menus and may open a second retail storefront as the bakery grows.",
     "not_for": ["businesses without a retail shop"],
 }
+PROFILE_BAKERY_NO_NAME = {
+    **PROFILE_BAKERY,
+    "summary": "A neighborhood pastry shop sells seasonal pastries.",
+}
 PROFILE_PLANETARIUM = {
     "summary": "Planetarium: A planetarium runs public astronomy and science education programs.",
     "value_proposition": "Provides scheduled educational shows.",
@@ -34,6 +38,10 @@ PROFILE_PLANETARIUM = {
     "typical_team_size": "not stated",
     "working_situation": "Staff coordinate public astronomy programs and may replace the projector system before the winter season.",
     "not_for": ["organizations without public programming"],
+}
+PROFILE_PLANETARIUM_NO_NAME = {
+    **PROFILE_PLANETARIUM,
+    "summary": "A public venue runs astronomy and science education programs.",
 }
 BAKERY_DOC = (
     "SAMPLE profile facts for an unrelated bakery. A neighborhood bakery sells seasonal pastries "
@@ -125,7 +133,7 @@ def _profile_json(value: dict) -> str:
 
 def test_prompt_inputs_are_trimmed_to_3000_characters():
     long_document = "D" * 3000 + "TRUNCATED-TAIL"
-    profile_prompt = profile.build_profile_prompt(long_document)
+    profile_prompt = profile.build_profile_prompt(long_document, "RelayCue")
     icp_prompt = icp.build_icp_prompt(long_document)
     assert "TRUNCATED-TAIL" not in profile_prompt
     assert "TRUNCATED-TAIL" not in icp_prompt
@@ -144,7 +152,7 @@ def test_profile_api_uses_json_schema_cleans_reply_and_persists_model(db_path, m
         payload = json.loads(request.content)
         seen.append(payload)
         assert request.url.path == "/api/chat"
-        return _chat_response(f"```json\n{_profile_json(PROFILE_BAKERY)}\n```")
+        return _chat_response(f"```json\n{_profile_json(PROFILE_BAKERY_NO_NAME)}\n```")
 
     _use_mock_transport(monkeypatch, handler)
     response = _post(f"/api/products/{product_id}/profile")
@@ -152,8 +160,8 @@ def test_profile_api_uses_json_schema_cleans_reply_and_persists_model(db_path, m
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "succeeded"
-    assert body["result"] == PROFILE_BAKERY
-    assert body["result"]["summary"].startswith("Bakery: ")
+    assert body["result"] == PROFILE_BAKERY_NO_NAME
+    assert "bakery" not in body["result"]["summary"].casefold()
     assert body["model_name"] == "sample-test-model"
     assert body["temperature"] == 0.0
     assert body["seed"] == 42
@@ -178,7 +186,7 @@ def test_profile_api_uses_json_schema_cleans_reply_and_persists_model(db_path, m
             "SELECT product_id, profile_json, model_name, created_at FROM business_profiles"
         ).fetchone()
         assert saved["product_id"] == product_id
-        assert json.loads(saved["profile_json"]) == PROFILE_BAKERY
+        assert json.loads(saved["profile_json"]) == PROFILE_BAKERY_NO_NAME
         assert saved["model_name"] == "sample-test-model"
         assert saved["created_at"]
     finally:
@@ -189,14 +197,33 @@ def test_profile_api_uses_json_schema_cleans_reply_and_persists_model(db_path, m
     assert get_response.json() == body
 
 
+def test_profile_accepts_grounded_summary_with_a_legitimate_colon(
+    db_path, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("DEFAULT_MODEL", "profile-colon-model")
+    company_info = tmp_path / "colon-summary.md"
+    company_info.write_text(BAKERY_DOC, encoding="utf-8")
+    product_id = _create_product("Bakery", company_info)
+    colon_profile = dict(PROFILE_BAKERY_NO_NAME)
+    colon_profile["summary"] = "A neighborhood pastry shop: sells seasonal pastries."
+
+    _use_mock_transport(
+        monkeypatch, lambda _request: _chat_response(_profile_json(colon_profile))
+    )
+    response = _post(f"/api/products/{product_id}/profile")
+
+    assert response.status_code == 200
+    assert response.json()["result"]["summary"] == colon_profile["summary"]
+
+
 def test_profile_grounding_failure_retries_with_feedback_before_persisting(db_path, monkeypatch, tmp_path):
     monkeypatch.setenv("DEFAULT_MODEL", "profile-grounding-model")
     company_info = tmp_path / "grounded.md"
     company_info.write_text(BAKERY_DOC, encoding="utf-8")
     product_id = _create_product("Bakery", company_info)
-    hallucinated = dict(PROFILE_BAKERY)
+    hallucinated = dict(PROFILE_BAKERY_NO_NAME)
     hallucinated["summary"] = "A nationwide cloud accounting platform guarantees savings."
-    replies = iter([_profile_json(hallucinated), _profile_json(PROFILE_BAKERY)])
+    replies = iter([_profile_json(hallucinated), _profile_json(PROFILE_BAKERY_NO_NAME)])
     prompts = []
 
     def handler(request):
@@ -207,27 +234,44 @@ def test_profile_grounding_failure_retries_with_feedback_before_persisting(db_pa
     response = _post(f"/api/products/{product_id}/profile")
 
     assert response.status_code == 200
-    assert response.json()["result"] == PROFILE_BAKERY
+    assert response.json()["result"] == PROFILE_BAKERY_NO_NAME
     assert len(prompts) == 2
     assert "Your previous answer was invalid:" in prompts[1]
     assert "profile grounding failed" in prompts[1]
     conn = db.connect()
     try:
         saved = conn.execute("SELECT profile_json FROM business_profiles").fetchone()
-        assert json.loads(saved["profile_json"]) == PROFILE_BAKERY
+        assert json.loads(saved["profile_json"]) == PROFILE_BAKERY_NO_NAME
         statuses = [row["status"] for row in conn.execute("SELECT status FROM inference_log ORDER BY id")]
         assert statuses == ["error:invalid_json", "ok"]
     finally:
         conn.close()
 
 
-def test_profile_rejects_mangled_product_name_on_all_retries(db_path, monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("summary", "expected_check", "offending_text"),
+    [
+        (
+            "RelayC: A browser-based workspace...",
+            "case-insensitive prefix of at least four characters",
+            "RelayC:",
+        ),
+        (
+            "RelayCue is a browser-based workspace.",
+            "must not contain the product name",
+            "RelayCue",
+        ),
+    ],
+)
+def test_profile_rejects_product_name_or_near_variant_on_all_retries(
+    db_path, monkeypatch, tmp_path, summary, expected_check, offending_text
+):
     monkeypatch.setenv("DEFAULT_MODEL", "product-name-check-model")
     company_info = tmp_path / "relaycue.md"
     company_info.write_text("RelayCue is a browser-based workspace.", encoding="utf-8")
     product_id = _create_product("RelayCue", company_info)
-    mangled_profile = {
-        "summary": "RelayC: A browser-based workspace...",
+    invalid_profile = {
+        "summary": summary,
         "value_proposition": "not stated",
         "key_features": ["not stated"],
         "pain_points_solved": ["not stated"],
@@ -238,7 +282,6 @@ def test_profile_rejects_mangled_product_name_on_all_retries(db_path, monkeypatc
         "not_for": ["not stated"],
     }
     prompts = []
-    model_outputs = []
     options_sent = []
     calls = 0
 
@@ -248,9 +291,7 @@ def test_profile_rejects_mangled_product_name_on_all_retries(db_path, monkeypatc
         payload = json.loads(request.content)
         prompts.append(payload["messages"][-1]["content"])
         options_sent.append(payload["options"])
-        output = _profile_json(mangled_profile)
-        model_outputs.append(output)
-        return _chat_response(output)
+        return _chat_response(_profile_json(invalid_profile))
 
     _use_mock_transport(monkeypatch, handler)
     response = _post(f"/api/products/{product_id}/profile")
@@ -260,16 +301,14 @@ def test_profile_rejects_mangled_product_name_on_all_retries(db_path, monkeypatc
     assert [options["seed"] for options in options_sent] == [42, 43, 44]
     assert [options["temperature"] for options in options_sent] == [0.0, 0.2, 0.2]
     assert all(options["repeat_penalty"] == 1.0 for options in options_sent)
-    assert json.loads(model_outputs[0])["summary"] == "RelayC: A browser-based workspace..."
-    assert "The summary must start with the exact product name RelayCue." not in prompts[0]
-    assert "The summary must start with the exact product name RelayCue." in prompts[1]
-    assert "The summary must start with the exact product name RelayCue." in prompts[2]
+    assert "without using the product name" in prompts[0]
+    assert "must not contain the product name" in prompts[1]
     body = response.json()
     assert body["status"] == "failed"
     assert body["result"] is None
     assert "InvalidJsonResponse" in body["error"]
-    assert "summary must start with the exact product name" in body["error"]
-    assert 'value="RelayC: A browser-based workspace..."' in body["error"]
+    assert expected_check in body["error"]
+    assert f'value="{offending_text}"' in body["error"]
     conn = db.connect()
     try:
         assert conn.execute("SELECT COUNT(*) FROM business_profiles").fetchone()[0] == 0
@@ -278,9 +317,8 @@ def test_profile_rejects_mangled_product_name_on_all_retries(db_path, monkeypatc
         ).fetchone()
         assert run["status"] == "failed"
         assert run["result_json"] is None
-        assert "InvalidJsonResponse" in run["error"]
-        assert "summary must start with the exact product name" in run["error"]
-        assert 'value="RelayC: A browser-based workspace..."' in run["error"]
+        assert expected_check in run["error"]
+        assert f'value="{offending_text}"' in run["error"]
         assert run["temperature"] == 0.0
         assert run["seed"] == 42
         assert run["repeat_penalty"] == 1.0
@@ -303,7 +341,7 @@ def test_profile_rejects_ungrounded_stray_token_and_persists_failure(
     company_info = tmp_path / "stray-token.md"
     company_info.write_text(BAKERY_DOC, encoding="utf-8")
     product_id = _create_product("Bakery", company_info)
-    invalid_profile = dict(PROFILE_BAKERY)
+    invalid_profile = dict(PROFILE_BAKERY_NO_NAME)
     invalid_profile["key_features"] = ["B2: B2B software", "pre-order pickup"]
     options_sent = []
     calls = 0
@@ -352,7 +390,7 @@ def test_workflow_retries_invalid_json_and_validates_before_saving(db_path, monk
     product_id = _create_product("Bakery", company_info)
     prompts = []
     replies = iter(
-        ["not json", json.dumps({"summary": "required fields are missing"}), _profile_json(PROFILE_BAKERY)]
+        ["not json", json.dumps({"summary": "required fields are missing"}), _profile_json(PROFILE_BAKERY_NO_NAME)]
     )
 
     def handler(request):
@@ -364,7 +402,7 @@ def test_workflow_retries_invalid_json_and_validates_before_saving(db_path, monk
     response = _post(f"/api/products/{product_id}/profile")
 
     assert response.status_code == 200
-    assert response.json()["result"] == PROFILE_BAKERY
+    assert response.json()["result"] == PROFILE_BAKERY_NO_NAME
     assert len(prompts) == 3
     assert "Your previous answer was invalid:" in prompts[1]
     assert "matching the schema" in prompts[1]
@@ -415,7 +453,7 @@ def test_unavailable_ollama_queues_and_worker_replays_profile(
 
     def healthy(request):
         assert request.url.path == "/api/chat"
-        return _chat_response(_profile_json(PROFILE_BAKERY))
+        return _chat_response(_profile_json(PROFILE_BAKERY_NO_NAME))
 
     _use_mock_transport(monkeypatch, healthy)
     import app.queue_worker as queue_worker
@@ -443,7 +481,7 @@ def test_unavailable_ollama_queues_and_worker_replays_profile(
 
     completed = _get(f"/api/products/{product_id}/profile").json()
     assert completed["status"] == "succeeded"
-    assert completed["result"] == PROFILE_BAKERY
+    assert completed["result"] == PROFILE_BAKERY_NO_NAME
     conn = db.connect()
     try:
         task = db.get_task(conn, queued["queue_task_id"])
@@ -473,15 +511,15 @@ def test_profile_and_icp_are_separated_by_product_and_icp_reads_stored_profile_o
         prompt = payload["messages"][-1]["content"]
         if "Create a business profile" in prompt:
             if "BAKERY-DOC-ONLY" in prompt:
-                return _chat_response(_profile_json(PROFILE_BAKERY))
+                return _chat_response(_profile_json(PROFILE_BAKERY_NO_NAME))
             assert "PLANETARIUM-DOC-ONLY" in prompt
-            return _chat_response(_profile_json(PROFILE_PLANETARIUM))
+            return _chat_response(_profile_json(PROFILE_PLANETARIUM_NO_NAME))
         if "Create an ideal-customer profile" in prompt:
             assert "BAKERY-DOC-ONLY" not in prompt
             assert "PLANETARIUM-DOC-ONLY" not in prompt
-            if "neighborhood bakery" in prompt:
+            if "bakery owner" in prompt:
                 return _chat_response(json.dumps(ICP_BAKERY))
-            assert "planetarium runs public astronomy and science education programs" in prompt
+            assert "program director" in prompt
             return _chat_response(json.dumps(ICP_PLANETARIUM))
         raise AssertionError("unexpected workflow prompt")
 
@@ -771,7 +809,7 @@ def test_legacy_profile_remains_readable_and_is_not_rewritten(db_path, tmp_path)
 
 def test_stray_token_text_is_allowed_when_the_exact_match_is_in_its_source():
     source_phrase = "B2: B2B software"
-    profile_data = dict(PROFILE_BAKERY)
+    profile_data = dict(PROFILE_BAKERY_NO_NAME)
     profile_data["key_features"] = [source_phrase, "pre-order pickup"]
     profile.validate_profile_grounding(
         profile.BusinessProfile.model_validate(profile_data),
