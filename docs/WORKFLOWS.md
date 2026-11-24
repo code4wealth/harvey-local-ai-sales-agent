@@ -197,7 +197,18 @@ Implemented:
    persistent failure is returned and stored. With no verified signal,
    the workflow skips the model and persists `no verified evidence`. Drafts are
    local records only; no send API exists.
-6. **Scoring and ranking:** deterministic; see the formula above and the
+6. **Problem statement:** `POST` / `GET
+   /api/products/{product_id}/prospects/{prospect_id}/problem-statement`. It
+   uses the product's latest stored business profile and ICP plus this
+   prospect's valid signals from the latest successful signal run. It persists
+   those source IDs and up to two verbatim 4-to-15-word evidence spans. Every
+   span must occur in both the verified signal evidence and the one- or
+   two-sentence statement after case and whitespace normalization only.
+   Invalid model results retry twice; terminal failures are persisted, and
+   Ollama-unavailable runs are queued for worker retry. With no verified
+   evidence, it stores `skipped` / `no verified evidence` and does not resolve
+   or call a model. The dashboard can generate and view the latest result.
+7. **Scoring and ranking:** deterministic; see the formula above and the
    product-specific ranking contract.
 
 ## Offline evaluators

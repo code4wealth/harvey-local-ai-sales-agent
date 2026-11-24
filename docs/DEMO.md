@@ -96,6 +96,8 @@ curl -fsS -X POST "http://127.0.0.1:8000/api/prospects/${PROSPECT_ID}/signals"
 curl -fsS "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/ranking"
 curl -fsS -X POST "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/prospects/${PROSPECT_ID}/draft"
 curl -fsS "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/prospects/${PROSPECT_ID}/draft"
+curl -fsS -X POST "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/prospects/${PROSPECT_ID}/problem-statement"
+curl -fsS "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/prospects/${PROSPECT_ID}/problem-statement"
 ```
 
 Drafts are persisted locally with `sent=false` and are never sent. If there are
@@ -103,8 +105,13 @@ no valid signals, the draft status is `skipped` with reason `no verified evidenc
 no LLM call is made. The fixed workflow allows `1` or `2` evidence spans of `4`–`15`
 words each; each must be a substring of verified signal evidence and the body after
 case and whitespace normalization, with each span enclosed in double quotes in
-the body. Ranking reports an explicit missing-input status when no signal run
-exists.
+the body. Problem statements use the stored business profile and ICP plus this
+prospect's latest successful verified-signal run. Their one- or two-sentence
+statement must contain each of `1` or `2` verbatim `4`–`15`-word spans, and each
+span must also occur in the verified signal evidence, after case/whitespace
+normalization only. Without verified evidence, the result is `skipped` with
+`no verified evidence` and no model call is made. Ranking reports an explicit
+missing-input status when no signal run exists.
 
 ```text
 RESULT: Signals development (37 prospects; signal prompt hash prefix 73fa8d34...):
@@ -125,6 +132,13 @@ successful drafts (IDs 22, 28, 30, 32, 34, 35, 36), 12 skipped with `no verified
 evidence`, and 2 failed (IDs 25, 37) with stored reasons; all had `sent=false`.
 FieldNest drafts were not run. In the successful example for prospect 22, a
 four-word verified span was quoted in the body; status succeeded, sent false.
+```
+
+```text
+RESULT: Problem-statement POST/GET run on the target database, Ollama outage and
+retry demonstration, dashboard browser click-through, and dashboard screenshot
+(`docs/images/dashboard.png`): not run. The new offline-acceptance step is also
+not run; no target-machine result, IDs, statuses, or counts have been supplied.
 ```
 
 ## 5. Classify one sample reply and run the development evaluator
@@ -167,8 +181,9 @@ model demonstration and do not rerun either held-out evaluator.
 
 ```text
 RESULT: Historical release-pass verification — make verify passed (156 tests);
-git diff --check passed. Current verification — make verify passed (165 tests);
-git diff --check passed. These are mocked/source checks, not live-model proof.
+git diff --check passed. Current branch verification after the problem-statement
+workflow — make verify passed (172 tests); git diff --check passed. These are
+mocked/source checks, not live-model proof.
 ```
 
 ## Offline acceptance test
@@ -203,8 +218,10 @@ The script checks API/hardware/status fields and the dashboard route at `/`,
 resolves product IDs, runs profile and ICP workflows, extracts signals for up to
 three stored-page RelayCue
 prospects, checks deterministic rankings for both products, creates an unsent
-draft, classifies `R001`, and checks the reported Ollama host and established
-API-process peers. It prints `[PASS]` or `[FAIL]` per step and writes a
+draft and problem statements, classifies `R001`, and checks the reported Ollama
+host and established API-process peers. Problem-statement evidence reports at
+most three prospect IDs, workflow statuses, and counts only; it omits statement
+and evidence text. The script prints `[PASS]` or `[FAIL]` per step and writes a
 second-resolution timestamped `acceptance-*.json` evidence file. You can
 increase the signal sample with `-SignalLimit` or adjust the workflow wait with
 `-WaitSeconds`.
@@ -243,6 +260,7 @@ and Ollama-down outcomes remain `not run` until their evidence files exist.
 | Qwen3 licence metadata | reported by user — Apache License 2.0, January 2004. | From the supplied `ollama show qwen3:4b --license` output; see `docs/LICENSES.md`. |
 | `sentence-transformers` package metadata | reported by user — version `3.4.1`, Apache 2.0. | From the supplied `pip show sentence-transformers` output; see `docs/LICENSES.md`. |
 | Offline acceptance against the local database/API | not run — no files were present in `test_evidence/offline/`. | No timestamped acceptance result exists yet. |
+| Problem-statement target-machine acceptance step | not run. | The script is limited to at most three prospect IDs, statuses, and counts; it does not write statements or evidence text. |
 | Ollama-down / recovery acceptance | not run until evidence files exist. | Do not treat mocked queue tests or the supplied status snapshot as a live outage test. |
 | User's internet-off test | not run until evidence files exist. | Keep its result separate from these local-only scripts. |
 

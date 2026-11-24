@@ -37,9 +37,12 @@ version or licence has been inferred.
 | `scrapy` | not run — not installed or declared | not run — not a project dependency | Not used by the current application. |
 | `playwright` | not run — not installed or declared | not run — not a project dependency | Not used by the current application. |
 
-The declared runtime and development dependencies are listed in
-`pyproject.toml` and `requirements.txt`. The `sentence-transformers` version
-and licence above are user-supplied `pip show` facts; exact resolved versions
-and licences for its transitive packages remain `not run`. Scrapy and
-Playwright are not declared by this repository. This project is an
+The problem-statement workflow adds no package or model distribution; it uses
+the existing local Ollama client and the selected locally installed model. The
+`sentence-transformers` package version and licence above are user-supplied
+`pip show` facts and do not establish the separate licence field on the
+`sentence-transformers/all-MiniLM-L6-v2` model card. That model-card check remains
+`not run`; no model licence is recorded as verified. Exact resolved versions
+and licences for embedding transitive packages also remain `not run`. Scrapy
+and Playwright are not declared by this repository. This project is an
 AGPL-3.0-only derivative; retain `LICENSE` and `NOTICE` with distributions.

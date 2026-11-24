@@ -132,6 +132,19 @@ is an auditable prioritization aid, not a semantic buyer-fit judgement. It uses
 the latest successful signal run and reports a newer failed run separately.
 Missing inputs remain visible and can produce partial or unranked results.
 
+## Evidence-grounded problem statements
+
+The problem-statement workflow selects the product's latest stored profile and
+ICP and the prospect's latest successful signal run. It requires one or two
+4-to-15-word spans that occur in both that run's verified evidence and the
+one- or two-sentence statement after case and whitespace normalization only.
+This exact-span check constrains fabricated quotations, but it is not a semantic
+entailment check: it cannot establish that the complete statement, or an
+inferred connection between a signal and a product/ICP pain point, is true.
+Review generated statements before using them. With no verified evidence the
+workflow records `skipped` / `no verified evidence` without model inference;
+invalid outputs retry twice and terminal failures are persisted.
+
 ## Evidence-grounded outreach drafts
 
 The validator checks that each `evidence_used` span is a substring of this

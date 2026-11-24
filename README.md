@@ -22,6 +22,10 @@ service.
 - Drafted outreach based only on a stored product profile and verified
   prospect signals. Drafts are persisted but **never sent**; when no verified
   evidence exists the workflow skips inference and records `no verified evidence`.
+- Evidence-grounded prospect problem statements using the product's stored
+  profile and ICP plus the prospect's latest successful verified-signal run.
+  Results, source IDs, evidence spans, model settings, queue state, and failures
+  are persisted; no-evidence cases skip inference.
 - Text-only sample-reply classification using eight validated labels, plus a
   separate offline evaluator. Ground-truth reply labels are isolated in
   `data/eval/reply_labels.csv`; they are never imported into the runtime database
@@ -128,6 +132,7 @@ No held-out reply or page text is included here.
 - `POST /api/products/{id}/profile` and `POST /api/products/{id}/icp`
 - `GET /api/products/{id}/ranking`
 - `POST` / `GET /api/products/{id}/prospects/{prospect_id}/draft`
+- `POST` / `GET /api/products/{id}/prospects/{prospect_id}/problem-statement`
 - `POST` / `GET /api/replies/{reply_id}/classification`
 - `GET /api/hardware` and `GET /api/status`
 - `POST /api/queue/retry` (wakes the local queue worker)
