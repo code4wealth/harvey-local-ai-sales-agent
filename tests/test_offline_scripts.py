@@ -21,7 +21,6 @@ REQUIRED_WORKFLOW_ORDER = (
     "6. Scoring/ranking",
     "7. Unsent email draft",
     "8. Reply classification",
-    "9. Full product pipeline (extra)",
 )
 
 
@@ -118,9 +117,9 @@ def test_offline_acceptance_records_workflows_in_the_required_order():
     assert metadata is not None
     assert tuple(re.findall(r'"([^"]+)"', metadata.group(1))) == REQUIRED_WORKFLOW_ORDER
 
-    assert '"/api/products/$ProductId/pipeline"' in source
-    assert '"/api/pipeline-runs/$runId"' in source
-    assert "-TimeoutSeconds $PipelineWaitSeconds" in source
+    assert "Full product pipeline (extra)" not in source
+    assert "/api/products/$ProductId/pipeline" not in source
+    assert "/api/pipeline-runs/$runId" not in source
 
 
 def test_offline_acceptance_loads_saved_page_without_a_model_call_and_probes_first():
@@ -159,6 +158,9 @@ def test_ollama_outage_script_guides_stop_queue_restart_and_retry_and_records_ev
     assert "ollama_version = $null" in source
     assert "seed = $null" in source
     assert "temperature = $null" in source
+    assert '$script:Evidence["steps"]' in source
+    assert '$script:Evidence["overall_result"]' in source
+    assert 'Set-Content -LiteralPath $script:JsonPath -Encoding UTF8' in source
 
 
 def test_offline_acceptance_has_timestamped_json_and_log_evidence_metadata():
@@ -173,3 +175,6 @@ def test_offline_acceptance_has_timestamped_json_and_log_evidence_metadata():
     assert "model = $null" in source
     assert "seed = $null" in source
     assert "temperature = $null" in source
+    assert '$script:Evidence["steps"]' in source
+    assert '$script:Evidence["overall_result"]' in source
+    assert 'Set-Content -LiteralPath $script:JsonPath -Encoding UTF8' in source

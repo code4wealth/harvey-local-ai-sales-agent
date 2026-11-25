@@ -4,8 +4,7 @@ param(
     [int]$ProfileProductId = 0,
     [int]$IcpProductId = 0,
     [string]$ReplyId = "R001",
-    [ValidateRange(1, 3600)][int]$WaitSeconds = 300,
-    [ValidateRange(1, 7200)][int]$PipelineWaitSeconds = 900
+    [ValidateRange(1, 3600)][int]$WaitSeconds = 300
 )
 
 $ErrorActionPreference = "Stop"
@@ -57,8 +56,7 @@ $script:Evidence = [ordered]@{
         "5. Problem statement",
         "6. Scoring/ranking",
         "7. Unsent email draft",
-        "8. Reply classification",
-        "9. Full product pipeline (extra)"
+        "8. Reply classification"
     )
     steps = @()
 }
@@ -206,23 +204,6 @@ function Invoke-And-Wait {
         do {
             Start-Sleep -Seconds 2
             $final = Invoke-LocalApi -Method "GET" -Path $GetPath
-            $state = Get-PayloadStatus $final
-        } while ($state -in @("queued", "running", "pending") -and (Get-Date) -lt $deadline)
-    }
-    return [pscustomobject]@{ Post = $posted; Final = $final }
-}
-
-function Invoke-Pipeline-And-Wait {
-    param([int]$ProductId, [int]$TimeoutSeconds)
-    $posted = Invoke-LocalApi -Method "POST" -Path "/api/products/$ProductId/pipeline"
-    $final = $posted
-    $runId = if ($posted.Payload) { [int]$posted.Payload.id } else { 0 }
-    $state = Get-PayloadStatus $final
-    if ($runId -gt 0 -and $state -in @("queued", "running", "pending")) {
-        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-        do {
-            Start-Sleep -Seconds 2
-            $final = Invoke-LocalApi -Method "GET" -Path "/api/pipeline-runs/$runId"
             $state = Get-PayloadStatus $final
         } while ($state -in @("queued", "running", "pending") -and (Get-Date) -lt $deadline)
     }
@@ -552,33 +533,6 @@ try {
             })
     }
 
-    Run-WorkflowStep "9. Full product pipeline (extra)" {
-        if ($script:ProfileProductId -le 0) {
-            return (New-WorkflowResult $false ([ordered]@{ status = "no product resolved" }))
-        }
-        $result = Invoke-Pipeline-And-Wait -ProductId $script:ProfileProductId -TimeoutSeconds $PipelineWaitSeconds
-        $state = Get-PayloadStatus $result.Final
-        $payload = $result.Final.Payload
-        $counts = if ($payload) { $payload.step_counts } else { $null }
-        $total = 0
-        if ($counts) {
-            foreach ($name in @("queued", "running", "done", "failed", "skipped")) {
-                $total += [int]$counts.$name
-            }
-        }
-        New-WorkflowResult `
-            ($result.Post.StatusCode -eq 202 -and $result.Final.StatusCode -eq 200 -and $state -eq "done" -and $total -gt 0) `
-            ([ordered]@{
-                product_id = $script:ProfileProductId
-                http_status = $result.Post.StatusCode
-                run_id = if ($payload) { $payload.id } else { $null }
-                status = $state
-                step_count = $total
-                step_counts = $counts
-                error_class = if ($payload) { Get-ErrorClass $payload.error } else { $result.Final.ErrorType }
-            })
-    }
-
     $finalStatus = Invoke-LocalApi -Method "GET" -Path "/api/status"
     $lastInference = if ($finalStatus.Payload) { $finalStatus.Payload.ollama.last_inference } else { $null }
     $version = Get-OllamaVersion
@@ -629,8 +583,7 @@ try {
         "5. Problem statement",
         "6. Scoring/ranking",
         "7. Unsent email draft",
-        "8. Reply classification",
-        "9. Full product pipeline (extra)"
+        "8. Reply classification"
     )
     foreach ($name in $expectedSteps) {
         if ($recordedWorkflowNames -notcontains $name) {
