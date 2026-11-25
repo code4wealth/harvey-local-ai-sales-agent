@@ -15,7 +15,14 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import batch, db, hardware, llm_client, local_paths, prospects
@@ -121,7 +128,24 @@ async def reject_cross_origin_mutations(request: Request, call_next):
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-FRONTEND_INDEX = REPOSITORY_ROOT / "frontend" / "index.html"
+FRONTEND_ROOT = REPOSITORY_ROOT / "frontend"
+FRONTEND_OPERATIONS = FRONTEND_ROOT / "operations.html"
+FRONTEND_STATIC = FRONTEND_ROOT / "static"
+FRONTEND_BUILT_INDEX = FRONTEND_STATIC / "index.html"
+
+# Vite emits the production React bundle here. ``check_dir=False`` keeps the
+# Python API importable before the optional frontend build has been run.
+app.mount(
+    "/assets",
+    StaticFiles(directory=str(FRONTEND_STATIC / "assets"), check_dir=False),
+    name="dashboard-assets",
+)
+app.mount(
+    "/licenses",
+    StaticFiles(directory=str(FRONTEND_STATIC / "licenses"), check_dir=False),
+    name="dashboard-licenses",
+)
+
 PROMPT_HASH_FILES = {
     "signals": REPOSITORY_ROOT / "data" / "eval" / "frozen_signal_prompt.sha256",
     "replies": REPOSITORY_ROOT / "data" / "eval" / "frozen_reply_prompt.sha256",
@@ -160,15 +184,91 @@ def read_frozen_prompt_hashes() -> dict[str, str]:
 GIT_COMMIT = read_git_commit_hash()
 
 
+def sellbird_dashboard_entry() -> FileResponse:
+    """Serve the built React workspace, falling back to the legacy console before build."""
+    dashboard = FRONTEND_BUILT_INDEX if FRONTEND_BUILT_INDEX.is_file() else FRONTEND_OPERATIONS
+    return FileResponse(dashboard, media_type="text/html")
+
+
 @app.get("/", include_in_schema=False)
 def api_dashboard() -> FileResponse:
-    return FileResponse(FRONTEND_INDEX, media_type="text/html")
+    """Serve the Sellbird dashboard, with the local workflow console kept separate."""
+    return sellbird_dashboard_entry()
+
+
+@app.get("/operations", include_in_schema=False)
+def api_operations() -> FileResponse:
+    """Serve the existing local product and prospect workflow console."""
+    return FileResponse(FRONTEND_OPERATIONS, media_type="text/html")
+
+
+@app.get("/settings/models", include_in_schema=False)
+def api_model_settings() -> FileResponse:
+    """Serve the React workspace at the local model settings route."""
+    return sellbird_dashboard_entry()
+
+
+@app.get("/settings/general", include_in_schema=False)
+def api_general_settings() -> FileResponse:
+    return sellbird_dashboard_entry()
+
+
+@app.get("/products", include_in_schema=False)
+def api_products_workspace() -> FileResponse:
+    return sellbird_dashboard_entry()
+
+
+@app.get("/prospects/import", include_in_schema=False)
+def api_prospect_import_workspace() -> RedirectResponse:
+    """Open the React CSV-mapping flow; the older console remains at /operations."""
+    return RedirectResponse("/prospects?import=true", status_code=307)
+
+
+@app.get("/prospects", include_in_schema=False)
+def api_prospects_workspace() -> FileResponse:
+    return sellbird_dashboard_entry()
+
+
+@app.get("/research", include_in_schema=False)
+def api_research_workspace() -> FileResponse:
+    return sellbird_dashboard_entry()
+
+
+@app.get("/research/{prospect_id}", include_in_schema=False)
+def api_research_dossier(prospect_id: str) -> FileResponse:
+    return sellbird_dashboard_entry()
+
+
+@app.get("/campaigns", include_in_schema=False)
+def api_campaigns_workspace() -> FileResponse:
+    return sellbird_dashboard_entry()
+
+
+@app.get("/replies", include_in_schema=False)
+def api_replies_workspace() -> FileResponse:
+    return sellbird_dashboard_entry()
+
+
+@app.get("/activity", include_in_schema=False)
+def api_activity_workspace() -> FileResponse:
+    return sellbird_dashboard_entry()
 
 
 class ProductCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=500)
     docs_path: str = Field(default="", max_length=500)
+
+
+class ProductUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=500)
+    docs_path: str = Field(default="", max_length=500)
+
+
+class ReplyTextRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=10_000)
+    model: str | None = Field(default=None, max_length=200)
 
 
 def _prospect_response(row) -> dict:
@@ -224,6 +324,32 @@ def api_create_product(request: ProductCreate) -> dict:
         )
         conn.commit()
         product = db.get_product(conn, product_id)
+        return dict(product)
+    except db.ProductAlreadyExists as exc:
+        raise HTTPException(status_code=409, detail="Product already exists") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        conn.close()
+
+
+@app.put("/api/products/{product_id}", tags=["products"])
+def api_update_product(product_id: int, request: ProductUpdate) -> dict:
+    try:
+        docs_path = local_paths.normalize_company_info_path(request.docs_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    conn = db.connect()
+    try:
+        product = db.update_product(
+            conn,
+            product_id=product_id,
+            name=request.name,
+            description=request.description,
+            docs_path=docs_path,
+        )
+        if product is None:
+            raise HTTPException(status_code=404, detail="product not found")
         return dict(product)
     except db.ProductAlreadyExists as exc:
         raise HTTPException(status_code=409, detail="Product already exists") from exc
@@ -600,6 +726,18 @@ def _reply_classification_response(reply_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.post("/api/replies/classify-text", tags=["replies"])
+def api_classify_reply_text(request: ReplyTextRequest) -> dict:
+    """Classify pasted text in memory with local Ollama; do not persist the reply."""
+    try:
+        result = reply_workflow.classify_reply_text(request.text, model=request.model)
+    except llm_client.OllamaUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {**result, "is_preview": False}
+
+
 @app.post("/api/replies/{reply_id}/classification", tags=["replies"])
 def api_classify_reply(reply_id: str, model: str | None = None) -> JSONResponse:
     try:
@@ -664,6 +802,57 @@ def api_health() -> dict:
 def api_hardware() -> dict:
     """Report detected RAM, CPU count, NVIDIA VRAM, tier, and model recommendation."""
     return hardware.detect().as_dict()
+
+
+@app.get("/api/storage", tags=["system"])
+def api_storage() -> dict:
+    """Return local SQLite row, file-size, and embedded-vector metrics."""
+    conn = db.connect()
+    try:
+        table_names = (
+            "products", "prospects", "signal_runs", "signals", "emails",
+            "sample_replies", "reply_classifications", "task_queue",
+            "workflow_runs", "draft_runs",
+        )
+        counts = {
+            table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+            for table in table_names
+        }
+        vector_columns = {
+            "business_profiles": "embedding",
+            "icps": "embedding",
+            "prospects": "page_embedding",
+            "prospect_research": "embedding",
+        }
+        vectors = {}
+        for table, column in vector_columns.items():
+            columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
+            if column in columns:
+                vectors[table] = int(
+                    conn.execute(
+                        f"SELECT COUNT(*) FROM {table} WHERE {column} IS NOT NULL"
+                    ).fetchone()[0]
+                )
+        queue = db.queue_counts(conn)
+    finally:
+        conn.close()
+    database_path = Path(db.get_db_path())
+    file_bytes = 0
+    for candidate in (database_path, Path(f"{database_path}-wal"), Path(f"{database_path}-shm")):
+        try:
+            file_bytes += candidate.stat().st_size
+        except OSError:
+            continue
+    return {
+        "engine": "SQLite",
+        "mode": "local-only",
+        "database_name": database_path.name,
+        "file_bytes": file_bytes,
+        "counts": counts,
+        "vectors": vectors,
+        "vector_rows": sum(vectors.values()),
+        "queue": queue,
+    }
 
 
 @app.get("/api/status", tags=["system"])

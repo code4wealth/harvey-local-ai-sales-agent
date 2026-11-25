@@ -859,6 +859,36 @@ def list_products(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return list(conn.execute("SELECT * FROM products ORDER BY id").fetchall())
 
 
+def update_product(
+    conn: sqlite3.Connection,
+    *,
+    product_id: int,
+    name: str,
+    description: str = "",
+    docs_path: str = "",
+) -> sqlite3.Row | None:
+    """Update the locally stored product context and return its current row."""
+    product_id = int(product_id)
+    name = str(name).strip()
+    if not name:
+        raise ValueError("product name must not be empty")
+    if get_product(conn, product_id) is None:
+        return None
+    normalized_name = name.casefold()
+    duplicate = any(
+        str(row["name"]).strip().casefold() == normalized_name
+        for row in conn.execute("SELECT id, name FROM products WHERE id != ?", (product_id,))
+    )
+    if duplicate:
+        raise ProductAlreadyExists("Product already exists")
+    conn.execute(
+        "UPDATE products SET name = ?, description = ?, docs_path = ?, updated_at = ? WHERE id = ?",
+        (name, str(description).strip(), str(docs_path).strip(), utcnow(), product_id),
+    )
+    conn.commit()
+    return get_product(conn, product_id)
+
+
 def create_pipeline_run(
     conn: sqlite3.Connection,
     *,

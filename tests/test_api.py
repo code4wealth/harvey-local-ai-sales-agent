@@ -266,6 +266,10 @@ def test_product_prospect_csv_and_local_page_routes(db_path, monkeypatch, tmp_pa
                 "/api/products", json={"name": "Harvey CRM", "description": "Local sales tool"}
             )
             product_id = product_response.json()["id"]
+            update_response = await client.put(
+                f"/api/products/{product_id}",
+                json={"name": "Harvey CRM Updated", "description": "Reviewed local context", "docs_path": ""},
+            )
             csv_content = (
                 "company_name,contact_name,contact_title,employee_count,do_not_contact\n"
                 "Acme,Ada,VP Sales,25,false\n"
@@ -290,17 +294,21 @@ def test_product_prospect_csv_and_local_page_routes(db_path, monkeypatch, tmp_pa
             loaded_page = await client.get(f"/api/prospects/{prospect_id}/page")
             detail = await client.get(f"/api/prospects/{prospect_id}")
             score_response = await client.post(f"/api/prospects/{prospect_id}/score")
+            storage_response = await client.get("/api/storage")
         return (
-            product_response, import_response, duplicate_import_response, prospect,
-            saved_page, loaded_page, detail, score_response,
+            product_response, update_response, import_response, duplicate_import_response, prospect,
+            saved_page, loaded_page, detail, score_response, storage_response,
         )
 
     (
-        product_response, import_response, duplicate_import_response, prospect,
-        saved_page, loaded_page, detail, score_response,
+        product_response, update_response, import_response, duplicate_import_response, prospect,
+        saved_page, loaded_page, detail, score_response, storage_response,
     ) = asyncio.run(exercise())
     assert product_response.status_code == 201
     assert product_response.json()["name"] == "Harvey CRM"
+    assert update_response.status_code == 200
+    assert update_response.json()["name"] == "Harvey CRM Updated"
+    assert update_response.json()["description"] == "Reviewed local context"
     assert import_response.status_code == 201
     assert import_response.json()["imported"] == 1
     assert import_response.json()["skipped"] == 0
@@ -316,6 +324,15 @@ def test_product_prospect_csv_and_local_page_routes(db_path, monkeypatch, tmp_pa
     assert detail.json()["id"] == prospect["id"]
     assert score_response.status_code == 202
     assert score_response.json()["requires_ollama"] is False
+    assert storage_response.status_code == 200
+    storage = storage_response.json()
+    assert storage["engine"] == "SQLite"
+    assert storage["mode"] == "local-only"
+    assert storage["counts"]["products"] == 1
+    assert storage["counts"]["prospects"] == 1
+    assert "database_name" in storage
+    assert "file_bytes" in storage
+    assert storage["vector_rows"] == sum(storage["vectors"].values())
 
 
 def test_status_reports_ollama_http_failure_separately(db_path, monkeypatch):
@@ -422,3 +439,37 @@ def test_queue_retry_endpoint_wakes_worker_without_running_in_api_thread(db_path
         "queue": {"queued": 0, "running": 0, "done": 0, "failed": 0},
     }
     assert worker.wake_count == 1
+
+
+def test_ad_hoc_reply_text_classification_uses_local_model_without_persisting_text(db_path, monkeypatch):
+    captured = {}
+
+    def fake_generate_json(prompt, response_model, **kwargs):
+        captured["prompt"] = prompt
+        captured["kwargs"] = kwargs
+        return response_model(label="meeting_request", confidence=0.93, rationale="The reply proposes a meeting.")
+
+    monkeypatch.setattr(llm_client, "generate_json", fake_generate_json)
+
+    async def classify():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
+            return await client.post(
+                "/api/replies/classify-text",
+                json={"text": "Could we meet on Tuesday?", "model": "qwen3:4b"},
+            )
+
+    response = asyncio.run(classify())
+    assert response.status_code == 200
+    result = response.json()
+    assert result["label"] == "meeting_request"
+    assert result["confidence"] == 0.93
+    assert result["model_name"] == "qwen3:4b"
+    assert result["is_preview"] is False
+    assert "Could we meet on Tuesday?" in captured["prompt"]
+    assert captured["kwargs"]["task"] == "reply-classification:ad-hoc-local"
+    conn = db.connect()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM sample_replies").fetchone()[0] == 0
+    finally:
+        conn.close()

@@ -88,6 +88,33 @@ def build_reply_prompt(reply_text: str) -> str:
     )
 
 
+def classify_reply_text(reply_text: str, *, model: str | None = None) -> dict[str, Any]:
+    """Classify one in-memory reply without persisting its text or using a cloud API.
+
+    The browser may keep the resulting label in its local workspace, but this
+    endpoint does not create an inbound-reply record in SQLite.
+    """
+    if not isinstance(reply_text, str) or not reply_text.strip():
+        raise ValueError("reply text must not be empty")
+    if len(reply_text) > 10_000:
+        raise ValueError("reply text exceeds 10000 characters")
+    model_name = llm_client.resolve_model_name(model)
+    prompt = build_reply_prompt(reply_text.strip())
+    traceability = prompt_traceability(prompt)
+    result = llm_client.generate_json(
+        prompt,
+        ReplyClassification,
+        model=model_name,
+        task="reply-classification:ad-hoc-local",
+        retries=1,
+        num_ctx=NUM_CTX,
+        retry_instruction="Use only the stored reply text, return one allowed label, and keep confidence within 0.0 to 1.0.",
+    )
+    if not isinstance(result, ReplyClassification):
+        raise TypeError("reply classifier returned an unexpected schema type")
+    return {**result.model_dump(), "model_name": model_name, **traceability}
+
+
 def _load_reply_text(reply_id: str) -> str:
     conn = db.connect()
     try:
