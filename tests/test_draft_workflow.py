@@ -207,12 +207,17 @@ def test_draft_uses_only_profile_and_verified_signals_and_is_never_sent(
     assert result["commit_hash"]
     assert "RelayCue: A local workspace" in prompt
     assert QUOTE in prompt
-    assert "Pick one verified signal" in prompt
-    assert "4-to-15-word phrases" in prompt
+    assert "4-to-15-word fragments" in prompt
     assert "inside double quotation marks in the body" in prompt
     assert "Claim nothing else about the prospect" in prompt
+    assert "context only; neither may ever be quoted as evidence" in prompt
+    assert "ALLOWED EVIDENCE" in prompt
     assert prompt.count('"evidence_used":') == 1
-    assert "A brass sundial faces the lunar archive." in prompt
+    assert QUOTE_SPAN in prompt
+    assert "A brass sundial faces the lunar archive." not in prompt
+    allowed_block = prompt.split("ALLOWED EVIDENCE — verified signal quotes", 1)[1]
+    assert QUOTE in allowed_block
+    assert PROFILE["summary"] not in allowed_block
     assert "Private stored product" not in prompt
     assert "Private stored prospect" not in prompt
     assert "Private Contact" not in prompt
@@ -233,15 +238,35 @@ def test_draft_uses_only_profile_and_verified_signals_and_is_never_sent(
         conn.close()
 
 
-def test_draft_evidence_validation_normalizes_only_case_and_whitespace():
-    draft = draft_workflow.OutreachDraft.model_validate(
+def test_draft_evidence_validation_requires_exact_verbatim_fragments():
+    exact = draft_workflow.OutreachDraft.model_validate(
         {
             "subject": "A brief note",
-            "body": '"the   team hired five support specialists"',
+            "body": f'"{QUOTE_SPAN}"',
             "evidence_used": [QUOTE_SPAN],
         }
     )
-    draft_workflow.validate_draft_evidence(draft, [_verified_signal()], page_text=QUOTE)
+    draft_workflow.validate_draft_evidence(exact, [_verified_signal()], page_text=QUOTE)
+
+    altered = draft_workflow.OutreachDraft.model_validate(
+        {
+            "subject": "A brief note",
+            "body": f'"{QUOTE_SPAN.lower()}"',
+            "evidence_used": [QUOTE_SPAN.lower()],
+        }
+    )
+    with pytest.raises(llm_client.ValidationFailure, match="not present verbatim"):
+        draft_workflow.validate_draft_evidence(altered, [_verified_signal()], page_text=QUOTE)
+
+    altered_body = draft_workflow.OutreachDraft.model_validate(
+        {
+            "subject": "A brief note",
+            "body": f'"{QUOTE_SPAN.lower()}"',
+            "evidence_used": [QUOTE_SPAN],
+        }
+    )
+    with pytest.raises(llm_client.ValidationFailure, match="must appear verbatim"):
+        draft_workflow.validate_draft_evidence(altered_body, [_verified_signal()], page_text=QUOTE)
 
 
 def test_draft_evidence_validation_requires_double_quotes():
@@ -317,9 +342,12 @@ def test_draft_retries_invalid_spans_and_persists_failure(db_path, monkeypatch, 
     assert calls == 2
     assert [item["seed"] for item in options] == [42, 43]
     assert [item["temperature"] for item in options] == [0.0, 0.2]
-    assert "evidence_used contains text not present in the prospect's stored page text" in prompts[1]
+    assert "must be an exact contiguous substring" in prompts[1]
     assert "This is the only retry." in prompts[1]
     assert "previous answer was invalid" in prompts[1]
+    assert "A fictional funding round happened." in prompts[1]
+    assert QUOTE in prompts[1]
+    assert "allowed_quotes" in prompts[1]
     assert _get(f"/api/products/{product_id}/prospects/{prospect_id}/draft").json() == result
     conn = db.connect()
     try:

@@ -206,10 +206,15 @@ def test_problem_statement_uses_latest_profile_icp_and_verified_signal_sources(
     assert result["commit_hash"]
     assert "Stored business profile JSON" in prompt
     assert "Stored ICP JSON" in prompt
-    assert "Verified signals JSON" in prompt
+    assert "ALLOWED EVIDENCE" in prompt
+    assert "context only and must never be quoted as evidence" in problem_workflow.PROBLEM_STATEMENT_PROMPT
     assert PROFILE["summary"] in prompt
     assert "service handoffs" in prompt
     assert SIGNAL_EVIDENCE in prompt
+    assert EVIDENCE_SPAN in prompt
+    allowed_block = prompt.split("ALLOWED EVIDENCE — verified signal quotes", 1)[1]
+    assert SIGNAL_EVIDENCE in allowed_block
+    assert PROFILE["summary"] not in allowed_block
     assert "Stored product" not in prompt
     assert "Stored prospect" not in prompt
 
@@ -226,30 +231,27 @@ def test_problem_statement_uses_latest_profile_icp_and_verified_signal_sources(
         conn.close()
 
 
-def test_problem_statement_validation_only_normalizes_case_and_whitespace():
+def test_problem_statement_validation_requires_exact_contiguous_verbatim_spans():
     valid = problem_workflow.GeneratedProblemStatement.model_validate(
-        {
-            "statement": "THE\tteam hired five support specialists this month.",
-            "evidence": ["the team hired five support specialists"],
-        }
+        {"statement": STATEMENT, "evidence": [EVIDENCE_SPAN]}
     )
     problem_workflow.validate_problem_statement_evidence(valid, [_verified_signal()])
 
-    punctuation_change = problem_workflow.GeneratedProblemStatement.model_validate(
-        {
-            "statement": "The team hired five support specialists, this month.",
-            "evidence": ["The team hired five support specialists,"],
-        }
-    )
-    with pytest.raises(llm_client.ValidationFailure, match="not present"):
-        problem_workflow.validate_problem_statement_evidence(
-            punctuation_change, [_verified_signal()]
+    for altered_span in (
+        EVIDENCE_SPAN.lower(),
+        EVIDENCE_SPAN.replace("team hired", "team  hired"),
+        EVIDENCE_SPAN + ",",
+    ):
+        altered = problem_workflow.GeneratedProblemStatement.model_validate(
+            {"statement": altered_span, "evidence": [altered_span]}
         )
+        with pytest.raises(llm_client.ValidationFailure, match="not present verbatim"):
+            problem_workflow.validate_problem_statement_evidence(altered, [_verified_signal()])
 
     paraphrase = problem_workflow.GeneratedProblemStatement.model_validate(
         {
             "statement": "The organization added five support specialists this month.",
-            "evidence": ["The team hired five support specialists"],
+            "evidence": [EVIDENCE_SPAN],
         }
     )
     with pytest.raises(llm_client.ValidationFailure, match="must appear verbatim"):
@@ -355,7 +357,10 @@ def test_problem_statement_retries_invalid_evidence_then_persists_failure(db_pat
     assert [value["temperature"] for value in options] == [0.0, 0.2]
     assert "previous answer was invalid" in prompts[1]
     assert "This is the only retry." in prompts[1]
-    assert "every evidence span must exactly match a verified signal" in prompts[1]
+    assert "Copy only exact, contiguous fragments from ALLOWED EVIDENCE" in prompts[1]
+    assert "A fictional contract is being signed" in prompts[1]
+    assert SIGNAL_EVIDENCE in prompts[1]
+    assert "allowed_quotes" in prompts[1]
     assert _get(_path(product_id, prospect_id)).json() == result
 
     conn = db.connect()

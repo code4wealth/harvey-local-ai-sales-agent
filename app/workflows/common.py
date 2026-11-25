@@ -11,6 +11,20 @@ from app.traceability import prompt_traceability
 
 
 _STRAY_TOKEN_ARTIFACT = re.compile(r"(\w+): \1")
+
+
+def first_verbatim_evidence_example(signals: list[dict[str, Any]]) -> str:
+    """Choose an exact, contiguous four-to-eight-word signal fragment for prompts."""
+    for signal in signals:
+        quote = signal.get("evidence")
+        if not isinstance(quote, str):
+            continue
+        words = list(re.finditer(r"\S+", quote))
+        if len(words) >= 4:
+            return quote[words[0].start() : words[min(7, len(words) - 1)].end()]
+    raise ValueError("verified signal evidence must include at least four words")
+
+
 def iter_string_fields(value: Any, path: str = "") -> Iterator[tuple[str, str]]:
     """Yield every string leaf and its dotted/indexed field path."""
     if isinstance(value, str):

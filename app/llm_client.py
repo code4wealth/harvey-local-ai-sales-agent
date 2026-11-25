@@ -76,10 +76,10 @@ class InvalidJsonResponse(OllamaResponseError):
 
 
 class ValidationFailure(ValueError):
-    """A custom workflow check failure with extra, persistence-only diagnostics.
+    """A custom workflow check failure with structured retry and storage diagnostics.
 
-    The exception string remains the retry feedback sent to the model. ``details``
-    enriches only the terminal stored error, leaving prompt text unchanged.
+    ``details`` include rejected values and, for evidence checks, the allowed
+    source quotes so the model can correct its response on the single retry.
     """
 
     def __init__(self, message: str, *, details: list[dict[str, Any]] | None = None):
@@ -559,7 +559,12 @@ def _validation_diagnostic(
             field = str(detail.get("field", "<unknown>"))
             check = str(detail.get("check", str(error)))
             value = _format_diagnostic_value(detail.get("value"))
-            reasons.append(f"{field}: {check}; value={value}")
+            allowed_quotes = detail.get("allowed_quotes")
+            if allowed_quotes is None:
+                reasons.append(f"{field}: {check}; value={value}")
+            else:
+                allowed = _format_diagnostic_value(allowed_quotes)
+                reasons.append(f"{field}: {check}; value={value}; allowed_quotes={allowed}")
         return f"{error}; " + " | ".join(reasons)
 
     if isinstance(error, ValidationError):
@@ -663,9 +668,12 @@ def generate_json(
                 attempt_offset + retries + 1,
                 type(exc).__name__,
             )
+            retry_feedback = _validation_diagnostic(
+                exc, parsed_value=candidate_value, invalid_output=result.content
+            )
             retry_prompt = (
                 prompt
-                + f"\n\nYour previous answer was invalid: {last_error}. "
+                + f"\n\nYour previous answer was invalid: {retry_feedback}. "
                 "This is the only retry. Correct the reported issue, follow every schema field, "
                 "allowed value, range, and validation constraint exactly, and re-check every "
                 "factual claim against the supplied source data. Do not invent or paraphrase "
