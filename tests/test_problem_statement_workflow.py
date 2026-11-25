@@ -35,8 +35,8 @@ ICP = {
 SIGNAL_EVIDENCE = "The team hired five support specialists this month."
 EVIDENCE_SPAN = "The team hired five support specialists"
 STATEMENT = (
-    "The team hired five support specialists this month, which may increase "
-    "coordination needs across service handoffs."
+    'Hiring five support specialists could increase coordination work around '
+    'service handoffs; the verified signal is "The team hired five support specialists".'
 )
 
 
@@ -208,6 +208,11 @@ def test_problem_statement_uses_latest_profile_icp_and_verified_signal_sources(
     assert "Stored ICP JSON" in prompt
     assert "ALLOWED EVIDENCE" in prompt
     assert "context only and must never be quoted as evidence" in problem_workflow.PROBLEM_STATEMENT_PROMPT
+    assert "Do not merely repeat or summarize the signal" in prompt
+    assert "plausible operational problem or pressure it may imply" in prompt
+    assert "State that interpretation as uncertain" in prompt
+    assert "within the statement, alongside the cautious operational interpretation" in prompt
+    assert "actual delay, cost, failure, tool, process change, customer impact" in prompt
     assert PROFILE["summary"] in prompt
     assert "service handoffs" in prompt
     assert SIGNAL_EVIDENCE in prompt
