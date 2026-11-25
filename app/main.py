@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import AsyncIterator
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import (
     FileResponse,
@@ -440,9 +440,15 @@ def _get_workflow(product_id: int, workflow: str) -> dict:
 
 
 @app.post("/api/products/{product_id}/pipeline", tags=["workflows"])
-def api_start_product_pipeline(product_id: int, model: str | None = None) -> JSONResponse:
+def api_start_product_pipeline(
+    product_id: int,
+    model: str | None = None,
+    prospect_limit: int = Query(default=pipeline_workflow.DEFAULT_PROSPECT_LIMIT, ge=1),
+) -> JSONResponse:
     try:
-        payload = pipeline_workflow.submit_pipeline(product_id, model=model)
+        payload = pipeline_workflow.submit_pipeline(
+            product_id, model=model, prospect_limit=prospect_limit
+        )
     except pipeline_workflow.PipelineProductNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except pipeline_workflow.PipelineQueueError as exc:

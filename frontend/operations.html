@@ -129,6 +129,7 @@
     .product-count span{display:block;color:#59685e;font-size:10px}
     .product-tools{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}
     .product-tools .button{flex:1 1 130px}
+    .pipeline-limit-field{max-width:230px;margin-top:13px}
     details.create-product{margin-top:15px;border-top:1px solid #e8ebe5;padding-top:13px}
     details.create-product summary{min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:10px;color:#33563e;font-size:12px;font-weight:700;cursor:pointer;list-style:none}
     details.create-product summary::-webkit-details-marker{display:none}
@@ -369,6 +370,11 @@
                   <div class="field"><label for="products">Active product</label><select id="products" aria-describedby="product-help"><option value="">Select a product</option></select><p class="field-hint" id="product-help">Profiles and ICPs are stored per product.</p></div>
                   <div class="product-count"><strong id="prospect-count">—</strong><span>prospects</span></div>
                 </div>
+                <div class="field pipeline-limit-field">
+                  <label for="pipeline-prospect-limit">Prospects in this full run</label>
+                  <input id="pipeline-prospect-limit" type="number" min="1" step="1" value="3" inputmode="numeric" aria-describedby="pipeline-limit-help">
+                  <p class="field-hint" id="pipeline-limit-help">Default: 3 prospects. Increase the limit for a longer run.</p>
+                </div>
                 <div class="product-tools">
                   <button class="button button-primary" id="run-pipeline" type="button" data-requires-product disabled>Run full product workflow</button>
                   <button class="button button-outline" id="view-pipeline" type="button" data-requires-product disabled>View latest progress</button>
@@ -378,7 +384,7 @@
                   <button class="button button-outline" data-view-workflow="icp" type="button" disabled>View ICP</button>
                   <button class="button button-outline" id="delete-product" type="button" data-requires-product disabled>Delete product</button>
                 </div>
-                <p class="helper-line">The full run uses this product’s imported prospects and local page text. It may take time on a laptop model; progress is saved per step.</p>
+                <p class="helper-line">The run processes up to the selected number of prospects in stable ID order. Each adds signals, a problem statement, and a draft; deterministic ranking remains product-wide. Progress is saved per step.</p>
                 <details class="create-product">
                   <summary>Create a product</summary>
                   <form id="product-form" class="create-grid">
@@ -570,7 +576,7 @@
       const counts = payload.step_counts || {};
       const finished = (counts.done || 0) + (counts.failed || 0) + (counts.skipped || 0);
       const pending = (counts.queued || 0) + (counts.running || 0);
-      appendResultCard(container, "Pipeline progress", `${finished} of ${steps.length} steps finished · ${counts.done || 0} complete · ${counts.failed || 0} failed · ${counts.skipped || 0} skipped · ${pending} pending`);
+      appendResultCard(container, "Pipeline progress", `${finished} of ${steps.length} steps finished · ${payload.prospect_count ?? "?"} prospects included · limit ${payload.prospect_limit ?? "?"} · ${counts.done || 0} complete · ${counts.failed || 0} failed · ${counts.skipped || 0} skipped · ${pending} pending`);
       const list = document.createElement("ol");
       list.className = "pipeline-progress";
       list.setAttribute("aria-label", "Product workflow step progress");
@@ -1030,9 +1036,23 @@
       $("result-status").dataset.waiting = "true";
       $("result-status").textContent = viewLatest ? "Loading saved pipeline progress" : "Queueing full product workflow";
       try {
-        const result = viewLatest
-          ? await api(`/api/products/${product}/pipeline`)
-          : await api(`/api/products/${product}/pipeline`, { method: "POST" });
+        let result;
+        if (viewLatest) {
+          result = await api(`/api/products/${product}/pipeline`);
+        } else {
+          const control = $("pipeline-prospect-limit");
+          const requestedLimit = Number(control.value);
+          if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1) {
+            control.setAttribute("aria-invalid", "true");
+            control.focus();
+            throw new Error("Enter a whole-number prospect limit of at least 1.");
+          }
+          control.removeAttribute("aria-invalid");
+          result = await api(
+            `/api/products/${product}/pipeline?prospect_limit=${requestedLimit}`,
+            { method: "POST" },
+          );
+        }
         show(result);
         return pendingPipeline(result) ? await pollPipelineRun(result, startedAt) : result;
       } catch (error) {

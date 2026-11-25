@@ -40,11 +40,15 @@ workflow milestones; prompt tuning and live results remain operator-owned.
 
 ### Product-level pipeline
 
-- `POST /api/products/{product_id}/pipeline` snapshots the product's currently
-  imported prospects and queues one persistent, resumable local run. A second
-  POST while that product already has a queued/running pipeline returns the
-  active run rather than creating a duplicate. Newly imported prospects are
-  included in the next run, not added to an existing snapshot.
+- `POST /api/products/{product_id}/pipeline` snapshots up to three prospects
+  by default, in stable ID order, and queues one persistent, resumable local
+  run. Set the positive-integer `prospect_limit` query parameter to choose a
+  different per-run limit; the dashboard exposes the same control. For three
+  prospects the snapshot has 12 steps: profile, ICP, three steps per prospect,
+  and ranking. A second POST while that product already has a queued/running
+  pipeline returns the active run rather than creating a duplicate. Newly
+  imported prospects are included in the next run, not added to an existing
+  snapshot.
 - Steps run in order: business profile, ICP, then for each snapshotted prospect
   local-page signal extraction, evidence-grounded problem statement, and
   evidence-grounded unsent draft; product-specific ranking runs last. Page
@@ -57,12 +61,13 @@ workflow milestones; prompt tuning and live results remain operator-owned.
   exposes a one-click run and saved step-by-step progress.
 - If Ollama becomes unavailable during inference, the in-progress child run and
   pipeline step return to `queued`; the same product pipeline resumes at that
-  step after worker retry. Completed steps are not repeated. Other per-step
-  failures are persisted and do not prevent independent prospects from being
-  processed; dependent steps are marked skipped, ranking still runs when
-  possible, and the overall run is `failed` if any step failed. No verified
-  signal evidence skips problem-statement and draft model calls, while the
-  pipeline continues.
+  step after worker retry. Completed steps are not repeated. A terminal failure
+  in profile or ICP skips every remaining pipeline step with the failed gate and
+  its reason; no later prospect work or ranking is run. Other per-step failures
+  are persisted without preventing independent prospects from being processed;
+  dependent steps are skipped, ranking runs when possible, and the overall run
+  is `failed` if any step failed. No verified signal evidence skips
+  problem-statement and draft model calls, while the pipeline continues.
 - A pipeline is queued only when work is requested; no background research or
   email sending is performed. Drafts remain local and unsent.
 

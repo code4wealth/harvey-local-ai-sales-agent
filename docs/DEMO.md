@@ -90,12 +90,13 @@ Product IDs, prospect import counts, and queued-retry counts: not run.
 
 ## 4. Run the product pipeline and inspect its saved progress
 
-For the one-click workflow (which regenerates profile and ICP, processes every
-currently imported prospect, and refreshes ranking), submit the product run and
-use the returned ID to poll progress:
+For the one-click workflow (which regenerates profile and ICP, processes up to
+three currently imported prospects in stable ID order, and refreshes ranking),
+submit the product run and use the returned ID to poll progress. Increase
+`prospect_limit` in the dashboard or query string for a longer run:
 
 ```bash
-PIPELINE_ID="$(curl -fsS -X POST "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/pipeline" \
+PIPELINE_ID="$(curl -fsS -X POST "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/pipeline?prospect_limit=3" \
   | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
 curl -fsS "http://127.0.0.1:8000/api/pipeline-runs/${PIPELINE_ID}"
 ```

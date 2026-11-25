@@ -44,10 +44,12 @@ SIGNAL = {
 }
 
 
-def _create_product(*, prospects: int = 1) -> tuple[int, list[int]]:
+def _create_product(
+    *, prospects: int = 1, name: str = "Pipeline product"
+) -> tuple[int, list[int]]:
     conn = db.connect()
     try:
-        product_id = db.create_product(conn, name="Pipeline product")
+        product_id = db.create_product(conn, name=name)
         prospect_ids = [
             db.create_prospect(
                 conn,
@@ -195,6 +197,8 @@ def test_pipeline_api_queues_ordered_product_steps_and_deduplicates_active_run(
     assert payload["pipeline"] is True
     assert payload["status"] == "queued"
     assert payload["model_name"] == "pipeline-test-model"
+    assert payload["prospect_limit"] == pipeline.DEFAULT_PROSPECT_LIMIT == 3
+    assert payload["prospect_count"] == 2
     assert [step["step_name"] for step in payload["steps"]] == [
         "profile",
         "icp",
@@ -224,6 +228,51 @@ def test_pipeline_api_queues_ordered_product_steps_and_deduplicates_active_run(
         assert tasks == 1
     finally:
         conn.close()
+
+
+def test_pipeline_defaults_to_three_prospects_and_accepts_a_configured_limit(
+    db_path, monkeypatch
+):
+    monkeypatch.setenv("DEFAULT_MODEL", "pipeline-test-model")
+    monkeypatch.setattr(app.state, "queue_worker", None, raising=False)
+    default_product_id, default_ids = _create_product(
+        prospects=5, name="Default limit product"
+    )
+    default_payload = _request(
+        "POST", f"/api/products/{default_product_id}/pipeline"
+    ).json()
+    default_signals = [
+        step["prospect_id"]
+        for step in default_payload["steps"]
+        if step["step_name"].startswith("signals:")
+    ]
+    assert default_payload["prospect_limit"] == 3
+    assert default_payload["prospect_count"] == 3
+    assert default_signals == default_ids[:3]
+    assert default_payload["step_counts"]["queued"] == 12
+
+    configured_product_id, configured_ids = _create_product(
+        prospects=5, name="Configured limit product"
+    )
+    configured_payload = _request(
+        "POST",
+        f"/api/products/{configured_product_id}/pipeline?prospect_limit=4",
+    ).json()
+    configured_signals = [
+        step["prospect_id"]
+        for step in configured_payload["steps"]
+        if step["step_name"].startswith("signals:")
+    ]
+    assert configured_payload["prospect_limit"] == 4
+    assert configured_payload["prospect_count"] == 4
+    assert configured_signals == configured_ids[:4]
+    assert configured_payload["step_counts"]["queued"] == 15
+
+    invalid = _request(
+        "POST",
+        f"/api/products/{configured_product_id}/pipeline?prospect_limit=0",
+    )
+    assert invalid.status_code == 422
 
 
 def test_full_pipeline_runs_profile_icp_signals_problem_draft_and_ranking(
@@ -361,32 +410,111 @@ def test_pipeline_pauses_on_ollama_unavailable_and_resumes_same_run(
     assert task["status"] == "done"
 
 
-def test_pipeline_marks_failed_step_and_skips_dependent_product_work(
+def test_pipeline_fails_fast_after_profile_failure_and_skips_remaining_steps(
     db_path, monkeypatch
 ):
     monkeypatch.setenv("DEFAULT_MODEL", "pipeline-test-model")
     monkeypatch.setattr(app.state, "queue_worker", None, raising=False)
-    product_id, _ = _create_product(prospects=0)
+    product_id, _ = _create_product(prospects=2)
     queued = _request("POST", f"/api/products/{product_id}/pipeline").json()
+    called = []
 
     def invalid_profile(product_id: int, run_id: int, model_name: str):
         raise ValueError("company-info document is missing")
 
+    def unexpected_step(name: str):
+        def record_call(*args, **kwargs):
+            called.append(name)
+            return {}
+
+        return record_call
+
     monkeypatch.setattr(profile_workflow, "execute_profile_run", invalid_profile)
+    monkeypatch.setattr(icp_workflow, "execute_icp_run", unexpected_step("icp"))
+    monkeypatch.setattr(signal_workflow, "execute_signal_run", unexpected_step("signals"))
     monkeypatch.setattr(
-        ranking_workflow,
-        "rank_product",
-        lambda product_id: {"product_id": product_id, "icp_status": "missing", "prospect_count": 0, "prospects": []},
+        problem_workflow,
+        "execute_problem_statement_run",
+        unexpected_step("problem_statement"),
     )
+    monkeypatch.setattr(draft_workflow, "execute_draft_run", unexpected_step("draft"))
+    monkeypatch.setattr(ranking_workflow, "rank_product", unexpected_step("ranking"))
 
     assert _run_worker_once(monkeypatch) == 1
     finished = _request("GET", f"/api/pipeline-runs/{queued['id']}").json()
     assert finished["status"] == "failed"
-    assert finished["steps"][0]["status"] == "failed"
-    assert finished["steps"][1]["status"] == "skipped"
-    assert "business profile" in finished["steps"][1]["error"].lower()
-    assert finished["steps"][2]["status"] == "done"
+    assert finished["step_counts"] == {
+        "queued": 0,
+        "running": 0,
+        "done": 0,
+        "failed": 1,
+        "skipped": 8,
+    }
+    assert [step["status"] for step in finished["steps"]] == [
+        "failed",
+        *(["skipped"] * 8),
+    ]
+    assert all(
+        "business profile" in step["error"].lower()
+        for step in finished["steps"][1:]
+    )
+    assert all(
+        "company-info document is missing" in step["error"]
+        for step in finished["steps"][1:]
+    )
     assert finished["steps"][0]["error"].startswith("ValueError:")
+    assert called == []
+
+
+def test_pipeline_fails_fast_after_icp_failure_and_skips_remaining_steps(
+    db_path, monkeypatch
+):
+    monkeypatch.setenv("DEFAULT_MODEL", "pipeline-test-model")
+    monkeypatch.setattr(app.state, "queue_worker", None, raising=False)
+    product_id, _ = _create_product()
+    queued = _request("POST", f"/api/products/{product_id}/pipeline").json()
+    called = []
+
+    def profile_success(product_id: int, run_id: int, model_name: str):
+        _complete_workflow(product_id, run_id, "profile", PROFILE_RESULT)
+
+    def invalid_icp(product_id: int, run_id: int, model_name: str):
+        raise ValueError("ICP grounding failed")
+
+    def unexpected_step(name: str):
+        def record_call(*args, **kwargs):
+            called.append(name)
+            return {}
+
+        return record_call
+
+    monkeypatch.setattr(profile_workflow, "execute_profile_run", profile_success)
+    monkeypatch.setattr(icp_workflow, "execute_icp_run", invalid_icp)
+    monkeypatch.setattr(signal_workflow, "execute_signal_run", unexpected_step("signals"))
+    monkeypatch.setattr(
+        problem_workflow,
+        "execute_problem_statement_run",
+        unexpected_step("problem_statement"),
+    )
+    monkeypatch.setattr(draft_workflow, "execute_draft_run", unexpected_step("draft"))
+    monkeypatch.setattr(ranking_workflow, "rank_product", unexpected_step("ranking"))
+
+    assert _run_worker_once(monkeypatch) == 1
+    finished = _request("GET", f"/api/pipeline-runs/{queued['id']}").json()
+    assert finished["status"] == "failed"
+    assert finished["step_counts"] == {
+        "queued": 0,
+        "running": 0,
+        "done": 1,
+        "failed": 1,
+        "skipped": 4,
+    }
+    assert [step["status"] for step in finished["steps"]] == [
+        "done", "failed", "skipped", "skipped", "skipped", "skipped"
+    ]
+    assert all("ICP step failed" in step["error"] for step in finished["steps"][2:])
+    assert all("ICP grounding failed" in step["error"] for step in finished["steps"][2:])
+    assert called == []
 
 
 def test_pipeline_routes_return_404_for_missing_product_and_run(db_path):

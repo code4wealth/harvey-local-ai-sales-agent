@@ -355,8 +355,17 @@ def test_init_db_migrates_pipeline_progress_columns_on_existing_tables(tmp_path)
 
         run_columns = {row[1] for row in conn.execute("PRAGMA table_info(pipeline_runs)")}
         step_columns = {row[1] for row in conn.execute("PRAGMA table_info(pipeline_steps)")}
-        assert {"model_name", "queue_task_id"} <= run_columns
+        assert {
+            "model_name",
+            "prospect_limit",
+            "prospect_count",
+            "queue_task_id",
+        } <= run_columns
         assert {"step_order", "prospect_id", "result_json"} <= step_columns
+        legacy_limit = conn.execute(
+            "SELECT prospect_limit FROM pipeline_runs WHERE id = 3"
+        ).fetchone()[0]
+        assert legacy_limit is None
         row = conn.execute(
             "SELECT step_order, prospect_id, result_json FROM pipeline_steps WHERE id = 4"
         ).fetchone()

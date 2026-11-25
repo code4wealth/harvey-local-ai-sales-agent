@@ -148,13 +148,18 @@ header are rejected. Product company-info paths are confined to
 `data/company_info/`; CSV and prospect-page request bodies are size-limited.
 
 From the dashboard, choose a product and use **Run full product workflow** to
-queue profile and ICP generation, process each imported prospect's local page
-for signals, grounded problem statement and unsent draft, then refresh product
-ranking. The dashboard polls persisted per-step progress; the API equivalents
-are `POST /api/products/{id}/pipeline`, `GET /api/pipeline-runs/{run_id}`, and
-`GET /api/products/{id}/pipeline`. Import prospects and store their local page
-text before starting. If Ollama is unavailable, the run stays queued and resumes
-through the local worker when available. Individual steps remain available too.
+queue profile and ICP generation, process up to three imported prospects' local
+pages (stable prospect-ID order) for signals, grounded problem statements and
+unsent drafts, then refresh product ranking. Three prospects produce 12 saved
+steps; increase the per-run prospect limit in the dashboard for a longer demo.
+The API accepts the same positive-integer option, for example
+`POST /api/products/{id}/pipeline?prospect_limit=5`. The dashboard polls
+persisted per-step progress; the other API equivalents are
+`GET /api/pipeline-runs/{run_id}` and `GET /api/products/{id}/pipeline`. Import
+prospects and store their local page text before starting. If Ollama is
+unavailable, the run stays queued and resumes through the local worker when
+available. A terminal profile or ICP failure skips all remaining steps with a
+reason. Individual steps remain available too.
 
 ## Useful commands
 

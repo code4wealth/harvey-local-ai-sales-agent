@@ -233,6 +233,8 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     status      TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'done', 'failed')),
     model_name  TEXT,
+    prospect_limit INTEGER,
+    prospect_count INTEGER,
     queue_task_id INTEGER,
     started_at  TEXT,
     finished_at TEXT,
@@ -452,6 +454,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     }
     for column, definition in {
         "model_name": "TEXT",
+        "prospect_limit": "INTEGER",
+        "prospect_count": "INTEGER",
         "queue_task_id": "INTEGER",
     }.items():
         if column not in pipeline_run_columns:
@@ -895,15 +899,22 @@ def create_pipeline_run(
     product_id: int,
     model_name: str | None,
     steps: list[dict[str, Any]],
+    prospect_limit: int = 3,
+    prospect_count: int | None = None,
 ) -> int:
     """Persist one product pipeline and its ordered, prospect-scoped steps."""
     if get_product(conn, product_id) is None:
         raise LookupError(f"product {product_id} not found")
+    if prospect_count is None:
+        prospect_count = len(
+            {step.get("prospect_id") for step in steps if step.get("prospect_id") is not None}
+        )
     now = utcnow()
     cur = conn.execute(
-        "INSERT INTO pipeline_runs (product_id, status, model_name, created_at) "
-        "VALUES (?, 'queued', ?, ?)",
-        (int(product_id), model_name, now),
+        "INSERT INTO pipeline_runs "
+        "(product_id, status, model_name, prospect_limit, prospect_count, created_at) "
+        "VALUES (?, 'queued', ?, ?, ?, ?)",
+        (int(product_id), model_name, int(prospect_limit), int(prospect_count), now),
     )
     run_id = int(cur.lastrowid)
     for index, step in enumerate(steps):

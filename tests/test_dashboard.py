@@ -29,6 +29,9 @@ def test_operations_route_serves_embedded_local_only_dashboard():
     assert "View Email Draft" in html
     assert 'id="prospect-import-form"' in html
     assert 'id="prospect-csv"' in html
+    assert 'id="pipeline-prospect-limit" type="number" min="1" step="1" value="3"' in html
+    assert "Default: 3 prospects." in html
+    assert "stable ID order" in html
     assert 'id="output" class="result-content"' in html
     assert "Technical details" in html
     assert "Prompt hash" in html
@@ -88,6 +91,9 @@ def test_operations_controls_are_wired_to_same_origin_workflows_and_status():
         'CSV files must be 5 MB or smaller.',
         'document.querySelectorAll("[data-workflow]")',
         'document.querySelectorAll("[data-view-workflow]")',
+        'const requestedLimit = Number(control.value);',
+        'Number.isSafeInteger(requestedLimit) || requestedLimit < 1',
+        '`/api/products/${product}/pipeline?prospect_limit=${requestedLimit}`',
         '$("signals").onclick =',
         '$("view-signals").onclick =',
         '$("ranking").onclick =',

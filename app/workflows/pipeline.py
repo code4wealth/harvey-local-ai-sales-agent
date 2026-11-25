@@ -18,6 +18,7 @@ from app.workflows import signals as signal_workflow
 
 logger = logging.getLogger("harvey.pipeline")
 TASK_TYPE = "workflow.pipeline"
+DEFAULT_PROSPECT_LIMIT = 3
 _TERMINAL_STEP_STATUSES = {"done", "failed", "skipped"}
 
 
@@ -100,10 +101,19 @@ def pipeline_run_payload(conn, row) -> dict[str, Any]:
     for step in steps:
         counts[step["status"]] = counts.get(step["status"], 0) + 1
     failed_step = next((step for step in steps if step["status"] == "failed"), None)
+    prospect_ids = {
+        step["prospect_id"] for step in steps if step["prospect_id"] is not None
+    }
+    prospect_limit = row["prospect_limit"]
+    prospect_count = row["prospect_count"]
     return {
         "pipeline": True,
         "id": int(row["id"]),
         "product_id": int(row["product_id"]),
+        "prospect_limit": int(prospect_limit) if prospect_limit is not None else None,
+        "prospect_count": (
+            int(prospect_count) if prospect_count is not None else len(prospect_ids)
+        ),
         "status": row["status"],
         "model_name": row["model_name"],
         "queue_task_id": row["queue_task_id"],
@@ -140,8 +150,19 @@ def latest_pipeline_payload(product_id: int) -> dict[str, Any]:
         conn.close()
 
 
-def submit_pipeline(product_id: int, *, model: str | None = None) -> dict[str, Any]:
-    """Snapshot the product's current prospects and enqueue one full local run."""
+def submit_pipeline(
+    product_id: int,
+    *,
+    model: str | None = None,
+    prospect_limit: int = DEFAULT_PROSPECT_LIMIT,
+) -> dict[str, Any]:
+    """Snapshot a bounded prospect set and enqueue one full local run."""
+    if (
+        isinstance(prospect_limit, bool)
+        or not isinstance(prospect_limit, int)
+        or prospect_limit < 1
+    ):
+        raise ValueError("prospect_limit must be a positive integer")
     model_name = llm_client.resolve_model_name(model)
     conn = db.connect()
     try:
@@ -157,11 +178,13 @@ def submit_pipeline(product_id: int, *, model: str | None = None) -> dict[str, A
         if active is not None:
             return pipeline_run_payload(conn, active)
 
-        prospects = db.list_prospects(conn, product_id)
+        prospects = db.list_prospects(conn, product_id)[:prospect_limit]
         run_id = db.create_pipeline_run(
             conn,
             product_id=product_id,
             model_name=model_name,
+            prospect_limit=prospect_limit,
+            prospect_count=len(prospects),
             steps=_step_specs(prospects),
         )
         try:
@@ -172,6 +195,7 @@ def submit_pipeline(product_id: int, *, model: str | None = None) -> dict[str, A
                     "pipeline_run_id": run_id,
                     "product_id": int(product_id),
                     "model_name": model_name,
+                    "prospect_limit": prospect_limit,
                 },
             )
             db.update_pipeline_run(
@@ -562,6 +586,23 @@ def _step_status(run_id: int, step_name: str) -> str | None:
         conn.close()
 
 
+def _critical_step_failure_reason(run_id: int) -> str | None:
+    """Return a skip reason when a required product-level gate has failed."""
+    conn = db.connect()
+    try:
+        for step_name, label in (("profile", "business profile"), ("icp", "ICP")):
+            row = db.get_pipeline_step(conn, run_id, step_name)
+            if row is None or row["status"] != "failed":
+                continue
+            error = str(row["last_error"] or "").strip()
+            if error:
+                return f"Skipped because the {label} step failed: {error}"
+            return f"Skipped because the {label} step failed."
+    finally:
+        conn.close()
+    return None
+
+
 def _skip_dependency(step_name: str, run_id: int) -> str | None:
     base, _, suffix = step_name.partition(":")
     prospect_id = int(suffix) if suffix else None
@@ -630,12 +671,12 @@ def execute_pipeline_run(run_id: int, model_name: str) -> dict[str, Any]:
             continue
         step_id = int(step["id"])
         name = str(step["step_name"])
-        dependency_error = _skip_dependency(name, run_id)
-        if dependency_error:
+        skip_reason = _critical_step_failure_reason(run_id) or _skip_dependency(name, run_id)
+        if skip_reason:
             conn = db.connect()
             try:
                 db.update_pipeline_step(
-                    conn, step_id, status="skipped", last_error=dependency_error
+                    conn, step_id, status="skipped", last_error=skip_reason
                 )
             finally:
                 conn.close()
