@@ -41,9 +41,30 @@ Windows machine. Target resolution/licence checks remain **VERIFY**.
 | `scrapy` | Not installed or declared | Not applicable to current dependencies | Not used by this application. |
 | `playwright` | Not installed or declared | Not applicable to current dependencies | Not used by this application. |
 
+## Frontend npm distributions
+
+The dashboard uses the locked frontend dependencies in `frontend/package-lock.json`.
+Versions and SPDX licence identifiers below were read from the installed package
+metadata during the local production build. The build copies the application,
+framework, icon, and bundled-font notices into `frontend/static/licenses/`.
+
+| Distribution | Locked version | Observed licence | Role |
+|---|---:|---|---|
+| `react` | `19.3.1` | MIT | Dashboard UI runtime. |
+| `react-dom` | `19.3.1` | MIT | Dashboard DOM renderer. |
+| `lucide-react` | `0.468.0` | ISC | Dashboard icons. |
+| `tailwindcss` | `4.3.5` | MIT | Dashboard stylesheet generation. |
+| `@tailwindcss/vite` | `4.3.5` | MIT | Vite integration for Tailwind CSS. |
+| `@vitejs/plugin-react` | `4.7.0` | MIT | React build and development tooling. |
+| `vite` | `6.4.6` | MIT | Frontend build and development server. |
+| `@fontsource-variable/inter` | `5.3.0` | OFL-1.1 | Bundled Inter variable font files. |
+| `@fontsource-variable/jetbrains-mono` | `5.3.0` | OFL-1.1 | Bundled JetBrains Mono variable font files. |
+
 The problem-statement workflow adds no package or model distribution; it uses
 the existing local Ollama client and selected locally installed model. Exact
-resolved dependency versions and licences on the target machine, the Ollama
-distribution licence, Qwen3's model licence, and the all-MiniLM-L6-v2 model-card
-licence remain **VERIFY** items. This project is an AGPL-3.0-only derivative;
-retain `LICENSE` and `NOTICE` with distributions.
+resolved Python dependency versions and licences on the target machine, the
+Ollama distribution licence, Qwen3's model licence, and the
+all-MiniLM-L6-v2 model-card licence remain **VERIFY** items. The frontend
+versions above are from this sandbox's locked install and are not a Windows
+runtime verification. This project is an AGPL-3.0-only derivative; retain
+`LICENSE` and `NOTICE` with distributions.

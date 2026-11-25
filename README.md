@@ -15,7 +15,8 @@ resources and are not priced here.
 
 ## Current capabilities
 
-- Small, static, no-build/no-external-network dashboard served at `/`.
+- A locally served React + Tailwind sales-intelligence dashboard at `/`, with
+  the existing product and prospect workflows retained at `/operations`.
 - Product-scoped profile and ICP generation from local product information.
 - Product-scoped CSV prospect import and explicit local page-text storage.
 - Buying-signal extraction with source-grounded evidence and persisted runs.
@@ -61,6 +62,28 @@ The service stores its SQLite database at `data/harvey.db` by default. Override
 `DB_PATH` if needed. Ollama and downloaded local models must be installed before
 running AI workflows; tests use mocked Ollama responses and do not need a live
 model.
+
+### Dashboard frontend
+
+The bundled React Router + Tailwind workspace is served from `/`; its nine
+pages share one local-first application shell. The existing workflow console
+remains available at `/operations`. The **Import Prospects** action opens a
+product-scoped CSV mapping modal at `/prospects?import=true`. The production
+bundle is checked in under `frontend/static`, so Node.js is not required to run
+the Python quickstart.
+
+To work on the UI, install the locked dependencies and run Vite in a separate
+terminal while the API is running on port 8000:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Vite proxies only `/api`, `/operations`, and `/licenses` to FastAPI; Sellbird
+workspace pages are handled by React Router. Rebuild the checked-in production
+bundle after UI changes with `npm run build` from `frontend/`.
 
 ### Windows PowerShell setup (under 10 commands)
 
