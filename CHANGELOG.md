@@ -4,6 +4,27 @@ All notable changes to this fork are documented here.
 
 ## [Unreleased] — 2026-11-23
 
+- Resolve backend model preferences against Ollama's installed tags before
+  inference; expose model inventory, selection source, embedding-cache state,
+  and combined local readiness. Model-tag outages queue workflows without
+  attempting `/api/chat`.
+- Removed browser-side model selection and made the diagnostics, dashboard, and
+  settings report installed models, the actual embedding model/cache, and live
+  readiness instead of implying an unverified model is ready.
+- Changed the draft prompt's formatting example to a deterministic synthetic
+  placeholder that cannot pass the existing evidence checks; evidence
+  validation remains strict.
+- Clarified simulated-offline status across model settings, dashboard, and
+  activity views; a UI-only override now says it is simulated and performs no
+  inference instead of implying a real network/Ollama outage.
+- Added project status and submission notes with distinct owner-reported versus
+  workspace-verified results, actual evidence-file inventory, and official
+  model/runtime/Windows-package licence pages. Missing logs, screenshots, video
+  URL, footer hash, and outage result remain explicitly pending; the owner has
+  confirmed the reported run-date field, but the future-dated run outcomes are
+  still unsupported by target-run evidence in this checkout.
+- Expanded the README opening with six local-run/offline steps, failure
+  handling, and the mocked-test limitation.
 - Improved draft and problem-statement prompts for specific, evidence-grounded
   outreach and cautious operational interpretations; existing evidence and
   anti-fabrication validators were not loosened.

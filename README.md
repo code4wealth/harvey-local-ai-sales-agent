@@ -8,6 +8,37 @@ service. No paid APIs are called or required; paid API cost is **$0**. Local
 hardware, electricity, and one-time model-download bandwidth are user-provided
 resources and are not priced here.
 
+## Run locally and verify offline behavior
+
+Inference goes only through `app/llm_client.py` to Ollama at
+`http://127.0.0.1:11434`; there is no cloud API, API key, or cloud fallback.
+Start the app with Python 3.11+, the local Ollama service, and a model already
+pulled. The bundled UI is served by FastAPI; use `/operations` for the workflow
+console.
+
+1. Create and activate a virtual environment: `python -m venv .venv`.
+2. Install the project and test tools: `pip install -e '.[dev]'`.
+3. Run `python scripts/verify_no_cloud.py` and `pytest -q` for source and
+   automated checks.
+4. Start Ollama and pull the intended tag, for example `ollama pull qwen3:4b`;
+   cache `sentence-transformers/all-MiniLM-L6-v2` while online before an
+   internet-disconnected run.
+5. Set `DEFAULT_MODEL` (and `OFFLINE_STRICT=1` after caching, if desired), then
+   start the API bound to loopback:
+   `python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`.
+6. Open `http://127.0.0.1:8000/operations`. For offline acceptance, disconnect
+   Wi-Fi only after model caching, then run
+   `scripts/offline_acceptance.ps1`; run `scripts/ollama_down_check.ps1`
+   separately to test outage/recovery. Follow [`docs/DEMO_RUNBOOK.md`](docs/DEMO_RUNBOOK.md)
+   and preserve the actual log/JSON results. The `example.com` probe is not a
+   complete network-isolation proof.
+
+Failure handling is local: Ollama outages queue AI work for local replay, and
+missing model tags report a local `ollama pull` instruction. Deterministic
+ranking remains available without inference. `make verify` and `pytest -q` use
+mocked Ollama responses and fake embeddings; passing tests are **not** proof of
+live Ollama behavior, Windows acceptance, or network isolation.
+
 > Upstream attribution: Harvey/Sellbird was created by Ethan Rogers and the
 > Sellbird contributors. Upstream is AGPL-3.0-only from version 0.4.0 onward,
 > and this fork keeps that licence; releases through 0.3.x have a separate MIT
@@ -159,9 +190,14 @@ not proof of a fully internet-disconnected run. `ollama_down_check.ps1`
 interactively guides an Ollama stop/restart and writes evidence beneath
 `test_evidence/ollama_outage/`. These scripts perform live local acceptance
 only when an operator runs them; their source tests do not count as a real
-Ollama result. Exact Windows cache, Wi-Fi-off, eight-workflow, port-check, and
-outage/recovery instructions are in [`docs/DEMO_RUNBOOK.md`](docs/DEMO_RUNBOOK.md);
-physical-device results remain **PENDING** until those steps are run.
+Ollama result. The owner reports a Wi-Fi-disconnected run in which all eight
+workflows worked, but the script invocation and matching offline log/JSON are
+not present in this checkout. PowerShell script execution, network evidence,
+and Ollama outage/recovery remain **PENDING**. Exact Windows cache, Wi-Fi-off,
+eight-workflow, port-check, and outage/recovery instructions are in
+[`docs/DEMO_RUNBOOK.md`](docs/DEMO_RUNBOOK.md); see
+[`docs/PROJECT_STATUS_REPORT.md`](docs/PROJECT_STATUS_REPORT.md) for the owner-
+reported results and current evidence inventory.
 
 The API has no user authentication and is intended for one local operator:
 bind it to `127.0.0.1` (as above), not `0.0.0.0` or a LAN address. Mutating
@@ -200,16 +236,20 @@ python scripts/eval_replies.py --model qwen3:4b --held-out       # gated; requir
 it does not run Ollama or either held-out evaluator. The reply evaluator writes
 redacted JSON reports beneath `test_evidence/real_run/`. It reports aggregate
 metrics and misclassified IDs only, never reply text or rationale. See
-`docs/DEMO.md` for ordered local demo commands and the reported live-run
-snapshot. The offline acceptance procedure is in
-`docs/DEMO.md#offline-acceptance-test`; unavailable outputs are marked `not run`
-and unreported outcomes are marked `not supplied`.
+`docs/DEMO.md` for ordered local demo commands, historical evaluation results,
+and separately labeled owner-reported target results. The offline acceptance
+procedure is in `docs/DEMO.md#offline-acceptance-test`; unprovided script output,
+run IDs, and evidence paths remain marked `not run` or `not supplied` rather
+than inferred from the owner's workflow report.
 
 ## Historical reported live-run snapshot
 
 The figures below were reported for earlier prompts and are not evidence for
 Problem 7's confidence-field schema, stricter retry behavior, or current
-Windows/offline acceptance. No new live-model run is claimed here.
+Windows/offline acceptance. The owner reports later local workflow runs; no new
+model-quality metrics or held-out evaluation are claimed here. See
+`docs/PROJECT_STATUS_REPORT.md` for those owner-reported facts and evidence
+limits.
 
 Configuration: `qwen3:4b`, temperature `0`, seed `42`, `repeat_penalty=1.0`,
 retry temperature `0.2`, Windows laptop, about 18 tokens/s. All data is fictional

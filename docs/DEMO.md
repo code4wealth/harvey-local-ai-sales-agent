@@ -30,14 +30,15 @@ ollama pull qwen3:4b
 ```
 
 ```text
-RESULT: Reported live configuration: qwen3:4b, temperature 0, seed 42,
-repeat_penalty 1.0, retry temperature 0.2, Windows laptop, about 18 tokens/s.
-User-supplied local checks: Ollama 0.40.17; `qwen3:4b` ID 359d7dd4bcda,
-2.5 GB; model licence Apache License 2.0 (January 2004).
-Hardware: 15.7 GB RAM, 12 CPUs, 4.0 GB NVIDIA VRAM, standard-laptop tier,
-recommended `qwen3:4b`, num_ctx 4096. `/api/status`: `ai_mode=local-only`,
-Ollama available at `http://127.0.0.1:11434`, queue empty. These are
-user-supplied command/API facts, not offline-acceptance script evidence.
+RESULT: Earlier operator-reported configuration and checks (not confirmed for
+the current owner-reported run): `qwen3:4b`, temperature 0, seed 42,
+`repeat_penalty=1.0`, retry temperature 0.2, Windows laptop; Ollama 0.40.17,
+reported digest `359d7dd4bcda`, 2.5 GB, and Apache License 2.0; 15.7 GB RAM,
+12 CPUs, 4.0 GB NVIDIA VRAM, standard-laptop tier, `num_ctx=4096`. These values
+are historical reports, not independently checked licences or current run
+metadata. The current owner report confirms `qwen3:4b` local inference and an
+approximate 66% GPU / 34% CPU split, but gives no current Ollama version or
+digest. See the owner-reported run section below.
 ```
 
 ## 2. Create an isolated demo database and start the API
@@ -59,7 +60,8 @@ at `127.0.0.1:11434`; this application has no cloud fallback. The API has no
 user authentication; keep it bound to loopback and do not expose it to a LAN.
 
 ```text
-RESULT: Reply-import count and API startup output: not run.
+RESULT: The owner reports 60 SAMPLE replies imported in the online FieldNest
+run. API startup output and the exact run/import response were not supplied.
 ```
 
 ## 3. Create a product, import prospects, and run its profile and ICP
@@ -83,10 +85,11 @@ Check the corresponding `GET` endpoint after the worker retries. The commands
 use only fictional SAMPLE product/prospect data.
 
 ```text
-RESULT: RelayCue profile and ICP succeeded. FieldNest ICP succeeded on the final
-run (HTTP 200); an earlier run failed grounding after the model invented a
-trigger event and disqualifier, and the failure was stored with its reason.
-Product IDs, prospect import counts, and queued-retry counts: not run.
+RESULT: Earlier operator-reported runs: RelayCue profile/ICP succeeded and a
+final FieldNest ICP succeeded after an earlier grounding failure. Separately,
+the owner reports profile and ICP completed in the online FieldNest run, with
+20 prospects imported (the checked-in CSV has 20 data rows). Exact product IDs,
+HTTP response, and queued-retry counts for the owner run were not supplied.
 ```
 
 ## 4. Run the product pipeline and inspect its saved progress
@@ -139,7 +142,8 @@ status when no signal run exists.
 
 The model scores below are historical operator-reported results from earlier
 prompts. They predate the Problem 7 confidence field and do not verify the
-current schema or retry behavior; no new live or held-out run is claimed.
+current schema or retry behavior. The owner reports a later local workflow run,
+but no new model-quality metrics or held-out evaluation result are supplied.
 
 ```text
 RESULT: Signals development (37 prospects; historical signal prompt hash prefix 73fa8d34...):
@@ -163,10 +167,14 @@ four-word verified span was quoted in the body; status succeeded, sent false.
 ```
 
 ```text
-RESULT: Problem-statement POST/GET run on the target database, Ollama outage and
-retry demonstration, dashboard browser click-through, and dashboard screenshot
-(`docs/images/dashboard.png`): not run. The new offline-acceptance step is also
-not run; no target-machine result, IDs, statuses, or counts have been supplied.
+RESULT: The owner reports problem statement, draft, and ranking completed in
+the online FieldNest run and all eight workflows completed with Wi-Fi
+disconnected. Exact target POST/GET responses, run IDs, per-step statuses,
+timestamps, and logs were not supplied; use the owner-reported results section
+below rather than treating this as script evidence. The invocation of
+`offline_acceptance.ps1` was not confirmed, and no offline log/JSON is present.
+The static dashboard image `docs/images/dashboard.png` is not a target-run
+screenshot. Ollama outage/recovery remains unresolved.
 ```
 
 ## 5. Classify one sample reply and run the development evaluator
@@ -208,12 +216,12 @@ These checks use tests and mocked Ollama responses; they do not count as a live
 model demonstration and do not rerun either held-out evaluator.
 
 ```text
-RESULT: Current workspace verification — `make verify` passed with 239 passed
-and 2 skipped; the two local skips are PowerShell parser checks because
-PowerShell is not installed here. Corpus validation and the no-cloud guard
-passed. `git diff --check` is run separately after the documentation edits.
-These are automated/source checks, not a real Ollama or internet-off run. The
-frontend was unchanged in this task; `npm run build` was not rerun.
+RESULT: Current workspace verification — `PATH="$PWD/.venv/bin:$PATH" make verify`
+passed with 250 passed and 2 skipped; the two local skips are PowerShell parser
+checks because PowerShell is not installed here. Corpus validation and the
+no-cloud guard passed. The frontend production build and `git diff --check` also
+passed. These are automated/source checks, not full live Ollama or internet-off
+acceptance.
 ```
 
 ## Offline acceptance test
@@ -284,40 +292,61 @@ timestamped `ollama-down-*.log` and `ollama-down-*.json` files under
 `test_evidence/ollama_outage/`. The recovery wait is configurable with
 `-WaitSeconds`.
 
-### Offline acceptance results
+### Owner-reported target-laptop results and acceptance evidence
 
-No files were present under `test_evidence/offline/` when this update was made.
-The user supplied Ollama, model, hardware, status, and package facts below; these
-are recorded as reported values, not as acceptance-script evidence. Internet-off
-and Ollama-down outcomes remain `not run` until their evidence files exist.
+The owner confirms the reported Windows-run date as **2026-11-26**. This date
+is later than the current workspace snapshot/system date (**2026-11-23 UTC**),
+so the run remains a future-dated owner report, not an outcome independently
+verified from a target-laptop capture in this checkout.
+
+The owner reports live local `qwen3:4b` inference via Ollama, with `ollama ps`
+showing about 66% GPU / 34% CPU on an RTX 3050 (15.7 GB RAM, 12 CPUs). The
+online FieldNest run reportedly completed profile, ICP, signals, problem
+statement, draft, and ranking; 20 prospects and 60 sample replies were
+imported. The owner reports `R004` classified `not_interested`, matching the
+ambiguous development label in `data/eval/reply_labels.csv`. Separately, the
+owner reports all eight workflows worked with Wi-Fi disconnected and that the
+offline run was screen-recorded. The exact script, `.log`/`.json`, ping result,
+`netstat` capture, screenshot files, outage result, video link, and demo footer
+commit were not supplied.
+
+Files actually present under `test_evidence/` are `online/README.md` (template
+only), `real_run/smoke_embeddings.txt`, and `real_run/smoke_ollama.txt` (earlier
+smoke records). There are no files under `test_evidence/offline/` or
+`test_evidence/ollama_outage/`, and no screenshot image is present under
+`test_evidence/` in this checkout. Three static UI images under `docs/images/`
+are not evidence from the owner-reported run. The owner's screen recording is
+not present in these folders.
 
 | Check | Status | Evidence / result |
 |---|---|---|
-| `make verify` for the current workspace | passed — 239 passed, 2 skipped; corpus validation and no-cloud scan passed. | The two skips are PowerShell parser checks because PowerShell is unavailable here. Mocked/source checks, not live-model proof. |
-| `npm run build` | not run for this task; frontend source was unchanged. | No frontend changes were made. |
-| `git diff --check` | passed after the documentation edits. | No whitespace errors reported. |
-| PowerShell script execution | not run — no PowerShell result is present in `test_evidence/offline/`. | Script syntax and real Windows networking behavior remain to be verified on the target laptop. |
-| Ollama version, installed model list, and local status | reported by user — Ollama `0.40.17`; `qwen3:4b`, ID `359d7dd4bcda`, `2.5 GB`; `/api/status` local-only, available at loopback, queue empty. | User-supplied facts; not a timestamped acceptance-script result. |
-| Hardware recommendation | reported by user — 15.7 GB RAM, 12 CPUs, 4.0 GB NVIDIA VRAM; standard-laptop, `qwen3:4b`, num_ctx 4096. | User-supplied `/api/hardware` output; not a timestamped acceptance-script result. It reports capacity/recommendation, not runtime CPU/GPU placement. |
-| Target-laptop CPU/GPU inference split and embedding device | **PENDING** — no current live placement measurement supplied. | The app does not set/record Ollama GPU-layer offload or an embedding `device`; observe a live run on the laptop. |
-| Qwen3 licence metadata | reported by user — Apache License 2.0, January 2004. | From the supplied `ollama show qwen3:4b --license` output; see `docs/LICENSES.md`. |
+| `make verify` for the current workspace | passed — 250 passed, 2 skipped; corpus validation and no-cloud scan passed. | The two skips are PowerShell parser checks because PowerShell is unavailable here. Mocked/source checks, not live-model proof. |
+| `npm run build` | passed with Vite 6.4.6 after frontend changes. | Generated the checked-in production bundle; this is not browser or live-API acceptance. |
+| `git diff --check` | passed after the current source and documentation edits. | No whitespace errors reported. |
+| PowerShell script execution | **PENDING** — the owner reports an eight-workflow offline run, but did not confirm whether `offline_acceptance.ps1` ran. | No PowerShell log/JSON exists in this checkout; retain the owner report separately from script execution. |
+| Current owner-reported local inference | **Owner-reported:** `qwen3:4b` via local Ollama; the latest Ollama version, exact installed digest, and status JSON were not supplied. | The tracked one-call smoke log is earlier evidence and is not asserted to match the Nov 26 owner run. |
+| Target runtime placement | **Owner-reported:** RTX 3050, 15.7 GB RAM, 12 CPUs; `ollama ps` showed about 66% GPU / 34% CPU. | No runtime capture is present here; no embedding-device information was supplied. Earlier hardware-recommendation facts are not treated as this run's output. |
+| CPU/GPU inference split | **Owner-reported** — about 66% GPU / 34% CPU on RTX 3050. | The value was not independently inspected; no `ollama ps` file is present in this checkout. |
+| Embedding-device placement | **PENDING** — not supplied. | `ollama ps` does not establish the embedding device; capture the embedding runtime separately if required. |
+| Qwen3 licence metadata | Earlier owner-reported Apache License 2.0; **still VERIFY** against the current exact tag/manifest. | The earlier `ollama show qwen3:4b --license` report is not an independent check of the current artifact or digest; see the official pages in `docs/MODELS_AND_LICENCES.md`. |
 | `sentence-transformers` package metadata | reported by user — version `3.4.1`, Apache 2.0. | From the supplied `pip show sentence-transformers` output; see `docs/LICENSES.md`. |
-| Offline acceptance against the local database/API | not run — no files were present in `test_evidence/offline/`. | No timestamped acceptance result exists yet. |
-| Problem-statement target-machine acceptance step | not run. | The eight-workflow script selects one RelayCue prospect with saved page text and records status/counts only; it does not write statement or evidence text into the evidence JSON. |
-| Ollama-down / recovery acceptance | not run until evidence files exist. | Do not treat mocked queue tests or the supplied status snapshot as a live outage test. |
-| User's internet-off test | not run until evidence files exist. | Keep its result separate from these local-only scripts. |
+| Wi-Fi-disconnected eight-workflow run | **Owner-reported complete** — all eight workflows worked; screen-recorded. | The script used and recording path were not supplied; no offline log/JSON is present in this checkout. |
+| Problem-statement target-machine workflow | **Owner-reported complete** in the online FieldNest run and as part of the reported offline eight workflows. | No target output, run ID, or acceptance log was supplied; do not infer statement quality from completion status. |
+| Ollama-down / recovery acceptance | **PENDING** — the owner did not resolve the `[DONE and recorded / NOT DONE]` choice. | No outage result or file is present; mocked queue tests are not live outage evidence. |
+| Wi-Fi-disconnected test | **Owner-reported complete** for all eight workflows. | Whether ping failed and whether `netstat` on port 11434 was captured were left as unresolved choices; no network trace is present here. A successful Wi-Fi toggle is not comprehensive network-isolation proof. |
+| Demo video / footer commit | **PENDING** — no URL or hash was supplied. | The offline screen recording is reported but not linked or present in this checkout; confirm the video matches the final commit. |
+| Screenshot evidence | **PENDING** — no screenshot image exists under `test_evidence/` in this checkout. | `test_evidence/online/README.md` is a template, not a screenshot. |
 
 ### Unresolved limitations
 
-The acceptance scripts have not been executed in PowerShell here. Runtime
-behavior on the target Windows build, the `Get-NetTCPConnection` permission
-requirements, the locally imported sample data, and live Ollama queue recovery
-remain user verification items. Hardware detection reports NVIDIA VRAM via
-`nvidia-smi` only; it does not report Ollama's live CPU/GPU layer placement or
-the embedding runtime's device. The target laptop's actual placement and
-performance remain **PENDING**. The reported Ollama and Qwen3 values do not
-verify Ollama's distribution licence or the embedding model's model-card
-metadata; licence/version metadata for embedding transitive packages also
-remain unavailable. See `docs/MODELS_AND_LICENCES.md`, with unconfirmed items
-marked `VERIFY`. Static source scans and mocks are not a substitute for the
-internet-off test, which remains `not run` until its evidence file exists.
+The owner reports the Wi-Fi-disconnected eight-workflow run and a live local
+inference run, but the PowerShell script execution, `.log`/`.json`, ping result,
+`netstat` observation, and complete network trace were not supplied. Treat the
+workflow outcome as owner-reported, not independently verified; it is not proof
+that every outbound route was blocked. The owner-reported `ollama ps` split is
+also not present as a capture, and no embedding-device or performance
+measurement was supplied. Ollama-down/recovery remains **PENDING**. Target
+Windows package resolution and all model/runtime licence items remain
+**VERIFY** in `docs/MODELS_AND_LICENCES.md`; historical user reports do not
+replace checking the exact installed artifacts and official pages. Static
+source scans and mocked tests are not a substitute for these target checks.

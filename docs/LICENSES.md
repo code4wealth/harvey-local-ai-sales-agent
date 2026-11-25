@@ -12,9 +12,11 @@ upstream version 0.4.0, as declared in `pyproject.toml` and `LICENSE`; older
 upstream releases through 0.3.x remain under their historical MIT notice.
 
 No Ollama executable, PowerShell, or model files are available for local
-inspection. No physical-device acceptance result is claimed. See
+inspection. The owner reports target-Windows local inference and an offline
+workflow run, but no corresponding capture files are present in this checkout;
+those reports do not verify model or package licences. See
 [`MODELS_AND_LICENCES.md`](MODELS_AND_LICENCES.md) for the detailed metadata,
-remaining VERIFY inventory, and exact external pages to inspect.
+remaining VERIFY inventory, and exact official pages to inspect.
 
 ## Models and runtime
 

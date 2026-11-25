@@ -1,9 +1,27 @@
-# Online demo evidence notes — TEMPLATE ONLY
+# Online demo evidence notes — owner report and capture template
 
-**Status: PENDING.** This file is a capture checklist, not evidence. No online
-workflow was run and no screenshots are included in this commit. Fill in only
-from an actual target-laptop run; do not invent results or present SAMPLE data
-as real prospect research.
+**Owner-reported, not independently verified.** The owner confirms the
+reported Windows-run date as 2026-11-26. That is later than the current
+workspace snapshot/system date (2026-11-23 UTC), so the run remains a
+future-dated owner report rather than an outcome verified from target-run
+artifacts. The online workflow report is recorded below, but this file remains
+a capture template, not primary run evidence. No target-run screenshot or
+timestamped online log is present in this directory. Three static dashboard images under `docs/images/` are not evidence
+from the reported run. Do not invent results or present SAMPLE data as real
+prospect research.
+
+## Owner-reported online result
+
+- Product: FieldNest (SAMPLE product).
+- The owner reports profile, ICP, signals, problem statement, draft, and ranking
+  completed; 20 prospects and 60 sample replies imported.
+- The owner reports `R004` classified `not_interested`, matching the ambiguous
+  development label in `data/eval/reply_labels.csv`. The checked-in file
+  verifies the label only, not the live inference result.
+- The owner reports local inference using `qwen3:4b` via Ollama. Current model
+  digest, Ollama version, run ID, and per-workflow logs were not supplied.
+- Exact date/time, demo commit, runtime captures, and screenshot files were not
+  supplied. This directory contains only this README.
 
 ## Run details (complete after capture)
 

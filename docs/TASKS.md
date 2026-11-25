@@ -13,8 +13,9 @@ retained as context. See `docs/WORKFLOWS.md` for detailed data contracts.
 - [x] Product-scoped deterministic prospect ranking.
 - [x] Evidence-grounded unsent draft workflow; no verified signals means a
   persisted `no verified evidence` skip.
-- [ ] Run the exact commands in `docs/DEMO.md` with local Ollama and fill in
-  the `RESULT: fill after live run` placeholders. No live run is claimed.
+- [ ] Run the exact commands in `docs/DEMO.md` with local Ollama and save the
+  resulting artifacts. The owner reports separate online and Wi-Fi-disconnected
+  workflow runs; the exact script execution and run files are not present here.
 - [ ] Optionally run held-out evaluation only after reviewing/freezing the
   prompt; this roadmap has not performed held-out evaluation.
 - [x] Evidence-grounded problem statements and a persistent product-level
@@ -77,7 +78,11 @@ retained as context. See `docs/WORKFLOWS.md` for detailed data contracts.
 - [x] Implement validated local profile, ICP, signal, reply-classification, and outreach-draft workflows with persistent outage replay.
 - [x] Implement deterministic product-specific ranking and expose ranking/draft APIs.
 - [x] Add a reply evaluator with redacted reports, prompt freezing, and a held-out gate.
-- [ ] Run full live Ollama demos and record actual results; do not substitute mocked results.
-- [ ] Run the network-isolation and Ollama-stop/drain demonstrations on the target machine.
+- [ ] Complete and preserve the live Ollama demo records. The owner reports
+  online and Wi-Fi-disconnected workflow runs, but the logs, screen recording,
+  and exact script invocation are not present in this checkout.
+- [ ] Complete network-isolation evidence and the Ollama-stop/drain demonstration
+  on the target machine; the outage result and network-capture status were not
+  supplied.
 - [x] Problem-statement generation and full pipeline orchestration are implemented with persistent per-step status, retry, and resume behavior.
 - [ ] Review model/dependency licence metadata and complete release checklist before release.

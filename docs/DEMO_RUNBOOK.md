@@ -1,9 +1,10 @@
 # Windows demo and acceptance runbook
 
-> **Physical-device results: PENDING.** This document is an instruction set, not
-a test result. Do not mark Wi-Fi-off, PowerShell, Ollama-outage, model-cache,
-CPU/GPU-placement, or screenshot evidence complete until the steps are run on
-the target laptop and the resulting files are reviewed.
+> **Owner-reported partial results; evidence review is pending.** This document
+is an instruction set, not a test result. The owner reports a Windows live run
+and an eight-workflow Wi-Fi-disconnected run; the run date, logs, screenshots,
+network observations, and outage/recovery result are not fully evidenced in this
+checkout. Section 6 separates those owner reports from checks still pending.
 
 Use Windows PowerShell 5.1 or PowerShell 7 from the repository root. The demo
 uses only fictional `SAMPLE` product/prospect/reply data. It does not discover
@@ -352,15 +353,62 @@ verified until it has been timed on the target laptop.
 
 ## 6. Current physical-device status
 
-All results below remain **PENDING** until the target laptop is tested:
+### Owner-reported Windows run
 
-- Wi-Fi physically disabled during the eight-workflow run and its recorded
-  `example.com` indicator.
-- Actual `ollama ps` CPU/GPU placement, target embedding device, and performance.
-- Controlled Ollama stop, queued work, restart, queue wake, and completed retry.
-- Any screenshots or video of the browser and terminal results.
+The owner confirms the reported date for these results as **2026-11-26**.
+That date is later than the current workspace snapshot/system date
+(**2026-11-23 UTC**), so the run remains a future-dated owner report, not an
+outcome independently inspected from a laptop capture in this checkout.
+
+- Live local inference used `qwen3:4b` via Ollama. The owner reports `ollama ps`
+  showed about 66% GPU / 34% CPU on an RTX 3050, with 15.7 GB RAM and 12 CPUs.
+  An exact model digest, Ollama version, and embedding-device placement were
+  not supplied in this update.
+- The online FieldNest run reportedly completed profile, ICP, signals, problem
+  statement, draft, and ranking; 20 prospects and 60 sample replies were
+  imported. The owner reports `R004` classified `not_interested`, matching the
+  ambiguous development label (the label is present in the checked-in evaluator
+  data; the runtime result itself has no capture file here).
+- The owner reports all eight workflows worked with Wi-Fi disconnected and that
+  this run was screen-recorded. This does not establish that the PowerShell
+  acceptance script was used, that the screen recording is stored here, or
+  that network traces/listener logs were captured.
+
+The owner-provided prompts for ping failure / `netstat` on port 11434, Ollama
+outage/recovery status, demo-video URL, screenshot file list, and the demo footer
+commit hash were unresolved alternatives/placeholders, not confirmed values.
+Leave each pending until the owner supplies a value or an artifact is verified.
+
+### Evidence present in this checkout
+
+The actual files under `test_evidence/` are:
+
+- `test_evidence/online/README.md` — template only; not screenshots or run logs.
+- `test_evidence/real_run/smoke_embeddings.txt` — earlier operator-provided
+  embedding smoke record.
+- `test_evidence/real_run/smoke_ollama.txt` — earlier single-call Ollama smoke
+  record.
+
+There are no files under `test_evidence/offline/` or
+`test_evidence/ollama_outage/`, and no screenshot image file is present under
+`test_evidence/` in this checkout.
+
+### Still pending
+
+- Verify the owner-reported run date and review/attach the screen recording.
+- Confirm whether the offline PowerShell script ran; save/review its actual log
+  and JSON if available. Confirm the `example.com` probe result and any ping,
+  listener (`netstat`), or network-capture evidence; do not infer these.
+- Run and record the controlled Ollama stop, queued task, deterministic ranking,
+  restart, worker wake, and replay if it was not completed.
+- Supply the end-to-end demo video URL and the commit hash visible in its footer;
+  check that the video matches the final branch commit.
+- Add actual target-run screenshots, if they exist, and record their real
+  paths. No screenshot is present under `test_evidence/`; three static dashboard
+  images under `docs/images/` are not evidence from the owner-reported run.
+- Record target embedding-device placement and any performance only from an
+  actual capture; none was reported here.
 
 Do not replace these entries with mock/unit-test results, expected output, or
-operator instructions. Keep generated run records in the two evidence folders;
-review them before sharing, and do not commit real prospect data or private
-machine details.
+operator instructions. Preserve failures and skips; do not commit real prospect
+data or private machine details.

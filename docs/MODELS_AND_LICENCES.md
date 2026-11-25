@@ -13,7 +13,10 @@ model weights.
 The sandbox does **not** contain `sentence-transformers`, its embedding stack,
 Ollama, PowerShell, or model files. Workflow tests use mocked Ollama responses
 and fake embeddings; they do not establish model-artifact licences or perform a
-live model run.
+live model run. The owner separately reports a Windows run using local
+`qwen3:4b`; the current Ollama version, exact model digest, embedding revision,
+and target package resolution were not supplied, so the report does not clear
+any licence **VERIFY** item.
 
 ## Harvey and upstream notice
 
@@ -54,12 +57,12 @@ must be checked separately.
 | Model or runtime | Use / observed identifier | Licence and verification status |
 |---|---|---|
 | Qwen3 `qwen3:1.7b` | Low-resource generation recommendation | **VERIFY** — artifact licence, manifest, and digest were not inspected. |
-| Qwen3 `qwen3:4b` | Standard-laptop generation recommendation; an earlier operator report named digest `359d7dd4bcda` and size 2.5 GB | **VERIFY** — Apache-2.0 was operator-reported, not independently checked against the exact artifact/model card. |
+| Qwen3 `qwen3:4b` | Standard-laptop recommendation; owner reports this tag was used for Windows local inference. An earlier report named digest `359d7dd4bcda` and size 2.5 GB; the current run's digest was not supplied. | **VERIFY** — the earlier Apache-2.0 report is not independent verification of the current Ollama manifest, digest, or terms. |
 | Qwen3 `qwen3:8b` | Standard-plus generation recommendation | **VERIFY** — artifact licence, manifest, and digest were not inspected. |
 | Qwen3 `qwen3:14b` | High-performance generation recommendation | **VERIFY** — artifact licence, manifest, and digest were not inspected. |
 | Custom `DEFAULT_MODEL` tag | Optional operator override | **VERIFY** — identify and review the exact model artifact and licence before use. |
 | `sentence-transformers/all-MiniLM-L6-v2` | Local embeddings; model revision is not pinned in the application | **VERIFY** — model revision, downloaded files, and model-card licence were not inspected. This is separate from the Python `sentence-transformers` package licence. |
-| Ollama | Local model server at the fixed loopback URL in `app/llm_client.py`; `0.40.17` is an earlier operator-reported version | **VERIFY** — installed version and distribution licence were not inspected in this update. |
+| Ollama | Local model server at the fixed loopback URL in `app/llm_client.py`; `0.40.17` is an earlier operator-reported version. The owner reports a current `qwen3:4b` run but did not supply its Ollama version. | **VERIFY** — current installed version and distribution licence/notices were not inspected. |
 
 Model files must be present in the local Ollama or Hugging Face cache before
 use. The embedding loader sets `HF_HUB_OFFLINE=1` and

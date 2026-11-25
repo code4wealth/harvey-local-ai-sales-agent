@@ -13,20 +13,25 @@ model request. It does not establish live Ollama quality, Windows/PowerShell
 execution, Wi-Fi-off behavior, or outage/recovery against a running Ollama
 server.
 
-The latest local full-suite result recorded for this update is **239 passed,
-2 skipped**. Both skips are the PowerShell parser checks for
-`scripts/offline_acceptance.ps1` and `scripts/ollama_down_check.ps1`, because
-neither `pwsh` nor `powershell` is installed here. Source assertions ran, but
-the scripts themselves have not been executed by PowerShell. This is not a pass
-for PowerShell syntax or Windows/offline acceptance.
+The latest local full-suite result is **250 passed, 2 skipped** from
+`PATH="$PWD/.venv/bin:$PATH" pytest -q` (also run through `make verify`). Both
+skips are the PowerShell parser checks for `scripts/offline_acceptance.ps1` and
+`scripts/ollama_down_check.ps1`, because neither `pwsh` nor `powershell` is
+installed here. Source assertions ran, but the scripts themselves have not
+been executed by PowerShell in this workspace. This is not a pass for target
+Windows behavior or PowerShell acceptance.
 
-No fresh real-hardware run or performance measurement was performed for this
-verification. Hardware-tier unit tests supply fake RAM/VRAM values to the pure
-selection rule; they do not detect or benchmark a physical machine. The demo's
-reported target laptop has 15.7 GB RAM, 12 CPUs, and 4.0 GB NVIDIA VRAM, but no
-current per-model CPU/GPU offload split, embedding-device placement, or live
-performance measurement is recorded. See [`HARDWARE.md`](HARDWARE.md); target
-CPU/GPU placement remains **PENDING**.
+The owner reports live Windows inference with `qwen3:4b` and an `ollama ps`
+split of about 66% GPU / 34% CPU on an RTX 3050, with 15.7 GB RAM and 12 CPUs,
+and reports that all eight workflows worked with Wi-Fi disconnected. The owner
+confirms the reported run date as 2026-11-26; that is later than the current
+workspace snapshot/system date 2026-11-23. The date field is owner-confirmed,
+but no runtime capture, offline log/JSON, network trace, or screen-recording
+file is present in this checkout, so the run outcomes remain owner-reported
+rather than independently verified. No embedding-device placement or performance
+measurement was supplied.
+Hardware-tier unit tests still use fake RAM/VRAM values and do not benchmark a
+physical machine. See [`HARDWARE.md`](HARDWARE.md).
 
 The duplicate-product database merge is covered only by a synthetic SQLite
 fixture in `tests/test_db.py::test_init_db_merges_casefold_duplicate_products_and_repoints_all_records`.
@@ -34,8 +39,10 @@ No real user database was migrated or merged in this verification. Treat the
 fixture result as migration logic coverage, not confirmation against existing
 production databases.
 
-Windows/PowerShell execution, actual hardware behavior, fresh web research, and
-real Ollama inference/outage-recovery remain target-machine acceptance checks.
+Target Windows/PowerShell script execution, network-isolation proof, live
+Ollama outage/recovery, fresh web research, and model-quality evaluation remain
+acceptance checks. The owner's live-inference report is not a substitute for
+reviewable target evidence.
 
 ## Deterministic title fit
 
