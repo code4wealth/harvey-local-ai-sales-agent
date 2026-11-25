@@ -37,6 +37,7 @@ from app.workflows import common as workflow_common
 from app.workflows import draft as draft_workflow
 from app.workflows import problem_statement as problem_statement_workflow
 from app.workflows import signals as signal_workflow
+from scripts import import_replies as sample_reply_importer
 
 logger = logging.getLogger("harvey.main")
 
@@ -730,6 +731,20 @@ def _reply_classification_response(reply_id: str) -> dict:
         return reply_workflow.reply_classification_payload(reply_id)
     except reply_workflow.ReplyNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/replies/import-sample", tags=["replies"])
+def api_import_sample_replies() -> dict:
+    """Idempotently import the checked-in text-only sample replies CSV."""
+    try:
+        imported = sample_reply_importer.import_replies()
+    except (OSError, ValueError) as exc:
+        logger.exception("sample replies import failed: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Sample replies could not be imported; check data/sample/replies.csv.",
+        ) from exc
+    return {"imported": imported, "source": "data/sample/replies.csv"}
 
 
 @app.post("/api/replies/classify-text", tags=["replies"])

@@ -96,6 +96,38 @@ def _response(label: str = "interested") -> httpx.Response:
     )
 
 
+def test_sample_reply_import_endpoint_is_idempotent_and_text_only(db_path):
+    first = _post("/api/replies/import-sample")
+    second = _post("/api/replies/import-sample")
+
+    assert first.status_code == 200
+    assert first.json() == {"imported": 60, "source": "data/sample/replies.csv"}
+    assert second.status_code == 200
+    assert second.json() == first.json()
+    conn = db.connect()
+    try:
+        rows = db.list_sample_replies(conn)
+        assert len(rows) == 60
+        assert {row["reply_id"] for row in rows} == {f"R{number:03d}" for number in range(1, 61)}
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(sample_replies)")}
+        assert columns == {"reply_id", "reply_text", "created_at", "updated_at"}
+    finally:
+        conn.close()
+
+
+def test_sample_reply_import_endpoint_reports_invalid_bundled_csv(monkeypatch, db_path):
+    def fail_import():
+        raise ValueError("CSV row is malformed")
+
+    monkeypatch.setattr(import_replies, "import_replies", fail_import)
+    response = _post("/api/replies/import-sample")
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "detail": "Sample replies could not be imported; check data/sample/replies.csv."
+    }
+
+
 def test_reply_schema_enforces_labels_confidence_and_rationale_length():
     result = reply_workflow.ReplyClassification.model_validate(
         {"label": "question", "confidence": 0.5, "rationale": "Asks for details."}
