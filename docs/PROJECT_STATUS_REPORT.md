@@ -57,7 +57,7 @@ No files are present under `test_evidence/offline/` or `test_evidence/ollama_out
 3. Run or provide evidence for the controlled Ollama stop/queue/restart/replay test and unavailable-model message. The outage result is unresolved; do not treat mock queue tests as live proof.
 4. The offline two-product ICP comparison and target-run confirmation that a draft remained `sent=false` are still pending. The owner reported generation workflows, but did not explicitly supply those specific checks or records.
 5. Complete target-specific licence review. Exact model artifacts/digests, the all-MiniLM-L6-v2 model revision/card, the linked target SQLite runtime, Ollama distribution, and the Windows-resolved dependency set remain **VERIFY**. Official page links are listed in [`MODELS_AND_LICENCES.md`](MODELS_AND_LICENCES.md) and [`SUBMISSION.md`](SUBMISSION.md).
-6. GitHub Actions passed on Python 3.11 and 3.12 for the latest push (run `45707464736`; both matrix jobs passed). The pull-request run also passed (`45707489154`), and public repository access was confirmed. Held-out evaluation remains optional roadmap work and should run only after prompts are reviewed/frozen.
+6. GitHub Actions passed on Python 3.11 and 3.12 in push runs `45707464736` and `45708213250`; both matrix jobs passed in each. The pull-request run also passed (`45707489154`), and public repository access was confirmed. Held-out evaluation remains optional roadmap work and should run only after prompts are reviewed/frozen.
 
 ## Confidence limits
 

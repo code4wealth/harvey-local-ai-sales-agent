@@ -16,7 +16,7 @@ The demo video was recorded on the owner's Windows laptop at commit [VIDEO_COMMI
 
 - Video commit hash: `[VIDEO_COMMIT_HASH]` — **OWNER TO FILL** (read from the footer of the video).
 - Video URL: `[VIDEO_URL]` — **OWNER TO FILL**.
-- CI result (Python 3.11 and 3.12): **PASS** on GitHub Actions for the latest push (run `45707464736`; both matrix jobs passed). The pull-request run for the same branch also passed (run `45707489154`). These CI checks are not live Ollama or target-Windows acceptance.
+- CI result (Python 3.11 and 3.12): **PASS** in GitHub Actions push runs `45707464736` and `45708213250`; both matrix jobs passed in each. The pull-request run `45707489154` also passed. These CI checks are not live Ollama or target-Windows acceptance.
 
 ## Owner-reported target-laptop runs
 
