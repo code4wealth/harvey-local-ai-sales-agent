@@ -3,7 +3,6 @@ import { ACTIVITY_SERIES, SAMPLE_DRAFTS, SAMPLE_PRODUCTS, SAMPLE_PROSPECTS, SAMP
 
 const WorkspaceContext = createContext(null);
 const STORAGE_KEY = "sellbird-local-workspace-v2";
-export const MODEL_OPTIONS = ["qwen3:8b", "qwen3:4b"];
 
 function readSavedWorkspace() {
   try {
@@ -164,11 +163,6 @@ export function WorkspaceProvider({ children }) {
   const [tasks, setTasks] = useState(() => saved?.tasks?.length ? saved.tasks : SAMPLE_TASKS);
   const [drafts, setDrafts] = useState(() => saved?.drafts?.length ? saved.drafts : SAMPLE_DRAFTS);
   const [replyResults, setReplyResults] = useState(() => saved?.replyResults || []);
-  const [activeModel, setActiveModelState] = useState(() => MODEL_OPTIONS.includes(saved?.activeModel) ? saved.activeModel : "qwen3:8b");
-  const setActiveModel = useCallback((model) => {
-    if (!MODEL_OPTIONS.includes(model)) return;
-    setActiveModelState(model);
-  }, []);
   const [demoOverride, setDemoOverride] = useState(() => typeof saved?.demoOverride === "boolean" ? saved.demoOverride : null);
   const [workspaceMode, setWorkspaceMode] = useState(() => saved?.workspaceMode || "preview");
   const [productFilter, setProductFilter] = useState(() => saved?.productFilter || "all");
@@ -178,6 +172,7 @@ export function WorkspaceProvider({ children }) {
   const [hardware, setHardware] = useState(null);
   const [storageMetrics, setStorageMetrics] = useState(null);
   const [apiState, setApiState] = useState("loading");
+  const activeModel = apiStatus?.ollama?.model || apiStatus?.ollama?.requested_model || hardware?.recommended_model || "Not reported";
   const [liveConnected, setLiveConnected] = useState(false);
   const [toast, setToast] = useState("");
   const toastTimer = useRef(null);
@@ -287,7 +282,6 @@ export function WorkspaceProvider({ children }) {
         tasks,
         drafts,
         replyResults,
-        activeModel,
         demoOverride,
         workspaceMode,
         productFilter,
@@ -297,7 +291,7 @@ export function WorkspaceProvider({ children }) {
     } catch {
       // The workspace remains usable if browser storage is unavailable or full.
     }
-  }, [products, prospects, tasks, drafts, replyResults, activeModel, demoOverride, workspaceMode, productFilter, fitScoreThreshold, signalConfidenceThreshold]);
+  }, [products, prospects, tasks, drafts, replyResults, demoOverride, workspaceMode, productFilter, fitScoreThreshold, signalConfidenceThreshold]);
 
   const toggleDemoConnection = useCallback(() => {
     const next = !connected;
@@ -319,10 +313,15 @@ export function WorkspaceProvider({ children }) {
     setApiState("loading");
     setDemoOverride(null);
     const result = await loadSystemStatus();
-    if (result?.ollama?.available === true) notify(`Ollama responded at localhost:11434 · ${result.ollama.model || activeModel}`);
-    else notify("Local Ollama is unavailable right now. No cloud fallback is used.");
+    if (result?.ollama?.available === true) {
+      const message = result.ollama.model_error
+        || (result.ollama.model_installed ? `Ollama responded at localhost:11434 · ${result.ollama.model}` : "Ollama responded, but model installation is not verified.");
+      notify(message);
+    } else {
+      notify(result?.ollama?.message || "Local Ollama is unavailable right now. No cloud fallback is used.");
+    }
     return result;
-  }, [activeModel, loadSystemStatus, notify]);
+  }, [loadSystemStatus, notify]);
 
   const createProduct = useCallback(async (details) => {
     const normalized = {
@@ -532,7 +531,7 @@ export function WorkspaceProvider({ children }) {
     if (!connected) throw new Error("Ollama is offline. Start the local service or use the demo toggle in Model Settings.");
     const product = products.find((item) => String(item.id) === String(prospect.productId));
     if (!isDemoConnection && liveConnected && !prospect.isPreview && !product?.isPreview) {
-      const result = await apiRequest(`/api/prospects/${encodeURIComponent(prospect.id)}/signals?model=${encodeURIComponent(activeModel)}`, { method: "POST" });
+      const result = await apiRequest(`/api/prospects/${encodeURIComponent(prospect.id)}/signals`, { method: "POST" });
       setTasks((current) => [{ id: `TASK-${result.queue_task_id || Date.now()}`, title: `Local research · ${prospect.company}`, type: "Qwen3 research", productId: prospect.productId, prospectId: prospect.id, status: result.status === "queued" ? "Queued" : "Running", duration: "—", detail: result.error || "Research submitted to the local workflow.", updatedAt: "Just now", isPreview: false }, ...current]);
       notify(result.status === "queued" ? "Research is queued in local SQLite." : "Research sent to the local workflow.");
       return result;
@@ -540,7 +539,7 @@ export function WorkspaceProvider({ children }) {
     const task = runPreviewTask({ title: `Prospect research · ${prospect.company}`, type: "Qwen3 research", productId: prospect.productId, prospectId: prospect.id, detail: "Preview research is processing saved-page context.", isSample: prospect.isSample, isImported: prospect.isImported });
     notify(isDemoConnection ? "Demo research started · no local model call was made." : "Preview research started.");
     return task;
-  }, [activeModel, connected, isDemoConnection, liveConnected, products, runPreviewTask, notify]);
+  }, [connected, isDemoConnection, liveConnected, products, runPreviewTask, notify]);
 
   const classifyReply = useCallback(async (text, prospectId, metadata = {}) => {
     if (!String(text || "").trim()) throw new Error("Enter a customer reply to classify.");
@@ -548,7 +547,7 @@ export function WorkspaceProvider({ children }) {
     if (!isDemoConnection && liveConnected) {
       const result = await apiRequest("/api/replies/classify-text", {
         method: "POST",
-        body: JSON.stringify({ text, model: activeModel }),
+        body: JSON.stringify({ text }),
       });
       const classification = { ...result, text: String(text), prospectId: String(prospectId || ""), createdAt: new Date().toISOString(), isPreview: false, isSample: Boolean(metadata.isSample), isImported: Boolean(metadata.isImported) };
       setReplyResults((current) => [classification, ...current]);
@@ -557,13 +556,13 @@ export function WorkspaceProvider({ children }) {
     const classification = { ...classifyForPreview(text), text: String(text), prospectId: String(prospectId || ""), createdAt: new Date().toISOString(), isSample: Boolean(metadata.isSample), isImported: Boolean(metadata.isImported) };
     setReplyResults((current) => [classification, ...current]);
     return classification;
-  }, [activeModel, connected, isDemoConnection, liveConnected]);
+  }, [connected, isDemoConnection, liveConnected]);
 
   const createEmailDraft = useCallback(async (prospect) => {
     if (!connected) throw new Error("Ollama is offline. Start local Ollama or use the demo toggle in Model Settings.");
     const product = products.find((item) => String(item.id) === String(prospect.productId));
     if (!isDemoConnection && liveConnected && !prospect.isPreview && !product?.isPreview) {
-      return apiRequest(`/api/products/${encodeURIComponent(prospect.productId)}/prospects/${encodeURIComponent(prospect.id)}/draft?model=${encodeURIComponent(activeModel)}`, { method: "POST" });
+      return apiRequest(`/api/products/${encodeURIComponent(prospect.productId)}/prospects/${encodeURIComponent(prospect.id)}/draft`, { method: "POST" });
     }
     return {
       subject: `A question about ${prospect.company}'s workflow`,
@@ -571,7 +570,7 @@ export function WorkspaceProvider({ children }) {
       evidence_used: prospect.summary || "Preview sample context · verify before use.",
       isPreview: true,
     };
-  }, [activeModel, connected, isDemoConnection, liveConnected, products]);
+  }, [connected, isDemoConnection, liveConnected, products]);
 
   const importBackup = useCallback((backup) => {
     const isRecordList = (value) => Array.isArray(value) && value.every((item) => item && typeof item === "object" && !Array.isArray(item));
@@ -649,13 +648,12 @@ export function WorkspaceProvider({ children }) {
     setTasks((current) => [...current.filter((task) => !task.isPreview), ...importedTasks]);
     setDrafts((current) => [...current.filter((draft) => !draft.isPreview), ...importedDrafts]);
     setReplyResults((current) => [...current.filter((reply) => !reply.isPreview), ...importedReplies]);
-    if (MODEL_OPTIONS.includes(backup.activeModel)) setActiveModel(backup.activeModel);
     if (Number.isFinite(backup.fitScoreThreshold)) setFitScoreThreshold(Math.max(0, Math.min(100, backup.fitScoreThreshold)));
     if (Number.isFinite(backup.signalConfidenceThreshold)) setSignalConfidenceThreshold(Math.max(0, Math.min(100, backup.signalConfidenceThreshold)));
     setProductFilter("all");
     setWorkspaceMode("preview");
     notify("Backup imported as browser preview records. Existing SQLite records were not changed.");
-  }, [notify, setActiveModel]);
+  }, [notify]);
 
   const exportBackup = useCallback(() => ({
     format: "sellbird-workspace",
@@ -667,10 +665,9 @@ export function WorkspaceProvider({ children }) {
     tasks,
     drafts,
     replyResults,
-    activeModel,
     fitScoreThreshold,
     signalConfidenceThreshold,
-  }), [products, prospects, tasks, drafts, replyResults, activeModel, fitScoreThreshold, signalConfidenceThreshold]);
+  }), [products, prospects, tasks, drafts, replyResults, fitScoreThreshold, signalConfidenceThreshold]);
 
   const value = useMemo(() => ({
     products,
@@ -679,7 +676,6 @@ export function WorkspaceProvider({ children }) {
     drafts,
     replyResults,
     activeModel,
-    setActiveModel,
     connected,
     liveConnected,
     isDemoConnection,

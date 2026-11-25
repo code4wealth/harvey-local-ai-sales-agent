@@ -298,3 +298,35 @@ def test_draft_and_reply_workflows_preserve_local_storage_provenance():
     assert "backendDraftId: null" in context
     assert "const isQwen3Generated = isGenerated && Boolean(reportedModel)" in ui
     assert "workspace.activeModel" not in ui
+
+
+def test_model_selection_and_simulated_offline_labels_are_honest():
+    frontend = Path(__file__).resolve().parents[1] / "frontend" / "src"
+    settings = (frontend / "pages" / "ModelsSettingsPage.jsx").read_text(encoding="utf-8")
+    dashboard = (frontend / "pages" / "DashboardPage.jsx").read_text(encoding="utf-8")
+    activity = (frontend / "pages" / "ActivityPage.jsx").read_text(encoding="utf-8")
+    context = (frontend / "WorkspaceContext.jsx").read_text(encoding="utf-8")
+
+    # Model selection is backend-owned and must be resolved from Ollama's tags.
+    assert "Array.isArray(apiStatus?.ollama?.installed_models)" in settings
+    assert "apiStatus?.ollama?.model_error" in settings
+    assert "status?.ollama?.message" in settings
+    assert 'label="Simulate offline"' in settings
+    assert "DEMO MODE · NO INFERENCE" in settings
+    assert "Demo offline preview" in settings
+    assert "Demo offline (simulated)" in settings
+    assert "simulated offline · UI-only; no inference" in settings
+
+    # Local API availability and model installation are separate, visible states.
+    assert "setLiveConnected(statusResult.value?.ollama?.available === true)" in context
+    assert "apiStatus?.ollama?.model_installed === false" in dashboard
+    assert "Ollama offline" in (frontend / "layout.jsx").read_text(encoding="utf-8")
+    assert "Demo offline (simulated)" in dashboard
+    assert "Demo offline (simulated)" in activity
+
+    # Browser preview records are identified and counted separately from SQLite.
+    assert "product.isPreview && !localIds.has" in context
+    assert "prospect.isPreview && !localProspectIds.has" in context
+    assert 'setWorkspaceMode(hasBrowserPreview ? "preview" : "local")' in context
+    assert "added to preview data only" in context
+    assert "preview: true" in context

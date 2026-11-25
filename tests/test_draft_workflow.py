@@ -7,6 +7,7 @@ import json
 import httpx
 import pytest
 
+from conftest import mock_ollama_handler
 from app import db, llm_client, prospects
 from app.main import app
 from app.queue_worker import HANDLERS, QueueWorker
@@ -63,7 +64,7 @@ def _use_mock_transport(monkeypatch, handler) -> None:
             base_url=llm_client.OLLAMA_URL,
             timeout=timeout,
             trust_env=False,
-            transport=httpx.MockTransport(handler),
+            transport=httpx.MockTransport(mock_ollama_handler(handler)),
         )
 
     monkeypatch.setattr(llm_client, "_client", factory)
@@ -223,13 +224,29 @@ def test_draft_uses_only_profile_and_verified_signals_and_is_never_sent(
     assert "one sentence naming a feature or value proposition" in prompt
     assert "one low-pressure question" in prompt
     assert PROFILE["value_proposition"] in prompt
-    assert "format illustration, not a real generated result" in prompt
+    assert "fictional format illustration only; the placeholder is not evidence" in prompt
     assert "ALLOWED EVIDENCE" in prompt
     assert prompt.count('"evidence_used":') == 1
     assert QUOTE_SPAN in prompt
     assert "A brass sundial faces the lunar archive." not in prompt
+    placeholder_line = next(
+        line for line in prompt.splitlines() if line.startswith("NON-EVIDENCE PLACEHOLDER")
+    )
+    example_span = json.loads(placeholder_line.split(": ", 1)[1])
+    assert example_span not in QUOTE
+    assert "never copy it into the result" in placeholder_line
     allowed_block = prompt.split("ALLOWED EVIDENCE — verified signal quotes", 1)[1]
     assert QUOTE in allowed_block
+    assert example_span not in allowed_block
+    repeated_example = draft_workflow.OutreachDraft(
+        subject="Example only",
+        body=f'Hello, I noticed "{example_span}".',
+        evidence_used=[example_span],
+    )
+    with pytest.raises(llm_client.ValidationFailure, match="not present verbatim in the prospect's stored page text"):
+        draft_workflow.validate_draft_evidence(
+            repeated_example, [_verified_signal()], page_text=QUOTE
+        )
     assert PROFILE["summary"] not in allowed_block
     assert "Private stored product" not in prompt
     assert "Private stored prospect" not in prompt

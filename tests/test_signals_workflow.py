@@ -7,6 +7,7 @@ import json
 import httpx
 import pytest
 
+from conftest import mock_ollama_handler
 from app import db, llm_client, prospects
 from app.main import app
 from app.queue_worker import HANDLERS, QueueWorker
@@ -41,7 +42,7 @@ def _use_mock_transport(monkeypatch, handler) -> None:
             base_url=llm_client.OLLAMA_URL,
             timeout=timeout,
             trust_env=False,
-            transport=httpx.MockTransport(handler),
+            transport=httpx.MockTransport(mock_ollama_handler(handler)),
         )
 
     monkeypatch.setattr(llm_client, "_client", factory)
@@ -577,6 +578,40 @@ def test_preprocessor_reports_exact_truncated_tail():
     assert removed["truncation"] == {"reason": "character_limit", "text": "TAIL"}
     assert removed["source_characters"] == 13
     assert removed["submitted_characters"] == 9
+
+
+def test_model_tag_lookup_outage_queues_without_attempting_inference(
+    db_path, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("DEFAULT_MODEL", "signal-tag-queue-model")
+    _, prospect_id = _new_prospect(
+        db_path, monkeypatch, tmp_path, "A local company opened a second distribution center."
+    )
+    paths = []
+
+    def unavailable_tags(request):
+        paths.append(request.url.path)
+        if request.url.path == "/api/tags":
+            raise httpx.ConnectError("tag inventory is unavailable", request=request)
+        pytest.fail("/api/chat must not be called before model tags are verified")
+
+    def client_factory(timeout):
+        return httpx.Client(
+            base_url=llm_client.OLLAMA_URL,
+            timeout=timeout,
+            trust_env=False,
+            transport=httpx.MockTransport(unavailable_tags),
+        )
+
+    monkeypatch.setattr(llm_client, "_client", client_factory)
+    response = _post(f"/api/prospects/{prospect_id}/signals")
+
+    assert response.status_code == 202
+    queued = response.json()
+    assert queued["status"] == "queued"
+    assert queued["model_name"] == "signal-tag-queue-model"
+    assert queued["queue_task_id"] is not None
+    assert paths == ["/api/tags", "/api/tags"]
 
 
 def test_ollama_outage_queues_and_replays_signal_run(db_path, monkeypatch, tmp_path):

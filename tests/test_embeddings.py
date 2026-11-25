@@ -28,6 +28,64 @@ class StubSentenceTransformer:
         return [vectors.get(text, [0.0, 1.0]) for text in texts]
 
 
+def test_local_model_cache_status_detects_huggingface_snapshot_without_loading(
+    tmp_path, monkeypatch
+):
+    cache_root = tmp_path / "hf-cache"
+    snapshot = (
+        cache_root
+        / "models--sentence-transformers--all-MiniLM-L6-v2"
+        / "snapshots"
+        / "abc123"
+    )
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text("{}", encoding="utf-8")
+    (snapshot / "pytorch_model.bin").write_bytes(b"local model")
+    monkeypatch.setenv("HF_HUB_CACHE", str(cache_root))
+    monkeypatch.delenv("HUGGINGFACE_HUB_CACHE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_CACHE", raising=False)
+    monkeypatch.delenv("HF_HOME", raising=False)
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.setattr(embeddings, "_MODEL_CACHE", {})
+
+    status = embeddings.local_model_cache_status()
+
+    assert status == {
+        "model": embeddings.DEFAULT_MODEL,
+        "available": True,
+        "loaded": False,
+        "cached": True,
+    }
+
+
+def test_local_model_cache_status_reports_missing_files_and_loaded_model(
+    tmp_path, monkeypatch
+):
+    cache_root = tmp_path / "hf-cache"
+    snapshot = (
+        cache_root
+        / "models--sentence-transformers--all-MiniLM-L6-v2"
+        / "snapshots"
+        / "incomplete"
+    )
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("HF_HUB_CACHE", str(cache_root))
+    monkeypatch.delenv("HUGGINGFACE_HUB_CACHE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_CACHE", raising=False)
+    monkeypatch.delenv("HF_HOME", raising=False)
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.setattr(embeddings, "_MODEL_CACHE", {})
+
+    assert embeddings.local_model_cache_status()["available"] is False
+
+    monkeypatch.setattr(embeddings, "_MODEL_CACHE", {embeddings.DEFAULT_MODEL: object()})
+    status = embeddings.local_model_cache_status()
+    assert status["available"] is True
+    assert status["loaded"] is True
+    assert status["cached"] is False
+
+
 def test_embed_texts_uses_normalized_local_model_and_caches_it(monkeypatch):
     model = StubSentenceTransformer()
     loaded = []

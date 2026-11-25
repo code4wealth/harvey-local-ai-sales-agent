@@ -63,7 +63,7 @@ export default function ActivityPage() {
     { key: "updatedAt", header: "Last updated", width: "145px", render: (task) => <span className="updated-label">{task.updatedAt || "—"}</span> },
     { key: "actions", header: "Actions", width: "125px", render: (task) => <div className="table-actions"><button type="button" className="table-action-link" onClick={() => setSelectedTask(task)}>Details</button>{task.status === "Failed" && <button type="button" className="table-action-link table-action-brand" onClick={() => retryFailed(task)} disabled={retrying}>{task.isPreview ? "Retry preview" : "Retry queue"}</button>}</div> },
   ];
-  const localEngineLabel = isDemoConnection ? "Demo only" : apiState === "loading" ? "Checking" : apiStatus?.ollama?.state === "slow" ? "Slow" : connected ? "Connected" : "Offline";
+  const localEngineLabel = isDemoConnection ? connected ? "Demo only" : "Demo offline (simulated)" : apiState === "loading" ? "Checking" : apiStatus?.ollama?.state === "slow" ? "Slow" : connected ? "Connected" : "Offline";
   const queueSourceClass = previewMode ? "is-checking" : hasLiveQueueMetrics ? "is-online" : "is-checking";
   return (
     <div className="page-stack">

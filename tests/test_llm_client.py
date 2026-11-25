@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import socket
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from pydantic import BaseModel
 
+from conftest import mock_ollama_handler
 from app import db, llm_client
 from app.llm_client import InvalidJsonResponse, OllamaTimeout, OllamaUnavailable
 
@@ -15,14 +17,15 @@ class TinyAnswer(BaseModel):
     answer: str
 
 
-def use_mock_transport(monkeypatch, handler):
+def use_mock_transport(monkeypatch, handler, *, include_model_tags=True):
     """Replace only the HTTPX transport boundary used to reach local Ollama."""
     def factory(timeout):
+        route = mock_ollama_handler(handler) if include_model_tags else handler
         return httpx.Client(
             base_url=llm_client.OLLAMA_URL,
             timeout=timeout,
             trust_env=False,
-            transport=httpx.MockTransport(handler),
+            transport=httpx.MockTransport(route),
         )
 
     monkeypatch.setattr(llm_client, "_client", factory)
@@ -53,15 +56,19 @@ def test_ollama_timeout_seconds_environment_setting_is_used(db_path, monkeypatch
 
     def factory(timeout):
         seen_timeouts.append(timeout)
+
+        def handler(request):
+            if request.url.path == "/api/tags":
+                return httpx.Response(200, json={"models": [{"name": "qwen3:4b"}]})
+            return httpx.Response(
+                200, json={"message": {"content": '{"answer":"ok"}'}}
+            )
+
         return httpx.Client(
             base_url=llm_client.OLLAMA_URL,
             timeout=timeout,
             trust_env=False,
-            transport=httpx.MockTransport(
-                lambda _request: httpx.Response(
-                    200, json={"message": {"content": '{"answer":"ok"}'}}
-                )
-            ),
+            transport=httpx.MockTransport(handler),
         )
 
     monkeypatch.setattr(llm_client, "_client", factory)
@@ -69,7 +76,7 @@ def test_ollama_timeout_seconds_environment_setting_is_used(db_path, monkeypatch
         "Return an answer.", TinyAnswer, model="qwen3:4b", retries=0
     )
     assert result.answer == "ok"
-    assert seen_timeouts == [17.5]
+    assert seen_timeouts == [llm_client.UP_TIMEOUT, 17.5]
     assert llm_client.DEFAULT_TIMEOUT == 300.0
 
 
@@ -198,9 +205,80 @@ def test_ollama_up_uses_tags_and_returns_online(monkeypatch):
         paths.append(request.url.path)
         return httpx.Response(200, json={"models": []})
 
-    use_mock_transport(monkeypatch, handler)
+    use_mock_transport(monkeypatch, handler, include_model_tags=False)
     assert llm_client.ollama_up(timeout=0.1) is True
     assert paths == ["/api/tags"]
+
+
+def test_list_installed_models_preserves_ollama_names_and_sorts(monkeypatch):
+    def handler(request):
+        assert request.url.path == "/api/tags"
+        return httpx.Response(
+            200,
+            json={"models": [{"name": "Qwen3:4B"}, {"model": "llama3:8b"}, {"name": " Qwen3:4B "}]},
+        )
+
+    use_mock_transport(monkeypatch, handler, include_model_tags=False)
+    assert llm_client.list_installed_models() == ["llama3:8b", "Qwen3:4B"]
+
+
+def test_model_preference_uses_request_then_default_then_hardware(monkeypatch):
+    from app import hardware
+
+    monkeypatch.setattr(
+        hardware,
+        "detect",
+        lambda: SimpleNamespace(recommended_model="qwen3:1.7b"),
+    )
+    monkeypatch.setenv("DEFAULT_MODEL", "qwen3:8b")
+    assert llm_client.model_preference("qwen3:4b") == ("qwen3:4b", "request")
+    assert llm_client.model_preference() == ("qwen3:8b", "DEFAULT_MODEL")
+
+    monkeypatch.delenv("DEFAULT_MODEL")
+    assert llm_client.model_preference() == ("qwen3:1.7b", "hardware recommendation")
+
+
+def test_model_resolution_matches_installed_tag_case_insensitively():
+    assert llm_client.resolve_model_name(
+        "qwen3:4b", installed_models=["Qwen3:4B", "llama3:8b"]
+    ) == "Qwen3:4B"
+
+
+def test_model_resolution_rejects_missing_installed_tag():
+    with pytest.raises(llm_client.ModelNotPulled, match="ollama pull qwen3:4b"):
+        llm_client.resolve_model_name("qwen3:4b", installed_models=["qwen3:8b"])
+
+
+def test_chat_never_calls_api_chat_when_model_tags_are_unavailable(db_path, monkeypatch):
+    paths = []
+
+    def handler(request):
+        paths.append(request.url.path)
+        if request.url.path == "/api/tags":
+            raise httpx.ConnectError("Ollama is stopped", request=request)
+        return httpx.Response(200, json={"message": {"content": "should not be used"}})
+
+    use_mock_transport(monkeypatch, handler, include_model_tags=False)
+    assert llm_client.resolve_model_name("qwen3:4b") == "qwen3:4b"
+    with pytest.raises(OllamaUnavailable):
+        llm_client.chat("Reply briefly.", model="qwen3:4b", task="tags-unavailable-test")
+
+    assert paths == ["/api/tags", "/api/tags"]
+    assert inference_rows() == []
+
+
+def test_chat_does_not_call_api_chat_when_model_is_not_installed(db_path, monkeypatch):
+    paths = []
+
+    def handler(request):
+        paths.append(request.url.path)
+        return httpx.Response(200, json={"models": []})
+
+    use_mock_transport(monkeypatch, handler, include_model_tags=False)
+    with pytest.raises(llm_client.ModelNotPulled, match="ollama pull qwen3:4b"):
+        llm_client.chat("Reply briefly.", model="qwen3:4b", task="model-not-installed-test")
+    assert paths == ["/api/tags"]
+    assert inference_rows() == []
 
 
 def test_invalid_json_retries_once_with_strict_prompt_and_reason(db_path, monkeypatch):
@@ -301,7 +379,7 @@ def test_ollama_up_returns_false_for_connection_error(monkeypatch):
     def handler(request):
         raise httpx.ConnectError("simulated refusal", request=request)
 
-    use_mock_transport(monkeypatch, handler)
+    use_mock_transport(monkeypatch, handler, include_model_tags=False)
     assert llm_client.ollama_up(timeout=0.1) is False
 
 

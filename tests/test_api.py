@@ -70,6 +70,12 @@ def test_system_routes_report_status_and_hardware(db_path, monkeypatch):
     assert status["ollama"]["available"] is True
     assert status["ollama"]["state"] == "available"
     assert status["ollama"]["url"] == "http://127.0.0.1:11434"
+    assert status["ollama"]["installed_models"] == []
+    assert status["ollama"]["model_installed"] is False
+    assert status["ollama"]["model"] is None
+    assert "ollama pull" in status["ollama"]["model_error"]
+    assert status["local_readiness"]["ready"] is False
+    assert status["local_readiness"]["model_installed"] is False
     assert status["queue"] == {"queued": 0, "running": 0, "done": 0, "failed": 0}
     assert status["hardware"]["cpu_count"] >= 1
 
@@ -81,6 +87,59 @@ def test_system_routes_report_status_and_hardware(db_path, monkeypatch):
     assert hardware["cpu_count"] >= 1
     assert hardware["recommended_model"].startswith("qwen3:")
     assert hardware["recommended_num_ctx"] in {2048, 4096, 8192}
+
+
+def test_status_reports_resolved_model_inventory_and_embedding_readiness(
+    db_path, monkeypatch
+):
+    monkeypatch.setenv("DEFAULT_MODEL", "qwen3:4b")
+
+    def ollama_handler(request):
+        assert request.url.path == "/api/tags"
+        return httpx.Response(200, json={"models": [{"name": "Qwen3:4B"}]})
+
+    monkeypatch.setattr(
+        llm_client,
+        "_client",
+        lambda timeout: httpx.Client(
+            base_url=llm_client.OLLAMA_URL,
+            timeout=timeout,
+            trust_env=False,
+            transport=httpx.MockTransport(ollama_handler),
+        ),
+    )
+    cache_status = {
+        "model": "sentence-transformers/all-MiniLM-L6-v2",
+        "available": True,
+        "loaded": False,
+        "cached": True,
+    }
+    monkeypatch.setattr(
+        main_module.embeddings, "local_model_cache_status", lambda: cache_status
+    )
+
+    async def get_status():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
+            return await client.get("/api/status")
+
+    response = asyncio.run(get_status())
+    assert response.status_code == 200
+    status = response.json()
+    assert status["ollama"]["installed_models"] == ["Qwen3:4B"]
+    assert status["ollama"]["requested_model"] == "qwen3:4b"
+    assert status["ollama"]["model_source"] == "DEFAULT_MODEL"
+    assert status["ollama"]["model"] == "Qwen3:4B"
+    assert status["ollama"]["model_installed"] is True
+    assert status["ollama"]["model_error"] is None
+    assert status["embedding_cache"] == cache_status
+    assert status["local_readiness"] == {
+        "ready": True,
+        "ollama_reachable": True,
+        "model_installed": True,
+        "embedding_cache_available": True,
+        "reasons": [],
+    }
 
 
 def test_health_checks_sqlite_without_blocking_on_ollama(db_path, monkeypatch):
@@ -253,7 +312,7 @@ def test_status_reports_connect_failure_as_unavailable(db_path, monkeypatch):
     status = response.json()["ollama"]
     assert status["state"] == "unavailable"
     assert status["available"] is False
-    assert "message" not in status
+    assert "Ollama is not reachable" in status["message"]
 
 
 def test_product_prospect_csv_and_local_page_routes(db_path, monkeypatch, tmp_path):

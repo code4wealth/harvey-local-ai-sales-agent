@@ -25,7 +25,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import batch, db, hardware, llm_client, local_paths, prospects
+from app import batch, db, embeddings, hardware, llm_client, local_paths, prospects
 from app.queue_worker import QueueWorker
 from app.workflows import icp as icp_workflow
 from app.workflows import pipeline as pipeline_workflow
@@ -878,20 +878,23 @@ def api_storage() -> dict:
 
 @app.get("/api/status", tags=["system"])
 def api_status() -> dict:
-    """Return local Ollama availability and persistent queue status."""
+    """Report local Ollama tags, the resolved model, embedding cache, and queue."""
     hw = hardware.detect()
-    configured_model = os.environ.get("DEFAULT_MODEL", "").strip()
+    requested_model, model_source = llm_client.model_preference()
     conn = db.connect()
     try:
         queue = db.queue_counts(conn)
         latest_inference = db.latest_inference(conn)
     finally:
         conn.close()
+
+    installed_models = None
     try:
-        ollama_available = llm_client.ollama_up()
-        ollama_state = "available" if ollama_available else "unavailable"
+        installed_models = llm_client.list_installed_models()
+        ollama_available = True
+        ollama_state = "available"
         ollama_message = None
-        if ollama_available and _recent_timeout_inference(latest_inference):
+        if _recent_timeout_inference(latest_inference):
             ollama_state = "slow"
             ollama_message = (
                 "Ollama is reachable, but the last model request timed out; "
@@ -901,15 +904,54 @@ def api_status() -> dict:
         ollama_available = None
         ollama_state = "slow"
         ollama_message = f"Local Ollama is responding slowly; the model may still be loading. {exc}"
+    except llm_client.OllamaUnavailable as exc:
+        ollama_available = False
+        ollama_state = "unavailable"
+        ollama_message = str(exc)
     except llm_client.OllamaResponseError as exc:
         ollama_available = False
         ollama_state = "error"
         ollama_message = str(exc)
+
+    selected_model = None
+    model_installed = None
+    model_error = None
+    if installed_models is not None:
+        try:
+            selected_model = llm_client.resolve_model_name(installed_models=installed_models)
+            model_installed = True
+        except llm_client.ModelNotPulled as exc:
+            model_installed = False
+            model_error = str(exc)
+
+    embedding_cache = embeddings.local_model_cache_status()
+    readiness_reasons = []
+    if ollama_available is not True:
+        readiness_reasons.append("Ollama is not reachable")
+    if model_installed is not True:
+        readiness_reasons.append(model_error or "the selected Ollama model is not verified as installed")
+    if embedding_cache["available"] is not True:
+        readiness_reasons.append(
+            f"local embedding model cache is missing: {embedding_cache['model']}"
+        )
+    local_readiness = {
+        "ready": not readiness_reasons,
+        "ollama_reachable": ollama_available is True,
+        "model_installed": model_installed is True,
+        "embedding_cache_available": embedding_cache["available"] is True,
+        "reasons": readiness_reasons,
+    }
+
     ollama = {
         "available": ollama_available,
         "state": ollama_state,
         "url": llm_client.OLLAMA_URL,
-        "model": configured_model or hw.recommended_model,
+        "model": selected_model,
+        "requested_model": requested_model,
+        "model_source": model_source,
+        "model_installed": model_installed,
+        "model_error": model_error,
+        "installed_models": installed_models,
         "last_inference": (
             {
                 "task": latest_inference["task"],
@@ -934,6 +976,8 @@ def api_status() -> dict:
         "git_commit": GIT_COMMIT,
         "prompt_hashes": read_frozen_prompt_hashes(),
         "ollama": ollama,
+        "embedding_cache": embedding_cache,
+        "local_readiness": local_readiness,
         "hardware": hw.as_dict(),
         "queue": queue,
     }

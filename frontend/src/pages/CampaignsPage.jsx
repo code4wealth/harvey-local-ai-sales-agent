@@ -12,6 +12,7 @@ export default function CampaignsPage() {
     activeModel,
     connected,
     isDemoConnection,
+    apiStatus,
     createEmailDraft,
     saveDraft,
     notify,
@@ -34,6 +35,13 @@ export default function CampaignsPage() {
   const selectedProspect = prospects.find((prospect) => String(prospect.id) === String(prospectId));
   const selectedProduct = products.find((product) => String(product.id) === String(productId)) || products.find((product) => String(product.id) === String(selectedProspect?.productId));
   const savedDraft = drafts.find((draft) => String(draft.id) === String(draftId));
+  const modelPreference = apiStatus?.ollama?.requested_model || activeModel;
+  const resolvedModel = apiStatus?.ollama?.model;
+  const modelStatusLabel = apiStatus?.ollama?.model_installed === true
+    ? "Resolved local model"
+    : apiStatus?.ollama?.model_installed === false
+      ? "Backend preference · not installed"
+      : "Backend model preference · not verified";
   const isFollowUpMode = searchParams.get("mode") === "followup";
   const isNewComposition = searchParams.get("new") === "true";
   const batchIds = (searchParams.get("prospectIds") || "").split(",").filter(Boolean);
@@ -261,7 +269,7 @@ export default function CampaignsPage() {
             <div className="context-evidence-note"><Icon as={FileText} className="icon-sm" /><span>Use verified research evidence. Preview records are illustrative and should be checked before use.</span></div>
             {selectedProspect && <Link to={`/research/${encodeURIComponent(selectedProspect.id)}`} className="text-link context-research-link"><Icon as={Sparkles} className="icon-xs" />Review research dossier</Link>}
           </section>
-          <section className="model-context-card"><span className="model-context-icon"><Icon as={Sparkles} className="icon-sm" /></span><div><strong>Selected model · availability unverified</strong><code>{activeModel}</code></div><StatusPill status={isDemoConnection ? "Running" : connected ? "Connected" : "Offline"}>{isDemoConnection ? "DEMO ONLY · NO INFERENCE" : connected ? "OLLAMA ONLINE" : "OFFLINE"}</StatusPill></section>
+          <section className="model-context-card"><span className="model-context-icon"><Icon as={Sparkles} className="icon-sm" /></span><div><strong>{modelStatusLabel}</strong><code>{resolvedModel || modelPreference}</code></div><StatusPill status={isDemoConnection ? "Running" : apiStatus?.ollama?.model_installed === true ? "Ready" : apiStatus?.ollama?.model_installed === false ? "Review" : connected ? "Connected" : "Offline"}>{isDemoConnection ? "DEMO ONLY · NO INFERENCE" : apiStatus?.ollama?.model_installed === true ? "MODEL INSTALLED" : apiStatus?.ollama?.model_installed === false ? "MODEL MISSING" : connected ? "MODEL UNVERIFIED" : "OFFLINE"}</StatusPill></section>
         </aside>
         <section className="panel composer-panel" aria-labelledby="composer-heading"><div className="composer-heading-row"><div><p className="page-eyebrow">02 · COMPOSE</p><h2 id="composer-heading">{isFollowUpMode ? "Personalized Follow-up Draft" : "Personalized Email Draft"}</h2><p>Edit every field before saving for review.</p></div>{draftId && <StatusPill status="Saved">Saved {savedDraft?.savedAt || "locally"}</StatusPill>}</div>
           <div className="composer-actions composer-toolbar"><div className="composer-primary-actions"><button type="button" className="btn btn-ai" onClick={generate} disabled={busy || !selectedProspect || !connected}><Icon as={RefreshCw} className="icon-sm" />{busy ? "Working…" : subject || body ? "Regenerate Draft" : isFollowUpMode ? "Generate Follow-up Draft" : "Generate Draft"}</button><button type="button" className="btn btn-dark" onClick={save} disabled={!selectedProspect || !subject.trim() || !body.trim()}><Icon as={Save} className="icon-sm" />Save Draft</button></div><button type="button" className="btn btn-secondary" onClick={copy} disabled={!subject && !body}><Icon as={copied ? Check : Clipboard} className="icon-sm" />{copied ? "Copied" : "Copy Email"}</button></div>

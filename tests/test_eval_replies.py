@@ -5,6 +5,7 @@ import json
 import httpx
 import pytest
 
+from conftest import mock_ollama_handler
 from app import db, llm_client
 from scripts import eval_replies
 
@@ -15,7 +16,7 @@ def _use_mock_transport(monkeypatch, handler) -> None:
             base_url=llm_client.OLLAMA_URL,
             timeout=timeout,
             trust_env=False,
-            transport=httpx.MockTransport(handler),
+            transport=httpx.MockTransport(mock_ollama_handler(handler)),
         )
 
     monkeypatch.setattr(llm_client, "_client", factory)

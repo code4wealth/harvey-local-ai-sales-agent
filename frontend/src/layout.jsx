@@ -155,7 +155,15 @@ function Sidebar({ mobile = false, collapsed = false, onClose, onToggleCollapse 
     ? connected ? "Demo connected · no inference" : "Disconnected · demo state"
     : apiState === "loading" ? "Checking local endpoint"
       : apiStatus?.ollama?.state === "slow" ? "Responding slowly"
-        : connected ? "Connected" : "Disconnected";
+        : apiStatus?.ollama?.state === "error" ? "Model-tag error"
+          : connected ? "Connected" : "Disconnected";
+  const readinessDetail = apiState === "loading"
+    ? "Checking local readiness"
+    : apiStatus?.local_readiness?.ready
+      ? "Inference and embeddings ready"
+      : apiStatus?.local_readiness
+        ? "Local prerequisites need attention"
+        : apiState === "offline" ? "Readiness unavailable" : "Readiness not reported";
   const toggleDemoState = () => isDemoConnection ? resetDemoConnection() : setDemoConnection(false);
 
   return (
@@ -190,12 +198,12 @@ function Sidebar({ mobile = false, collapsed = false, onClose, onToggleCollapse 
       </nav>
       <div className="sidebar-bottom-stack">
         <div className="sidebar-engine-card">
-          <Link to="/settings/models" className="sidebar-engine-link" onClick={onClose} aria-label={`Local Ollama Engine · ${engineDetail} · ${activeModel}`}>
+          <Link to="/settings/models" className="sidebar-engine-link" onClick={onClose} aria-label={`Local Ollama Engine · ${engineDetail} · model preference ${activeModel}`}>
             <span className="engine-icon"><Icon as={Cpu} className="icon-md" /></span>
             {!collapsed && <span className="sidebar-engine-copy">
               <strong>Local Ollama Engine</strong>
-              <span className="engine-model-status"><i className={`engine-status-light ${engineDot}`} />{engineDetail} · <code>{activeModel}</code></span>
-              <small>Offline Ready · Zero Cloud APIs</small>
+              <span className="engine-model-status"><i className={`engine-status-light ${engineDot}`} />{engineDetail} · <code>{apiStatus?.ollama?.model || apiStatus?.ollama?.requested_model || activeModel}</code></span>
+              <small>{readinessDetail} · no cloud APIs</small>
             </span>}
           </Link>
           {!collapsed && <button type="button" className="engine-toggle" onClick={toggleDemoState} aria-pressed={isDemoConnection && !connected} title={isDemoConnection ? "Return to live local Ollama status" : "Simulate Ollama offline for this browser session"}>
@@ -223,7 +231,8 @@ function TopBar({ onOpenMobileNav, sidebarCollapsed, onToggleSidebar }) {
     ? connected ? "Demo connected" : "Disconnected"
     : apiState === "loading" ? "Checking"
       : apiStatus?.ollama?.state === "slow" ? "Responding slowly"
-        : connected ? "Connected" : "Disconnected";
+        : apiStatus?.ollama?.state === "error" ? "Model-tag error"
+          : connected ? "Connected" : "Disconnected";
   const engineClass = isDemoConnection
     ? connected ? "connection-pill-demo" : "connection-pill-offline connection-pill-demo"
     : apiState === "loading" || apiStatus?.ollama?.state === "slow" ? "connection-pill-checking"
@@ -235,9 +244,11 @@ function TopBar({ onOpenMobileNav, sidebarCollapsed, onToggleSidebar }) {
       ? "Checking the local Ollama endpoint. No cloud fallback is used."
       : apiStatus?.ollama?.state === "slow"
         ? apiStatus.ollama.message || "Local Ollama is responding slowly."
-        : connected
-          ? "Local Ollama responds; model installation is reported separately."
-          : "Local Ollama is disconnected. No cloud fallback is used.";
+        : apiStatus?.ollama?.state === "error"
+          ? apiStatus.ollama.message || "Local Ollama model tags could not be read."
+          : connected
+            ? "Local Ollama responds; the resolved installed model is shown in Local AI & Models."
+            : "Local Ollama is disconnected. No cloud fallback is used.";
 
   return (
     <header className="topbar">
@@ -252,9 +263,9 @@ function TopBar({ onOpenMobileNav, sidebarCollapsed, onToggleSidebar }) {
       </div>
       <div className="topbar-right">
         <SearchBox />
-        <Link to="/settings/models" className={`connection-pill ${engineClass}`} title={engineTitle} aria-label={`Ollama ${engineText}, selected model ${activeModel}`}>
+        <Link to="/settings/models" className={`connection-pill ${engineClass}`} title={engineTitle} aria-label={`Ollama ${engineText}, model preference ${activeModel}`}>
           <span className={`connection-dot ${isDemoConnection ? "is-demo" : ""}`} />
-          <span>Ollama:</span><code>{activeModel}</code><span className="connection-state-label">{engineText}</span>
+          <span>Model:</span><code>{apiStatus?.ollama?.model || apiStatus?.ollama?.requested_model || activeModel}</code><span className="connection-state-label">{engineText}</span>
           {isDemoConnection && <em>DEMO</em>}
         </Link>
         <Link className={`topbar-icon-button ${activeTaskCount ? "has-live-tasks" : ""}`} to="/activity" aria-label={`Activity queue, ${activeTaskCount} active tasks`} title="Activity queue">

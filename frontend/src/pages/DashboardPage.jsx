@@ -109,10 +109,27 @@ function SubsystemHealthPanel() {
   const localQueueCount = tasks.filter((task) => ["Queued", "Running"].includes(task.status)).length;
   const displayedRunning = previewMode ? activeTaskCount : queueMetricsAvailable ? Number(queue.running || 0) : "—";
   const displayedQueued = previewMode ? localQueueCount : queueMetricsAvailable ? Number(queue.queued || 0) : "—";
-  const ollamaStatus = isDemoConnection ? connected ? "Demo connected" : "Demo offline" : apiState === "loading" ? "Checking" : apiStatus?.ollama?.available === true ? "Connected" : apiStatus?.ollama?.state === "slow" ? "Slow" : "Offline";
-  const ollamaTone = isDemoConnection || apiState === "loading" || apiStatus?.ollama?.state === "slow" ? "warning" : apiStatus?.ollama?.available === true ? "success" : "danger";
+  const ollamaStatus = isDemoConnection
+    ? connected ? "Demo connected" : "Demo offline"
+    : apiState === "loading"
+      ? "Checking"
+      : apiStatus?.ollama?.state === "slow"
+        ? "Slow"
+        : apiStatus?.ollama?.state === "error"
+          ? "Error"
+          : apiStatus?.ollama?.available === true ? "Connected" : "Offline";
+  const ollamaTone = isDemoConnection || apiState === "loading" || apiStatus?.ollama?.state === "slow"
+    ? "warning"
+    : apiStatus?.ollama?.available === true ? "success" : "danger";
+  const modelPreference = apiStatus?.ollama?.requested_model || activeModel;
+  const resolvedModel = apiStatus?.ollama?.model;
+  const modelStatus = apiStatus?.ollama?.model_installed === true
+    ? `resolved ${resolvedModel}`
+    : apiStatus?.ollama?.model_installed === false
+      ? `not installed: ${modelPreference}`
+      : apiState === "loading" ? "checking installed tags" : "not verified";
   const items = [
-    { icon: Cpu, title: "Ollama Local LLM", detail: `${(apiStatus?.ollama?.url || "http://localhost:11434").replace("http://", "").replace("https://", "")} · selected ${activeModel}${isDemoConnection ? " · UI-only override" : ""}`, status: ollamaStatus, tone: ollamaTone, ...(!connected || isDemoConnection ? { actionLabel: "+ Configure", to: "/settings/models" } : {}) },
+    { icon: Cpu, title: "Ollama Local LLM", detail: `${(apiStatus?.ollama?.url || "http://localhost:11434").replace("http://", "").replace("https://", "")} · ${modelStatus}${isDemoConnection ? " · UI-only override" : ""}`, status: ollamaStatus, tone: ollamaTone, ...(!connected || isDemoConnection ? { actionLabel: "+ Configure", to: "/settings/models" } : {}) },
     { icon: FileSearch, title: "Playwright Web Scraper", detail: "No live scraper health endpoint is reported; saved source text remains on-device", status: "Not reported", tone: "neutral", actionLabel: "+ Review", to: "/prospects" },
     { icon: Activity, title: "Local Vector Index", detail: vectorCount ? `${vectorCount.toLocaleString()} SQLite embedding rows` : "Optional index · no embeddings recorded", status: vectorCount ? "Indexed" : "Not indexed", tone: vectorCount ? "success" : "neutral", ...(!vectorCount ? { actionLabel: "+ Review", to: "/settings/general" } : {}) },
     { icon: Database, title: "SQLite Storage", detail: `${storageMetrics?.database_name || "harvey.db"} · ${databaseSize}${previewMode ? " · preview data separate" : ""}`, status: storageMetrics ? "Ready" : apiState === "loading" ? "Checking" : "Unavailable", tone: storageMetrics ? "success" : apiState === "loading" ? "warning" : "danger", ...(!storageMetrics ? { actionLabel: "+ Review", to: "/settings/general" } : {}) },
@@ -152,17 +169,25 @@ function RuntimeTopologyPanels() {
     : "Size not reported";
   const topologyItems = [
     { icon: Database, title: "FastAPI workspace", detail: apiState === "ready" ? "Status endpoint responded on this machine" : apiState === "loading" ? "Checking /api/status" : "Local API status is unavailable", status: apiState === "ready" ? "Connected" : apiState === "loading" ? "Checking" : "Offline", tone: apiTone, actionLabel: apiState !== "ready" ? "+ Review" : undefined, to: "/settings/general" },
-    { icon: Cpu, title: "Ollama inference", detail: isDemoConnection ? "UI demo override · no model call is made" : `${endpoint} · model availability is reported separately`, status: isDemoConnection ? "Demo connected" : apiState === "loading" ? "Checking" : ollamaSlow ? "Slow" : ollamaAvailable ? "Connected" : "Offline", tone: ollamaTone, actionLabel: !ollamaAvailable || isDemoConnection ? "+ Configure" : undefined, to: "/settings/models" },
+    { icon: Cpu, title: "Ollama inference", detail: isDemoConnection ? connected ? "UI demo override · no model call is made" : "Simulated offline state · UI-only; no model call is made" : `${endpoint} · model availability is reported separately`, status: isDemoConnection ? connected ? "Demo connected" : "Demo offline (simulated)" : apiState === "loading" ? "Checking" : ollamaSlow ? "Slow" : apiStatus?.ollama?.state === "error" ? "Error" : ollamaAvailable ? "Connected" : "Offline", tone: ollamaTone, actionLabel: !ollamaAvailable || isDemoConnection ? "+ Configure" : undefined, to: "/settings/models" },
     { icon: HardDrive, title: "SQLite workspace", detail: storageMetrics ? `${storageMetrics.database_name || "Local database"} · ${databaseSize}` : "Local storage metrics are not available", status: storageMetrics ? "Available" : apiState === "loading" ? "Checking" : "Unavailable", tone: storageMetrics ? "success" : apiState === "loading" ? "warning" : "danger", actionLabel: !storageMetrics ? "+ Review" : undefined, to: "/settings/general" },
     { icon: Activity, title: previewMode ? "Browser preview queue" : "Local worker queue", detail: previewMode ? "Illustrative task state · not submitted to a worker" : liveQueueLabel, status: queueStatus, tone: queueTone, actionLabel: "View queue", to: "/activity" },
   ];
+  const modelPreference = apiStatus?.ollama?.requested_model || activeModel;
+  const resolvedModel = apiStatus?.ollama?.model;
   const modelAvailability = isDemoConnection
-    ? "Demo override · inference disabled"
-    : ollamaAvailable
-      ? "Ollama responds · model tags not reported"
-      : apiState === "loading"
-        ? "Checking local service"
-        : "Not checked while offline";
+    ? connected ? "Demo override · inference disabled" : "Simulated offline · inference disabled"
+    : apiStatus?.ollama?.model_installed === true
+      ? `Installed · resolved ${resolvedModel}`
+      : apiStatus?.ollama?.model_installed === false
+        ? apiStatus?.ollama?.model_error || `Not installed · requested ${modelPreference}`
+        : apiState === "loading"
+          ? "Checking installed model tags"
+          : apiStatus?.ollama?.state === "error"
+            ? apiStatus.ollama.message || "Ollama model-tag check failed"
+            : ollamaAvailable ? "Installed model tags not reported" : "Not checked while offline";
+  const embeddingCache = apiStatus?.embedding_cache;
+  const localReadiness = apiStatus?.local_readiness;
 
   return (
     <section className="dashboard-runtime-grid" aria-label="Local runtime topology and configuration">
@@ -178,8 +203,11 @@ function RuntimeTopologyPanels() {
         rows={[
           { label: "Workspace mode", value: previewMode ? "Browser preview" : "SQLite-backed", tone: previewMode ? "warning" : "success", mono: false },
           { label: "Local API", value: apiState === "ready" ? "Responding" : apiState === "loading" ? "Checking" : "Offline", tone: apiState === "ready" ? "success" : apiState === "loading" ? "warning" : "danger", mono: false },
-          { label: "Selected model", value: activeModel, tone: "brand" },
-          { label: "Model availability", value: modelAvailability, tone: isDemoConnection || !ollamaAvailable ? "warning" : "neutral", mono: false },
+          { label: "Model preference", value: modelPreference, tone: "brand" },
+          { label: "Model availability", value: modelAvailability, tone: apiStatus?.ollama?.model_installed === true ? "success" : isDemoConnection || apiState === "loading" ? "warning" : apiStatus?.ollama?.model_installed === false ? "danger" : "neutral", mono: false },
+          { label: "Resolved model", value: resolvedModel || "Not resolved", tone: resolvedModel ? "success" : "warning" },
+          { label: "Embedding cache", value: embeddingCache?.available ? `${embeddingCache.model} available` : embeddingCache ? `${embeddingCache.model} missing` : "Not reported", tone: embeddingCache?.available ? "success" : embeddingCache ? "warning" : "neutral", mono: false },
+          { label: "Local readiness", value: localReadiness ? localReadiness.ready ? "Ready" : localReadiness.reasons?.[0] || "Needs attention" : "Not reported", tone: localReadiness?.ready ? "success" : localReadiness ? "warning" : "neutral", mono: false },
           { label: "Hardware report", value: hardwareLabel, tone: hardware ? "neutral" : "warning", mono: false },
           { label: "Vector rows", value: vectorCount.toLocaleString(), tone: vectorCount ? "success" : "neutral" },
           { label: "Queue", value: queueLabel, tone: previewMode ? "warning" : "neutral", mono: false },

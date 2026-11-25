@@ -11,6 +11,7 @@ import math
 import os
 import struct
 import threading
+from pathlib import Path
 from collections.abc import Sequence
 from typing import Any
 
@@ -62,6 +63,67 @@ def _load_model(model_name: str) -> Any:
             "Cache its files before running the app; AI paths stay offline. "
             f"Cause: {exc}"
         ) from exc
+
+
+def _huggingface_cache_roots() -> list[Path]:
+    candidates = [
+        os.environ.get("HF_HUB_CACHE"),
+        os.environ.get("HUGGINGFACE_HUB_CACHE"),
+        os.environ.get("TRANSFORMERS_CACHE"),
+    ]
+    hf_home = os.environ.get("HF_HOME")
+    if hf_home:
+        candidates.append(str(Path(hf_home) / "hub"))
+    xdg_home = os.environ.get("XDG_CACHE_HOME")
+    if xdg_home:
+        candidates.append(str(Path(xdg_home) / "huggingface" / "hub"))
+    candidates.append(str(Path.home() / ".cache" / "huggingface" / "hub"))
+    roots: list[Path] = []
+    for value in candidates:
+        if value:
+            path = Path(value).expanduser()
+            if path not in roots:
+                roots.append(path)
+    return roots
+
+
+def local_model_cache_status(model_name: str = DEFAULT_MODEL) -> dict[str, Any]:
+    """Check the local Hugging Face cache without loading or downloading a model."""
+    normalized = str(model_name or "").strip()
+    if not normalized:
+        return {"model": normalized, "available": False, "loaded": False, "cached": False}
+    loaded = _MODEL_CACHE.get(normalized) is not None
+    if Path(normalized).expanduser().is_dir():
+        return {"model": normalized, "available": True, "loaded": loaded, "cached": True}
+
+    repository = f"models--{normalized.replace('/', '--')}"
+    weight_names = ("model.safetensors", "pytorch_model.bin", "tf_model.h5")
+    cached = False
+    for root in _huggingface_cache_roots():
+        snapshots = root / repository / "snapshots"
+        try:
+            snapshot_dirs = list(snapshots.iterdir())
+        except OSError:
+            continue
+        for snapshot in snapshot_dirs:
+            if not snapshot.is_dir() or not (snapshot / "config.json").is_file():
+                continue
+            has_weights = any(
+                candidate.is_file()
+                for name in weight_names
+                for candidate in snapshot.rglob(name)
+            )
+            if has_weights:
+                cached = True
+                break
+        if cached:
+            break
+    return {
+        "model": normalized,
+        "available": loaded or cached,
+        "loaded": loaded,
+        "cached": cached,
+    }
 
 
 def _get_model(model_name: str) -> Any:

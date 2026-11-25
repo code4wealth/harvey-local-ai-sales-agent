@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from typing import Annotated, Any
@@ -11,7 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app import db, llm_client, prospects, scoring
 from app.queue_worker import register_handler
 from app.traceability import prompt_traceability
-from app.workflows.common import first_verbatim_evidence_example
 from app.workflows.profile import BusinessProfile, validate_stored_profile
 
 TASK_TYPE = "workflow.draft"
@@ -81,16 +81,29 @@ class OutreachDraft(BaseModel):
         return value
 
 
+def _non_evidence_example_span(verified_signals: list[dict[str, Any]]) -> str:
+    """Build a deterministic, schema-shaped placeholder not found in any signal."""
+    quotes = [
+        signal["evidence"]
+        for signal in verified_signals
+        if isinstance(signal.get("evidence"), str)
+    ]
+    seed = "\0".join(quotes).encode("utf-8")
+    for attempt in range(100):
+        digest = hashlib.sha256(seed + f"\0{attempt}".encode("ascii")).hexdigest()[:12]
+        candidate = f"EXAMPLE_ONLY_{digest} is not evidence"
+        if not any(candidate in quote for quote in quotes):
+            return candidate
+    raise DraftInputError("could not create a distinct, non-evidence prompt placeholder")
+
+
 def build_draft_prompt(profile: BusinessProfile, verified_signals: list[dict[str, Any]]) -> str:
     """Build one draft prompt from the product profile and verified signal quotes."""
     if not isinstance(profile, BusinessProfile):
         raise TypeError("draft prompt requires a validated BusinessProfile")
     if not verified_signals:
         raise DraftInputError(NO_EVIDENCE)
-    try:
-        example_span = first_verbatim_evidence_example(verified_signals)
-    except ValueError as exc:
-        raise DraftInputError(str(exc)) from exc
+    example_span = _non_evidence_example_span(verified_signals)
     profile_json = json.dumps(
         profile.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":")
     )
@@ -124,18 +137,9 @@ def build_draft_prompt(profile: BusinessProfile, verified_signals: list[dict[str
     if product_claim_sentence[-1] not in ".!?":
         product_claim_sentence += "."
     quote_ending = "" if example_span.rstrip().endswith((".", "!", "?")) else "."
-    example_signal_type = next(
-        (
-            str(signal.get("type") or "signal").replace("_", " ").strip().title()
-            for signal in verified_signals
-            if isinstance(signal.get("evidence"), str)
-            and len(signal["evidence"].split()) >= 4
-        ),
-        "Signal",
-    )
     example_json = json.dumps(
         {
-            "subject": f"{example_signal_type}: {example_span}",
+            "subject": f"Example only: {example_span}",
             "body": (
                 f'Hello, I noticed this detail: "{example_span}"{quote_ending} '
                 f"{product_claim_sentence} Would a brief, no-pressure conversation be useful?"
@@ -162,9 +166,11 @@ def build_draft_prompt(profile: BusinessProfile, verified_signals: list[dict[str
         "Do not invent prospect facts, prior contact, urgency, results, or product capabilities; "
         "do not paraphrase or repair evidence. Claim nothing else about the prospect. Return JSON "
         "only with subject, body, and evidence_used.\n"
-        f"Example valid fragment copied verbatim from ALLOWED EVIDENCE: "
+        "NON-EVIDENCE PLACEHOLDER (deliberately absent from verified signal quotes; "
+        "never copy it into the result): "
         f"{json.dumps(example_span, ensure_ascii=False)}\n"
-        f"Example JSON (format illustration, not a real generated result): {example_json}\n"
+        "Example JSON (fictional format illustration only; the placeholder is not evidence): "
+        f"{example_json}\n"
         f"Stored product profile JSON (product-capability context only):\n{profile_json}\n"
         "ALLOWED EVIDENCE — verified signal quotes; this is the only source from which prospect "
         f"evidence may be copied:\n{allowed_quotes_json}"

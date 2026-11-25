@@ -1,9 +1,10 @@
 """The ONE AI path in this application.
 
 Every AI inference call in Harvey Local goes through this module, which talks
-ONLY to a local Ollama server at http://127.0.0.1:11434. There is no
-configuration override and no cloud fallback. If Ollama is down, callers get
-OllamaUnavailable and should queue the task (see app/queue_worker.py).
+ONLY to a local Ollama server at http://127.0.0.1:11434. The endpoint is fixed;
+model selection may use DEFAULT_MODEL or the local hardware recommendation,
+and there is no cloud fallback. If Ollama is down, callers get OllamaUnavailable
+and should queue the task (see app/queue_worker.py).
 
 app/research/ may touch the internet but must never import this module. This
 module may receive researched text as input, but must never import research.
@@ -145,6 +146,40 @@ def ollama_up(timeout: float = UP_TIMEOUT) -> bool:
     return True
 
 
+def list_installed_models(timeout: float = UP_TIMEOUT) -> list[str]:
+    """Return locally installed Ollama model tags from ``/api/tags``.
+
+    This endpoint is the authority for model availability. Names are returned
+    exactly as Ollama reports them so inference requests and status views use
+    the same installed-model inventory.
+    """
+    try:
+        with _client(timeout) as client:
+            response = client.get("/api/tags")
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        raise _unavailable(exc) from exc
+    except httpx.TimeoutException as exc:
+        raise OllamaTimeout(f"Ollama model list did not answer within {timeout:g}s.") from exc
+    if response.status_code != 200:
+        raise OllamaResponseError(
+            f"Ollama /api/tags returned HTTP {response.status_code}: {response.text[:300]}"
+        )
+    try:
+        body = response.json()
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise OllamaResponseError(f"Ollama /api/tags returned invalid JSON: {exc}") from exc
+    if not isinstance(body, dict) or not isinstance(body.get("models"), list):
+        raise OllamaResponseError("Ollama /api/tags response must contain a models list")
+    names: list[str] = []
+    for item in body["models"]:
+        if not isinstance(item, dict):
+            raise OllamaResponseError("Ollama /api/tags model entries must be objects")
+        name = item.get("name") or item.get("model")
+        if isinstance(name, str) and name.strip():
+            names.append(name.strip())
+    return sorted(set(names), key=str.casefold)
+
+
 def ollama_version(timeout: float = UP_TIMEOUT) -> dict[str, Any]:
     """Return the local Ollama ``/api/version`` JSON or raise a typed error."""
     try:
@@ -167,20 +202,66 @@ def ollama_version(timeout: float = UP_TIMEOUT) -> dict[str, Any]:
     return body
 
 
-def _resolve_model(model: str | None) -> str:
-    if model:
-        return model
+def model_preference(model: str | None = None) -> tuple[str, str]:
+    """Return the requested model and its single authoritative selection source."""
+    explicit = str(model or "").strip()
+    if explicit:
+        return explicit, "request"
     configured = os.environ.get("DEFAULT_MODEL", "").strip()
     if configured:
-        return configured
+        return configured, "DEFAULT_MODEL"
     from app.hardware import detect
 
-    return detect().recommended_model
+    return detect().recommended_model, "hardware recommendation"
 
 
-def resolve_model_name(model: str | None = None) -> str:
-    """Resolve the local model name used for an inference and its audit record."""
-    return _resolve_model(model)
+def _resolve_model(
+    model: str | None,
+    *,
+    installed_models: list[str] | None = None,
+    defer_when_unavailable: bool = False,
+) -> str:
+    requested, _source = model_preference(model)
+    if installed_models is None:
+        try:
+            installed_models = list_installed_models()
+        except OllamaError as exc:
+            if defer_when_unavailable:
+                # Workflow submitters need the intended name to persist a
+                # replayable queue payload. Inference uses the strict default
+                # and must never send /api/chat without a successful tag check.
+                return requested
+            if isinstance(exc, OllamaUnavailable):
+                raise
+            raise OllamaUnavailable(
+                f"Could not verify Ollama's installed model tags at {OLLAMA_URL}: {exc}"
+            ) from exc
+    installed_by_casefold = {name.casefold(): name for name in installed_models}
+    installed = installed_by_casefold.get(requested.casefold())
+    if installed is None:
+        raise ModelNotPulled(
+            f"model not installed: run ollama pull {requested}"
+        )
+    return installed
+
+
+def resolve_model_name(
+    model: str | None = None, *, installed_models: list[str] | None = None
+) -> str:
+    """Resolve a model against local Ollama tags for workflow queue payloads.
+
+    ``DEFAULT_MODEL`` takes precedence when configured; otherwise the exact
+    model recommended by local hardware is required. Explicit callers are also
+    checked against installed tags. When the local server cannot be reached,
+    this returns only a deferred target so workflow submitters can persist a
+    replayable queue payload. The inference client performs a strict second
+    check and will not call ``/api/chat`` until tags are available.
+    """
+    return _resolve_model(
+        model,
+        installed_models=installed_models,
+        defer_when_unavailable=True,
+    )
 
 
 def _write_inference_log(
