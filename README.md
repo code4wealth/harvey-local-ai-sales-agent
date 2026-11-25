@@ -26,13 +26,14 @@ resources and are not priced here.
 - Buying-signal extraction with source-grounded evidence and persisted runs.
 - Deterministic product-specific prospect rankings, including missing-input
   reporting and component explanations.
-- Drafted outreach based only on a stored product profile and verified
-  prospect signals. Drafts are persisted but **never sent**; when no verified
-  evidence exists the workflow skips inference and records `no verified evidence`.
-- Evidence-grounded prospect problem statements using the product's stored
-  profile and ICP plus the prospect's latest successful verified-signal run.
-  Results, source IDs, evidence spans, model settings, queue state, and failures
-  are persisted; no-evidence cases skip inference.
+- Drafted outreach using the stored product profile as context and verified
+  signal quotes as the only evidence source. Every cited phrase is a literal,
+  contiguous 4–15-word copy preserving case, punctuation, and spacing. Drafts
+  are persisted but **never sent**; no-evidence cases skip inference.
+- Evidence-grounded prospect problem statements use the profile and ICP only as
+  context, never as quote sources, and accept evidence only from a separate
+  `ALLOWED EVIDENCE` block of verified signal quotes. Results, source IDs,
+  evidence spans, model settings, queue state, and failures are persisted.
 - Text-only sample-reply classification using eight validated labels, plus a
   separate offline evaluator. Ground-truth reply labels are isolated in
   `data/eval/reply_labels.csv`; they are never imported into the runtime database
@@ -41,15 +42,18 @@ resources and are not priced here.
   available without an LLM call.
 
 All model calls pass through `app/llm_client.py`, which is fixed to the local
-Ollama endpoint. Every structured response is schema-validated; invalid output
-gets one stricter retry, then fails with a stored reason. Read
+Ollama endpoint. JSON workflows disable model thinking (`think=false`), send the
+Pydantic JSON schema to Ollama's structured `format` option, and use a 300-second
+default timeout (`OLLAMA_TIMEOUT_SECONDS` can override it). Every structured
+response is schema-validated; invalid output gets one stricter retry, then
+fails with a stored reason. Read
 `docs/WORKFLOWS.md` for contracts, `docs/HARDWARE.md` for recommendations,
 `docs/FAILURE_HANDLING.md` for outage recovery,
 `docs/NETWORK_AUDIT.md` for the outbound-client inventory,
 `docs/COST_AND_DEPENDENCIES.md` for service costs and network needs,
-`docs/LICENSES.md` for the licence/version inventory and outstanding `VERIFY`
-items, and
-`docs/KNOWN_LIMITATIONS.md` for heuristic and model-evaluation caveats.
+`docs/MODELS_AND_LICENCES.md` for package/model licence status and outstanding
+`VERIFY` items, and `docs/KNOWN_LIMITATIONS.md` for heuristic and
+model-evaluation caveats.
 
 ## Quickstart
 
@@ -106,15 +110,16 @@ Vite proxies only `/api`, `/operations`, and `/licenses` to FastAPI; Sellbird
 workspace pages are handled by React Router. Rebuild the checked-in production
 bundle after UI changes with `npm run build` from `frontend/`.
 
-### Windows PowerShell setup (under 10 commands)
+### Windows PowerShell setup
 
-Install Python 3.11+, Ollama, and GNU Make first. From the repository root, run
-these eight commands in PowerShell:
+Install Git, Python 3.11+, GNU Make, and Ollama first. From the repository root,
+run these commands in PowerShell:
 
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
+python -m pip install --upgrade pip
+python -m pip install -e '.[dev]'
 make verify
 ollama pull qwen3:4b
 $env:DEFAULT_MODEL = "qwen3:4b"
@@ -122,24 +127,38 @@ $env:DB_PATH = "$PWD\data\harvey.db"
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-If Ollama is not already running as a desktop service, start it with `ollama
-serve` in a separate PowerShell window (ninth command). `make verify` requires
-GNU Make on `PATH`; if it is not available in PowerShell, run that command in
-Git Bash or WSL with the repository's Python environment active. The check suite
-uses mocked Ollama responses and fake embeddings; it does not need a live model.
+If Ollama is not already running as a desktop service, start `ollama serve` in
+a separate PowerShell window. `make verify` requires GNU Make on `PATH`; if it
+is unavailable in PowerShell, run the check in Git Bash or WSL with the
+repository's virtual environment active. Tests use mocked Ollama responses and
+fake embeddings; `make verify` does not make a real Ollama request. It is an
+automated check, not Windows, network-isolation, or live-model acceptance.
 
-An earlier Windows run was reported as **224 passed, 1 skipped**, before the
-optional public-page helper and its tests were added. The current workspace
-measured **234 passed, 2 skipped** with `make verify`; both skips are PowerShell
-parser checks because PowerShell is not installed here. This is not a current
-Windows result: rerun `make verify` on the target laptop to establish its count.
-Keep the API on
-`127.0.0.1`; do not expose it to a LAN. Set `$env:OFFLINE_STRICT = "1"` before
-starting the API to disable Hugging Face Hub telemetry and implicit-token use
-during local embedding loads; model files must already be cached. The loader
-always enforces Hugging Face and Transformers offline flags. The API and test
-suite do not automatically read a `.env` file; set environment variables in the
-current shell.
+If PowerShell blocks activation, use a process-scoped execution-policy change
+or invoke `.venv\Scripts\python.exe` directly; do not change the machine-wide
+policy just for this project. Set `$env:OFFLINE_STRICT = "1"` before starting the
+API if model files are already cached and you want Hub telemetry and
+implicit-token use disabled. The embedding loader always sets Hugging Face and
+Transformers offline flags. Set environment variables in the current shell;
+the API and tests do not automatically read a `.env` file.
+
+Keep the API bound to `127.0.0.1`; do not expose this unauthenticated service to
+a LAN. The PowerShell acceptance scripts require the API, sample database, and
+local Ollama runtime:
+
+```powershell
+.\scripts\offline_acceptance.ps1
+.\scripts\ollama_down_check.ps1
+```
+
+`offline_acceptance.ps1` checks eight workflows in order and writes timestamped
+logs and JSON beneath `test_evidence/offline/`. It makes one explicit
+non-AI request to `https://example.com` as a connectivity indicator, so it is
+not proof of a fully internet-disconnected run. `ollama_down_check.ps1`
+interactively guides an Ollama stop/restart and writes evidence beneath
+`test_evidence/ollama_outage/`. These scripts perform live local acceptance
+only when an operator runs them; their source tests do not count as a real
+Ollama result.
 
 The API has no user authentication and is intended for one local operator:
 bind it to `127.0.0.1` (as above), not `0.0.0.0` or a LAN address. Mutating
@@ -147,19 +166,20 @@ browser requests with a cross-origin `Origin` or `Sec-Fetch-Site: cross-site`
 header are rejected. Product company-info paths are confined to
 `data/company_info/`; CSV and prospect-page request bodies are size-limited.
 
-From the dashboard, choose a product and use **Run full product workflow** to
-queue profile and ICP generation, process up to three imported prospects' local
-pages (stable prospect-ID order) for signals, grounded problem statements and
-unsent drafts, then refresh product ranking. Three prospects produce 12 saved
-steps; increase the per-run prospect limit in the dashboard for a longer demo.
-The API accepts the same positive-integer option, for example
-`POST /api/products/{id}/pipeline?prospect_limit=5`. The dashboard polls
-persisted per-step progress; the other API equivalents are
-`GET /api/pipeline-runs/{run_id}` and `GET /api/products/{id}/pipeline`. Import
-prospects and store their local page text before starting. If Ollama is
-unavailable, the run stays queued and resumes through the local worker when
-available. A terminal profile or ICP failure skips all remaining steps with a
-reason. Individual steps remain available too.
+The full product pipeline is available through
+`POST /api/products/{id}/pipeline`. It queues profile and ICP generation,
+processes up to three imported prospects' local pages in stable prospect-ID
+order for signals, grounded problem statements and unsent drafts, then runs
+product ranking. Three prospects produce 12 saved steps. Set the optional
+positive-integer `prospect_limit` query parameter for a different per-run
+snapshot, for example `POST /api/products/{id}/pipeline?prospect_limit=5`.
+Poll saved progress with `GET /api/pipeline-runs/{run_id}` or read the latest
+run with `GET /api/products/{id}/pipeline`. The API endpoint is the current
+pipeline control; the dashboard does not yet expose a pipeline button or limit
+setting. Import prospects and store their local page text before starting. If
+Ollama is unavailable, the run stays queued and resumes through the local worker
+when available. A terminal profile or ICP failure skips all remaining steps
+with a reason. Individual workflow endpoints remain available too.
 
 ## Useful commands
 
@@ -224,10 +244,12 @@ outcomes remain marked `not supplied`.
 - Drafts after the fix (`6384b4b`, `156` tests): across `21` RelayCue prospects,
   `7` succeeded (IDs `22`, `28`, `30`, `32`, `34`, `35`, `36`), `12` skipped
   with `no verified evidence`, and `2` failed (`25`, `37`) with stored reasons.
-  All had `sent=false`; FieldNest drafts were not run. `evidence_used` contains
-  `1` or `2` verbatim spans of `4`–`15` words; each must be a substring of verified
-  signal evidence and the body after case and whitespace normalization, and appear
-  in double quotes in the body.
+  All had `sent=false`; FieldNest drafts were not run. Those historical runs
+  checked one or two `4`–`15`-word spans after case/whitespace normalization.
+  The current validator instead requires a literal contiguous copy preserving
+  capitalization, punctuation, and spacing in both the signal quote and body.
+  The historical counts are not evidence of performance under this stricter
+  check or a new real-Ollama run.
   In the successful example for prospect `22`, a four-word verified span was
   quoted in the body (`sent=false`).
 
@@ -240,6 +262,8 @@ No held-out reply or page text is included here.
 - `GET /api/products/{id}/ranking`
 - `POST` / `GET /api/products/{id}/prospects/{prospect_id}/draft`
 - `POST` / `GET /api/products/{id}/prospects/{prospect_id}/problem-statement`
+- `POST /api/replies/import-sample` imports text-only `data/sample/replies.csv`
+  into SQLite; repeated imports update records by reply ID.
 - `POST` / `GET /api/replies/{reply_id}/classification`
 - `GET /health` checks API/SQLite liveness without requiring Ollama
 - `GET /api/hardware` and `GET /api/status`
@@ -255,4 +279,6 @@ scope.
 
 ## Licence
 
-AGPL-3.0-only. See `LICENSE`, `NOTICE`, and `docs/LICENSES.md` (with model notes in `docs/MODELS_AND_LICENCES.md`).
+AGPL-3.0-only. See `LICENSE`, `NOTICE`, `docs/LICENSES.md`, and
+`docs/MODELS_AND_LICENCES.md` for model/dependency status; unresolved items are
+marked `VERIFY`.

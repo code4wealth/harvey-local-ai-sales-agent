@@ -119,17 +119,18 @@ curl -fsS "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/prospects/${PROSPECT
 
 Drafts are persisted locally with `sent=false` and are never sent. If there are
 no valid signals, the draft status is `skipped` with reason `no verified evidence`;
-no LLM call is made. The fixed workflow allows `1` or `2` evidence spans of `4`–`15`
-words each; each must be a substring of both verified signal evidence and the
-prospect's current stored page text after case and whitespace normalization,
-then appear enclosed in double quotes in the body. Problem statements use the
-stored business profile and ICP plus this
-prospect's latest successful verified-signal run. Their one- or two-sentence
-statement must contain each of `1` or `2` verbatim `4`–`15`-word spans, and each
-span must also occur in the verified signal evidence, after case/whitespace
-normalization only. Without verified evidence, the result is `skipped` with
-`no verified evidence` and no model call is made. Ranking reports an explicit
-missing-input status when no signal run exists.
+no LLM call is made. The current draft workflow allows `1` or `2` exact,
+contiguous `4`–`15`-word fragments copied verbatim from verified signal quotes;
+capitalization, punctuation, and spacing must match the stored page text and
+signal evidence exactly, and each fragment must be double-quoted in the body.
+Problem statements use the stored business profile and ICP only as context plus
+this prospect's latest successful verified-signal run. Profile and ICP text
+must never be cited; only the signal quotes in `ALLOWED EVIDENCE` may be used.
+Each one- or two-sentence statement must contain one or two exact, contiguous
+`4`–`15`-word fragments copied from that block and present verbatim in the
+statement. Without verified evidence, the result is `skipped` with `no verified
+evidence` and no model call is made. Ranking reports an explicit missing-input
+status when no signal run exists.
 
 The model scores below are historical operator-reported results from earlier
 prompts. They predate the Problem 7 confidence field and do not verify the
@@ -202,11 +203,12 @@ These checks use tests and mocked Ollama responses; they do not count as a live
 model demonstration and do not rerun either held-out evaluator.
 
 ```text
-RESULT: Current workspace verification — `make verify` passed with 234 passed
+RESULT: Current workspace verification — `make verify` passed with 239 passed
 and 2 skipped; the two local skips are PowerShell parser checks because
 PowerShell is not installed here. Corpus validation and the no-cloud guard
-passed. `npm run build` and `git diff --check` passed after the final edits.
-These are automated/source checks, not a real Ollama or internet-off run.
+passed. `git diff --check` is run separately after the documentation edits.
+These are automated/source checks, not a real Ollama or internet-off run. The
+frontend was unchanged in this task; `npm run build` was not rerun.
 ```
 
 ## Offline acceptance test
@@ -226,14 +228,15 @@ are ignored by Git.
 
 ### Prepare the local demo data
 
-On the target Windows laptop, start Ollama with the intended local model already
-pulled, configure the API to use the local demo database, and start the API as
-shown above. Ensure the DB has RelayCue and FieldNest products with their local
-company-info paths, imported `SAMPLE_relaycue.csv` and `SAMPLE_fieldnest.csv`
-prospects with local page paths, and the imported sample reply `R001`. No web
-page is fetched by these scripts. IDs are resolved from the local API; pass an
-explicit `-ProfileProductId`, `-FirstIcpProductId`, or `-SecondIcpProductId`
-only when you need to select a different record.
+On the target Windows laptop, start Ollama with the intended local model
+already pulled, configure the API to use the local demo database, and start the
+API as shown above. Ensure the database has a RelayCue product, imported sample
+prospects with local page paths, and sample reply `R001`. If the reply is not in
+the runtime table, import the text-only fixture locally with
+`POST /api/replies/import-sample` or `python scripts/import_replies.py`; labels
+remain in the separate evaluator data. No web page is fetched by these scripts.
+The default profile and ICP product is RelayCue; pass `-ProfileProductId` or
+`-IcpProductId` to select different records.
 
 ### Run acceptance with Ollama available
 
@@ -243,20 +246,19 @@ From PowerShell in the repository root, with the API and Ollama running:
 .\scripts\offline_acceptance.ps1
 ```
 
-The script checks API/hardware/status fields and the dashboard route at `/`,
-resolves product IDs, then runs these workflows in order: business profile,
-product ICP, research by reading saved prospect-page text, signals, problem
-statement, deterministic scoring/ranking, unsent draft, and reply classification.
-It runs the full resumable product pipeline as an extra final step, then checks
-the reported Ollama host and established API-process peers. Standalone signals
-are run for up to three stored-page RelayCue prospects. Problem-statement
-evidence reports at most three prospect IDs, workflow statuses, and counts only;
-it omits statement and source text. The pipeline summary records only step
-counts/statuses, not child results or model output. The script prints `[PASS]`
-or `[FAIL]` per step and writes timestamped `acceptance-*.log` and
-`acceptance-*.json` files. Use `-SignalLimit` to change the standalone signal
-sample, `-WaitSeconds` for individual workflows, and `-PipelineWaitSeconds` for
-the full pipeline (default 900 seconds).
+The script checks API/hardware/status fields and resolves product IDs, then
+runs exactly these eight workflows in order: business profile, product ICP,
+research by reading saved prospect-page text, signals, problem statement,
+deterministic scoring/ranking, unsent draft, and reply classification. It then
+checks runtime traceability and the API process's non-loopback connection
+snapshot. The script selects the first RelayCue prospect with stored page text;
+problem-statement evidence in the report is limited to status and counts, not
+the statement or source text. The full resumable product pipeline is a separate
+API workflow and is not a ninth acceptance-script entry. The script prints
+`[PASS]` or `[FAIL]` per step and writes timestamped `acceptance-*.log` and
+`acceptance-*.json` files. Use `-ProfileProductId`, `-IcpProductId`, and
+`-ReplyId` to select records, or `-WaitSeconds` to adjust individual-workflow
+polling (default 300 seconds).
 
 ### Check outage, deterministic ranking, and retry
 
@@ -284,8 +286,8 @@ and Ollama-down outcomes remain `not run` until their evidence files exist.
 
 | Check | Status | Evidence / result |
 |---|---|---|
-| `make verify` for the current workspace | passed — 234 passed, 2 skipped; corpus validation and no-cloud scan passed. | The two skips are PowerShell parser checks because PowerShell is unavailable here. Mocked/source checks, not live-model proof. |
-| `npm run build` | passed. | React production bundle built successfully. |
+| `make verify` for the current workspace | passed — 239 passed, 2 skipped; corpus validation and no-cloud scan passed. | The two skips are PowerShell parser checks because PowerShell is unavailable here. Mocked/source checks, not live-model proof. |
+| `npm run build` | not run for this task; frontend source was unchanged. | No frontend changes were made. |
 | `git diff --check` | passed after the documentation edits. | No whitespace errors reported. |
 | PowerShell script execution | not run — no PowerShell result is present in `test_evidence/offline/`. | Script syntax and real Windows networking behavior remain to be verified on the target laptop. |
 | Ollama version, installed model list, and local status | reported by user — Ollama `0.40.17`; `qwen3:4b`, ID `359d7dd4bcda`, `2.5 GB`; `/api/status` local-only, available at loopback, queue empty. | User-supplied facts; not a timestamped acceptance-script result. |
@@ -293,7 +295,7 @@ and Ollama-down outcomes remain `not run` until their evidence files exist.
 | Qwen3 licence metadata | reported by user — Apache License 2.0, January 2004. | From the supplied `ollama show qwen3:4b --license` output; see `docs/LICENSES.md`. |
 | `sentence-transformers` package metadata | reported by user — version `3.4.1`, Apache 2.0. | From the supplied `pip show sentence-transformers` output; see `docs/LICENSES.md`. |
 | Offline acceptance against the local database/API | not run — no files were present in `test_evidence/offline/`. | No timestamped acceptance result exists yet. |
-| Problem-statement target-machine acceptance step | not run. | The script is limited to at most three prospect IDs, statuses, and counts; it does not write statements or evidence text. |
+| Problem-statement target-machine acceptance step | not run. | The eight-workflow script selects one RelayCue prospect with saved page text and records status/counts only; it does not write statement or evidence text into the evidence JSON. |
 | Ollama-down / recovery acceptance | not run until evidence files exist. | Do not treat mocked queue tests or the supplied status snapshot as a live outage test. |
 | User's internet-off test | not run until evidence files exist. | Keep its result separate from these local-only scripts. |
 
@@ -306,6 +308,7 @@ remain user verification items. Hardware GPU detection currently reports
 NVIDIA VRAM via `nvidia-smi` only. The reported Ollama and Qwen3 values do not
 verify Ollama's distribution licence or the embedding model's model-card
 metadata; licence/version metadata for embedding transitive packages also
-remain unavailable. See `docs/LICENSES.md`. Static source scans and mocks are
+remain unavailable. See `docs/MODELS_AND_LICENCES.md`, with unconfirmed items
+marked `VERIFY`. Static source scans and mocks are
 not a substitute for the internet-off test, which remains `not run` until its
 evidence file exists.

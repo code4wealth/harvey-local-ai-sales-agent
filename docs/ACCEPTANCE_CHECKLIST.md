@@ -8,7 +8,7 @@ A passing unit test or build is not the same as a real Ollama or internet-off ru
 
 ## Automated checks and source review
 
-- [x] `make verify` passed locally: **234 passed, 2 skipped**. The no-cloud
+- [x] `make verify` passed locally: **239 passed, 2 skipped**. The no-cloud
   guard and sample-corpus validation passed. The two skips are PowerShell parser
   tests because PowerShell is not installed in this workspace.
 - [x] The source-level no-cloud guard passed. Model inference is fixed to local
@@ -16,13 +16,20 @@ A passing unit test or build is not the same as a real Ollama or internet-off ru
 - [x] `.env.example` contains no API credentials. No cloud AI keys are needed.
 - [x] The React production bundle builds and is checked in under
   `frontend/static`; the Windows runtime does not need npm to serve it.
-- [x] The PowerShell acceptance source declares the required order: business
-  profile, ICP, research from saved page data, signals, problem statement,
-  scoring, draft, reply classification, then the full pipeline as an extra.
-  Static tests check the order and timestamped evidence paths.
+- [x] The PowerShell acceptance source declares exactly eight workflows in
+  order: business profile, ICP, research from saved page data, signals, problem
+  statement, scoring, unsent draft, and reply classification. The full product
+  pipeline is a separate API workflow, not a ninth acceptance entry. Static
+  tests check the order and timestamped evidence paths for both scripts.
 - [x] Source review confirms the offline script makes one non-AI HTTPS request
   to `example.com` as a connectivity indicator. An HTTP response marks the run
   as not offline; failure is not proof that all internet access is blocked.
+- [x] Mocked client tests verify `think=false`, Ollama structured output via the
+  Pydantic JSON schema, and the 300-second default timeout.
+- [x] Pipeline tests verify the default three-prospect snapshot, a configured
+  per-run limit, and skips of dependent steps after profile/ICP failure.
+- [x] The sample-reply POST endpoint imports the checked-in text-only CSV
+  idempotently; database tests confirm no ground-truth label columns are added.
 - [ ] Run both PowerShell acceptance scripts on the target Windows laptop.
 - [ ] Run the complete workflow with Wi-Fi/internet disconnected and save the
   resulting `test_evidence/offline/` log and JSON. No such acceptance files are

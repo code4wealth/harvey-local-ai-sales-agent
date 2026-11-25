@@ -46,11 +46,11 @@ writes extracted text under `data/prospect_pages/`. Its output must still be
 imported as local prospect-page data before an AI workflow can use it. The
 helper does not import `app.llm_client` and is not part of the offline workflow.
 
-Scrapy and Playwright are not installed or used by this project. The helper
-fetches only explicit CSV URLs; it does not discover prospects, automate a
-browser, log into sites, or access paywalled/private pages. Fresh collection
-requires internet access, and operators must review site terms and the fetched
-content.
+**Scrapy and Playwright are not used** by this project. The optional helper
+fetches only explicit CSV URLs with the declared Requests/BeautifulSoup stack;
+it does not discover prospects, automate a browser, log into sites, or access
+paywalled/private pages. Fresh collection requires internet access, and
+operators must review site terms and the fetched content.
 
 ## Local page embeddings
 
@@ -177,31 +177,41 @@ is an auditable prioritization aid, not a semantic buyer-fit judgement. It uses
 the latest successful signal run and reports a newer failed run separately.
 Missing inputs remain visible and can produce partial or unranked results.
 
+**Size Fit has no standalone operator input.** It only compares the prospect's
+recorded `employee_count` with the stored ICP company-size bounds. If either
+value is missing, the component is uncomputable (`null`/`unknown`); no headcount
+is inferred from page text, hardware specs, or a model. Supply the employee
+count in the prospect record/import and configure bounds in the ICP for a
+computable result.
+
 ## Evidence-grounded problem statements
 
 The problem-statement workflow selects the product's latest stored profile and
-ICP and the prospect's latest successful signal run. It requires one or two
-4-to-15-word spans that occur in both that run's verified evidence and the
-one- or two-sentence statement after case and whitespace normalization only.
-This exact-span check constrains fabricated quotations, but it is not a semantic
-entailment check: it cannot establish that the complete statement, or an
-inferred connection between a signal and a product/ICP pain point, is true.
-Review generated statements before using them. With no verified evidence the
-workflow records `skipped` / `no verified evidence` without model inference;
-invalid outputs get one stricter retry, then terminal failures are persisted
-with their reason.
+ICP and the prospect's latest successful signal run. The profile and ICP are
+context only and must never be quoted as evidence; the prompt exposes the
+verified signal quotes in a separate `ALLOWED EVIDENCE` block. It requires one
+or two exact, contiguous 4-to-15-word fragments copied verbatim from those
+quotes, preserving capitalization, punctuation, and spacing, and repeated
+verbatim in the one- or two-sentence statement. This literal-span check
+constrains fabricated quotations, but it is not a semantic entailment check: it
+cannot establish that the complete statement, or an inferred connection
+between a signal and a product/ICP pain point, is true. Review generated
+statements before using them. With no verified evidence the workflow records
+`skipped` / `no verified evidence` without model inference; invalid outputs get
+one stricter retry, then terminal failures are persisted with their reason.
 
 ## Evidence-grounded outreach drafts
 
-The validator checks that each `evidence_used` span is a substring of both the
-prospect's current stored page text and its verified signal evidence, and appears
-inside double quotes in the body, after case and whitespace normalization only.
-Generated drafts must contain `1`–`2` spans of `4`–`15` words. This proves the
-cited spans exist in stored prospect data, but does **not** semantically verify
-every other sentence in the body. The prompt prohibits uncited prospect claims,
-but a model could still produce an unsupported pitch sentence; review every
-draft. Every draft is stored with `sent=false` and the workflow has no
-email-send capability.
+The validator checks that each `evidence_used` span is an exact, contiguous
+4-to-15-word fragment copied from a quote in the separate `ALLOWED EVIDENCE`
+block. Matching preserves capitalization, punctuation, and spacing against the
+stored page text and verified signal evidence, and the exact fragment must
+appear inside double quotes in the body. Product-profile and ICP text is
+context only, never a quote source. This proves the cited spans exist in stored
+prospect data, but does **not** semantically verify every other sentence in the
+body. The prompt prohibits uncited prospect claims, but a model could still
+produce an unsupported pitch sentence; review every draft. Every draft is
+stored with `sent=false` and the workflow has no email-send capability.
 
 On the first attempt, `9` prospects were tried: `6` drafts were skipped with
 `no verified evidence`, and `3` failed the verbatim-evidence check because the

@@ -57,8 +57,9 @@ workflow milestones; prompt tuning and live results remain operator-owned.
 - The persistent `pipeline_runs` / `pipeline_steps` records include run status,
   ordered per-prospect step status, timestamps, error/skip reason, and child
   workflow run IDs. `GET /api/pipeline-runs/{run_id}` polls a run;
-  `GET /api/products/{product_id}/pipeline` reads the latest one. The dashboard
-  exposes a one-click run and saved step-by-step progress.
+  `GET /api/products/{product_id}/pipeline` reads the latest one. The API is the
+  current pipeline control; the dashboard does not yet expose a pipeline button
+  or configurable-limit control.
 - If Ollama becomes unavailable during inference, the in-progress child run and
   pipeline step return to `queued`; the same product pipeline resumes at that
   step after worker retry. Completed steps are not repeated. A terminal failure
@@ -160,7 +161,10 @@ prospect's recorded `employee_count`. Fit is 100 inside the inclusive range.
 Outside it, let `r` be the ratio to the nearest boundary (`employees / max`
 above the range, `min / employees` below it). Fit decays logarithmically as
 `100 × (1 − ln(r) / ln(3))`, reaching zero at a 3× ratio. Missing or invalid
-inputs make the component `null`.
+inputs make the component `null`. Size Fit has no standalone operator input;
+it only compares imported prospect `employee_count` with the stored ICP bounds.
+When either value is missing, the component is unknown rather than inferred
+from page text or model output.
 
 ### Title fit — rule-based
 
@@ -209,13 +213,18 @@ is distinct from the older batch score writer.
 
 ## LLM workflow status
 
-All inference uses the local `app/llm_client.py` path. Every model response is
-validated against a Pydantic schema and any workflow-specific grounding checks.
-An invalid response gets at most one stricter-prompt retry (two total attempts);
-a second invalid response fails and its reason is persisted. Signal quote
-verification shares that same retry budget. Transport failures are not hot-loop
-retried; local Ollama outages are queued. The first request uses temperature
-`0` and seed `42`; the retry uses temperature `0.2` and the next seed.
+All inference uses the local `app/llm_client.py` path. JSON workflows send the
+Pydantic `model_json_schema()` as Ollama's structured `format` and set
+`think=false`; the default request timeout is 300 seconds, configurable through
+the positive `OLLAMA_TIMEOUT_SECONDS` environment variable. Every model
+response is validated against a Pydantic schema and any workflow-specific
+grounding checks. An invalid response gets at most one stricter-prompt retry
+(two total attempts); retry feedback includes rejected values and, for evidence
+checks, the allowed source quotes. A second invalid response fails and its
+reason is persisted. Signal quote verification shares that same retry budget.
+Transport failures are not hot-loop retried; local Ollama outages are queued.
+The first request uses temperature `0` and seed `42`; the retry uses temperature
+`0.2` and the next seed.
 
 Implemented:
 
@@ -244,15 +253,20 @@ Implemented:
    The model sees only stored inbound reply text, not reply ID or evaluation
    metadata. It returns one of eight strict labels, confidence in `[0,1]`, and
    a rationale of at most 200 characters. Invalid results get one stricter
-   retry; outage tasks are persisted and replayed. Ground-truth labels are in
+   retry; outage tasks are persisted and replayed. `POST
+   /api/replies/import-sample` idempotently imports only the checked-in
+   `data/sample/replies.csv` text records. Ground-truth labels are in
    `data/eval/reply_labels.csv`, never in the runtime sample-reply table.
 5. **Outreach draft:** `POST` / `GET
    /api/products/{product_id}/prospects/{prospect_id}/draft`. The prompt uses
    only the product's stored business profile and valid signals from the
-   latest successful signal run. The draft must include one or two 4-to-15-word
-   evidence spans, each a substring of both the prospect's current stored page
-   text and verified signal evidence after case/whitespace normalization, quoted
-   inside double quotes in the body. The prompt prohibits other prospect claims;
+   latest successful signal run. Its profile and any ICP are context only and
+   never quote sources; only the separate `ALLOWED EVIDENCE` block (verified
+   signal quotes) can be cited. The draft must include one or two exact,
+   contiguous 4-to-15-word fragments copied verbatim with capitalization,
+   punctuation, and spacing preserved. Each fragment must occur in both the
+   current stored page text and a verified signal quote and be double-quoted in
+   the body. The prompt prohibits other prospect claims;
    only cited spans are mechanically verified, so human review remains required.
    Invalid drafts get one stricter retry; persistent failure is returned and
    stored. If no signal quote remains verified against the current page, the
@@ -261,10 +275,12 @@ Implemented:
 6. **Problem statement:** `POST` / `GET
    /api/products/{product_id}/prospects/{prospect_id}/problem-statement`. It
    uses the product's latest stored business profile and ICP plus this
-   prospect's valid signals from the latest successful signal run. It persists
-   those source IDs and up to two verbatim 4-to-15-word evidence spans. Every
-   span must occur in both the verified signal evidence and the one- or
-   two-sentence statement after case and whitespace normalization only.
+   prospect's valid signals from the latest successful signal run. Profile and
+   ICP are context only and must never be quoted; the verified signal quotes are
+   the sole `ALLOWED EVIDENCE` source. It persists source IDs and up to two
+   exact, contiguous 4-to-15-word fragments copied verbatim with capitalization,
+   punctuation, and spacing preserved. Every fragment must occur in both a
+   verified signal quote and the one- or two-sentence statement.
    Invalid model results get one stricter retry; terminal failures are persisted,
    and Ollama-unavailable runs are queued for worker retry. With no verified
    evidence, it stores `skipped` / `no verified evidence` and does not resolve

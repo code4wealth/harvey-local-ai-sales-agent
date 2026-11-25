@@ -10,29 +10,33 @@
   saves extracted text locally, and does not import the local LLM client.
 - Adds deterministic product-specific ranking using stored ICP, local page text,
   and valid signals from the latest successful signal run.
-- Adds product-scoped profile, ICP, signal, reply-classification, and draft
-  workflows with persisted runs and retry/failure handling.
-- Draft evidence uses one or two 4-to-15-word spans, each checked as a substring
-  of this prospect's verified signal evidence and the body after case and
-  whitespace normalization only; each span must be enclosed in double quotes.
-  Drafts are stored with `sent=false`.
-- Documents the timestamped offline acceptance and Ollama-outage scripts,
-  updates the acceptance checklist using measured results, and revises the PRD
-  problem-statement scope to match the implemented workflow.
+- Adds an idempotent `POST /api/replies/import-sample` endpoint for the
+  checked-in text-only sample replies CSV; labels remain isolated in evaluator
+  data.
+- Documents the full product pipeline's configurable positive prospect limit
+  (default `3`) and fail-fast skip behavior after profile/ICP failures.
+- Problem-statement and draft evidence must be an exact contiguous 4-to-15-word
+  fragment copied verbatim from a separate `ALLOWED EVIDENCE` signal-quote
+  block; profile/ICP text is context only and never a quote source. Validation
+  preserves case, punctuation, and spacing, and retry feedback contains the
+  rejected value plus the allowed quote. Drafts remain `sent=false`.
+- Keeps the PowerShell offline acceptance order to exactly eight workflows and
+  documents timestamped offline/outage evidence paths. No generated acceptance
+  log or real-Ollama result is claimed unless those scripts are run.
 
 ## Validation
 
-- `make verify` — passed locally; corpus checks and **234 passed, 2 skipped**. The two skips are PowerShell parser checks because PowerShell is not installed in this workspace.
-- `npm run build` — passed for the React production bundle.
-- `pytest -q -rs tests/test_offline_scripts.py` — 7 passed, 2 skipped because
-  PowerShell is unavailable locally; the acceptance scripts were source-checked.
-- `python scripts/fetch_public_pages.py --help` — passed.
-- `git diff --check` — passed after the final documentation edits.
-- The fetcher tests use stubbed HTTP responses; no real public pages were fetched.
-- PowerShell parser tests were skipped locally because PowerShell is unavailable;
-  neither acceptance script was executed, and no new live Ollama run was made for
-  these additions. The historical smoke results below are not current acceptance
-  evidence.
+- `PATH="$PWD/.venv/bin:$PATH" make verify` — passed; corpus validation and
+  no-cloud checks passed; **239 passed, 2 skipped**. Both skips are PowerShell
+  parser checks because PowerShell is not installed in this workspace.
+- `pytest -q -rs tests/test_offline_scripts.py` — 7 passed, 2 skipped; the
+  scripts were source-checked, but neither was executed in PowerShell.
+- `git diff --check` — run after the final documentation edits.
+- The endpoint/import tests use the checked-in synthetic fixture and isolated
+  SQLite databases. `make verify` uses mocked Ollama responses; no real Ollama
+  inference or outage acceptance was run, and historical smoke results below
+  are not current acceptance evidence.
+- The frontend was unchanged; `npm run build` was not rerun for this task.
 
 ## Reported live results
 

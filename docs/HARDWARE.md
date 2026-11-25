@@ -28,6 +28,14 @@ including when only one of those thresholds is met. The implementation is in
 `app/hardware.py` (`recommend`). Set `DEFAULT_MODEL` to override the recommended
 model. Recommendations are configuration guidance, not measured speed, quality,
 or memory-fit claims. The selected model must already be available in Ollama.
+The hardware tier is not a model-fit guarantee; inspect the exact pulled model
+artifact and its licence before use (`docs/MODELS_AND_LICENCES.md`; unconfirmed
+items are `VERIFY`). No physical-hardware benchmark is implied by the
+selection tests.
+
+This hardware tier is separate from prospect **Size Fit**. Hardware selection
+uses local RAM/NVIDIA VRAM; Size Fit compares imported employee count with ICP
+size bounds and cannot infer either value from the hardware profile.
 
 ## Decision-rule tests
 

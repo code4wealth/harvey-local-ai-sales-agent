@@ -6,25 +6,38 @@
   hosted inference service, or metered enrichment provider. Local hardware,
   electricity, and one-time model-download bandwidth are user-provided resources
   and are not monetized or estimated by this project.
-- **Inference is local only.** Model requests go to the local Ollama service;
-  embeddings run from the locally cached sentence-transformer model. There is
-  no cloud fallback.
-- Internet is needed to install dependencies, obtain/cache model files, or
-  when an operator explicitly runs the separate online helper
-  `scripts/fetch_public_pages.py`. The FastAPI application itself uses only
-  stored-page research and does not fetch new pages. Once dependencies, models,
-  and data are available locally, its workflows can run offline; the optional
-  page-collection helper cannot.
+- **Inference is local only.** Structured JSON workflows send a Pydantic JSON
+  schema to the Ollama service on loopback and set `think=false`; there is no
+  cloud fallback. Requests use a 300-second timeout by default. Set
+  `OLLAMA_TIMEOUT_SECONDS` to a positive number of seconds to change it.
+- Embeddings use the locally cached `sentence-transformers/all-MiniLM-L6-v2`
+  model. Model weights are not vendored; cache them before an offline run.
+- Internet is needed to install Python dependencies, obtain/cache Ollama and
+  embedding model files, or when an operator explicitly runs the separate
+  online helper `scripts/fetch_public_pages.py`. That helper reads explicit
+  public URLs from a CSV. The FastAPI application itself uses only local stored
+  page text and does not fetch new pages. Once dependencies, models, and data
+  are available locally, its workflows can run offline; the optional page
+  collector cannot.
+- Importing `data/sample/replies.csv` through `POST /api/replies/import-sample`
+  is local and idempotent; it does not add a paid service or send the reply text
+  to a hosted endpoint.
 
 ## Dependencies
 
-The authoritative dependency declarations and version ranges are in
-`pyproject.toml` and `requirements.txt`. The project uses FastAPI, Uvicorn,
-HTTPX, Pydantic, Sentence-Transformers, BeautifulSoup, and Requests. Requests
-and BeautifulSoup support the separately invoked, optional online collector;
-they are not used by the FastAPI inference path. Pytest is a development
-dependency. Exact locally observed package versions/licences and items that
-remain `not run` are listed in [`LICENSES.md`](LICENSES.md).
+The authoritative Python package declarations and version ranges are in
+`pyproject.toml` and `requirements.txt`. Runtime packages are FastAPI, Uvicorn,
+HTTPX, Pydantic, Sentence-Transformers, BeautifulSoup, and Requests. The
+Sentence-Transformers package and its model are separate artifacts; check both
+before redistribution. Requests and BeautifulSoup support the separately
+invoked optional public-page collector and stored-page text parsing; neither
+connects the inference path to a hosted AI service. Pytest is a development
+dependency. Ollama is a separate local runtime, not a Python package dependency.
 
-Stored-page workflows require no web fetcher. Scrapy and Playwright are not
-installed or used by this project.
+Stored-page workflows require no web fetcher. **Scrapy and Playwright are not
+installed or used** by this project; it does not crawl or automate a browser.
+
+Observed package metadata and unresolved licence/version items are recorded in
+[`MODELS_AND_LICENCES.md`](MODELS_AND_LICENCES.md). Items not confirmed for the
+target Windows environment or exact model artifact are marked `VERIFY`; the
+sandbox observations are not a Windows dependency lockfile or legal opinion.

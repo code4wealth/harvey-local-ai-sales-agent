@@ -67,29 +67,30 @@ resolved versions and licence notices in the actual deployment environment.
 ## Major framework and test transitive dependencies
 
 These packages were present in the sandbox `.venv` as transitive dependencies.
-Their versions and licence identifiers are observations from package metadata;
-target Windows resolution remains **VERIFY**.
+Their versions and licence identifiers are observations from local package
+metadata, not the target Windows resolution. Every row's target version/licence
+status is therefore explicitly **VERIFY**.
 
-| Distribution | Observed version | Observed licence metadata | Main dependency path |
-|---|---:|---|---|
-| `starlette` | `1.10.0` | BSD-3-Clause | FastAPI / ASGI web layer |
-| `anyio` | `4.16.0` | MIT | FastAPI, Starlette, and HTTPX async compatibility |
-| `annotated-doc` | `0.0.7` | MIT | FastAPI |
-| `opentelemetry-api` | `1.45.2` | Apache-2.0 | FastAPI metadata dependency |
-| `typing-inspection` | `0.4.5` | MIT | FastAPI / Pydantic |
-| `pydantic-core` | `2.50.5` | MIT | Pydantic validation core |
-| `annotated-types` | `0.8.0` | MIT | Pydantic |
-| `typing-extensions` | `4.16.0` | PSF-2.0 | Framework and validation compatibility |
-| `httpcore` | `1.0.9` | BSD-3-Clause | HTTPX transport |
-| `certifi` | `2026.11.20` | MPL-2.0 | HTTPX certificate bundle |
-| `idna` | `3.20` | BSD-3-Clause | HTTPX URL handling |
-| `click` | `8.5.1` | BSD-3-Clause | Uvicorn command-line interface |
-| `h11` | `0.16.0` | MIT | Uvicorn HTTP/1.1 implementation |
-| `soupsieve` | `2.10` | MIT | BeautifulSoup selector support |
-| `packaging` | `26.4` | Apache-2.0 OR BSD-2-Clause | Test/build tooling |
-| `iniconfig` | `2.3.1` | MIT | Pytest |
-| `pluggy` | `1.7.0` | MIT | Pytest plugin system |
-| `Pygments` | `2.21.0` | BSD-2-Clause | Pytest output support |
+| Distribution | Observed version | Observed licence metadata | Target status | Main dependency path |
+|---|---:|---|---|---|
+| `starlette` | `1.10.0` | BSD-3-Clause | **VERIFY** | FastAPI / ASGI web layer |
+| `anyio` | `4.16.0` | MIT | **VERIFY** | FastAPI, Starlette, and HTTPX async compatibility |
+| `annotated-doc` | `0.0.7` | MIT | **VERIFY** | FastAPI |
+| `opentelemetry-api` | `1.45.2` | Apache-2.0 | **VERIFY** | FastAPI metadata dependency |
+| `typing-inspection` | `0.4.5` | MIT | **VERIFY** | FastAPI / Pydantic |
+| `pydantic-core` | `2.50.5` | MIT | **VERIFY** | Pydantic validation core |
+| `annotated-types` | `0.8.0` | MIT | **VERIFY** | Pydantic |
+| `typing-extensions` | `4.16.0` | PSF-2.0 | **VERIFY** | Framework and validation compatibility |
+| `httpcore` | `1.0.9` | BSD-3-Clause | **VERIFY** | HTTPX transport |
+| `certifi` | `2026.11.20` | MPL-2.0 | **VERIFY** | HTTPX certificate bundle |
+| `idna` | `3.20` | BSD-3-Clause | **VERIFY** | HTTPX URL handling |
+| `click` | `8.5.1` | BSD-3-Clause | **VERIFY** | Uvicorn command-line interface |
+| `h11` | `0.16.0` | MIT | **VERIFY** | Uvicorn HTTP/1.1 implementation |
+| `soupsieve` | `2.10` | MIT | **VERIFY** | BeautifulSoup selector support |
+| `packaging` | `26.4` | Apache-2.0 OR BSD-2-Clause | **VERIFY** | Test/build tooling |
+| `iniconfig` | `2.3.1` | MIT | **VERIFY** | Pytest |
+| `pluggy` | `1.7.0` | MIT | **VERIFY** | Pytest plugin system |
+| `Pygments` | `2.21.0` | BSD-2-Clause | **VERIFY** | Pytest output support |
 
 ## Major embedding-stack dependencies not resolved here
 
