@@ -8,7 +8,7 @@
 - Demo video URL: **PENDING** — no URL was supplied. The prompt's `[PASTE LINK or "not yet uploaded"]` is an unresolved choice, not a confirmed upload status.
 - Demo screen: `/operations` (the product-level workflow console). The eight individual PowerShell acceptance workflows are a separate run, not a ninth `/operations` step.
 
-The working branch has not been pushed by this completion pass. Publish it before asking reviewers to fetch this branch or compare the demo footer.
+The branch was pushed to `origin` through commit `b5b56d3`. This follow-up update is local until pushed; publish the latest branch tip before asking reviewers to fetch these final notes or compare the demo footer.
 
 ## Demo version
 
@@ -16,7 +16,7 @@ The demo video was recorded on the owner's Windows laptop at commit [VIDEO_COMMI
 
 - Video commit hash: `[VIDEO_COMMIT_HASH]` — **OWNER TO FILL** (read from the footer of the video).
 - Video URL: `[VIDEO_URL]` — **OWNER TO FILL**.
-- CI result (Python 3.11 and 3.12): `[CI_RESULT_PYTHON_3_11_AND_3_12]` — **OWNER TO FILL**.
+- CI result (Python 3.11 and 3.12): **PASS** on GitHub Actions for the latest push (run `45707464736`; both matrix jobs passed). The pull-request run for the same branch also passed (run `45707489154`). These CI checks are not live Ollama or target-Windows acceptance.
 
 ## Owner-reported target-laptop runs
 

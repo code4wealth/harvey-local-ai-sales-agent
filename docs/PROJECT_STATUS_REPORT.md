@@ -52,12 +52,12 @@ No files are present under `test_evidence/offline/` or `test_evidence/ollama_out
 
 ## Remaining work
 
-1. Confirm the owner-reported run date and add the actual screen recording, demo-video URL, and footer commit hash if available. Verify the demo corresponds to the final pushed branch commit.
+1. The owner confirms the reported Windows-run date as 2026-11-26 (local time, IST), after the 2026-11-23 UTC workspace snapshot. Add the actual screen recording, demo-video URL, and footer commit hash if available. Verify the demo corresponds to the final pushed branch commit.
 2. Confirm whether `scripts/offline_acceptance.ps1` ran. Preserve and review its actual `.log`/`.json` if available. Confirm the `example.com` probe, ping result, and `netstat` observation; add a network trace or equivalent evidence for the full run. The single probe is not proof that all outbound routes are blocked.
 3. Run or provide evidence for the controlled Ollama stop/queue/restart/replay test and unavailable-model message. The outage result is unresolved; do not treat mock queue tests as live proof.
 4. The offline two-product ICP comparison and target-run confirmation that a draft remained `sent=false` are still pending. The owner reported generation workflows, but did not explicitly supply those specific checks or records.
 5. Complete target-specific licence review. Exact model artifacts/digests, the all-MiniLM-L6-v2 model revision/card, the linked target SQLite runtime, Ollama distribution, and the Windows-resolved dependency set remain **VERIFY**. Official page links are listed in [`MODELS_AND_LICENCES.md`](MODELS_AND_LICENCES.md) and [`SUBMISSION.md`](SUBMISSION.md).
-6. Run/check CI on Python 3.11 and 3.12, confirm public repository access, and complete any held-out evaluation only after prompts are reviewed/frozen. Held-out evaluation is optional roadmap work.
+6. GitHub Actions passed on Python 3.11 and 3.12 for the latest push (run `45707464736`; both matrix jobs passed). The pull-request run also passed (`45707489154`), and public repository access was confirmed. Held-out evaluation remains optional roadmap work and should run only after prompts are reviewed/frozen.
 
 ## Confidence limits
 
