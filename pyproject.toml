@@ -27,6 +27,7 @@ dependencies = [
     "pydantic>=2.5,<3",
     "sentence-transformers>=2.7,<4",
     "beautifulsoup4>=4.12.3,<5",
+    "requests>=2.31,<3",
 ]
 
 [project.optional-dependencies]
