@@ -175,12 +175,14 @@ product ranking. Three prospects produce 12 saved steps. Set the optional
 positive-integer `prospect_limit` query parameter for a different per-run
 snapshot, for example `POST /api/products/{id}/pipeline?prospect_limit=5`.
 Poll saved progress with `GET /api/pipeline-runs/{run_id}` or read the latest
-run with `GET /api/products/{id}/pipeline`. The API endpoint is the current
-pipeline control; the dashboard does not yet expose a pipeline button or limit
-setting. Import prospects and store their local page text before starting. If
-Ollama is unavailable, the run stays queued and resumes through the local worker
-when available. A terminal profile or ICP failure skips all remaining steps
-with a reason. Individual workflow endpoints remain available too.
+run with `GET /api/products/{id}/pipeline`. The API and the workflow console at
+`/operations` both expose the full pipeline, prospect-limit input, and saved
+step-by-step progress. The main React workspace at `/` is the dashboard; use
+`/operations` to run and show the full pipeline during the demo. Import
+prospects and store their local page text before starting. If Ollama is
+unavailable, the run stays queued and resumes through the local worker when
+available. A terminal profile or ICP failure skips all remaining steps with a
+reason. Individual workflow endpoints remain available too.
 
 ## Useful commands
 

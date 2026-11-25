@@ -52,10 +52,11 @@ python scripts/import_replies.py --db-path "$DB_PATH"
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Leave the API running. The embedded dashboard is at `http://127.0.0.1:8000/`.
-All AI inference is routed to local Ollama at `127.0.0.1:11434`; this
-application has no cloud fallback. The API has no user authentication; keep it
-bound to loopback and do not expose it to a LAN.
+Leave the API running. The React workspace is at `http://127.0.0.1:8000/`;
+the full-pipeline controls used in this demo are in the workflow console at
+`http://127.0.0.1:8000/operations`. All AI inference is routed to local Ollama
+at `127.0.0.1:11434`; this application has no cloud fallback. The API has no
+user authentication; keep it bound to loopback and do not expose it to a LAN.
 
 ```text
 RESULT: Reply-import count and API startup output: not run.
@@ -90,10 +91,14 @@ Product IDs, prospect import counts, and queued-retry counts: not run.
 
 ## 4. Run the product pipeline and inspect its saved progress
 
-For the one-click workflow (which regenerates profile and ICP, processes up to
-three currently imported prospects in stable ID order, and refreshes ranking),
-submit the product run and use the returned ID to poll progress. Increase
-`prospect_limit` in the dashboard or query string for a longer run:
+For the visual demo, open `http://127.0.0.1:8000/operations`, choose the
+product, and use **Run full product workflow**. The console exposes the
+prospect-limit field and **View latest progress** control; it shows the same
+persisted run as the API. For repeatable command-line steps, the commands below
+submit that API run (which regenerates profile and ICP, processes up to three
+currently imported prospects in stable ID order, and refreshes ranking). Change
+`prospect_limit` in the `/operations` console or API query string for a longer
+run:
 
 ```bash
 PIPELINE_ID="$(curl -fsS -X POST "http://127.0.0.1:8000/api/products/${PRODUCT_ID}/pipeline?prospect_limit=3" \

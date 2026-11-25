@@ -18,8 +18,8 @@ retained as context. See `docs/WORKFLOWS.md` for detailed data contracts.
 - [ ] Optionally run held-out evaluation only after reviewing/freezing the
   prompt; this roadmap has not performed held-out evaluation.
 - [x] Evidence-grounded problem statements and a persistent product-level
-  pipeline now run from the dashboard with per-step progress; the static local
-  dashboard remains available at `/`.
+  pipeline run from the `/operations` workflow console with per-step progress;
+  the React workspace remains available at `/`.
 
 ## Phase 0 — Recon and setup
 

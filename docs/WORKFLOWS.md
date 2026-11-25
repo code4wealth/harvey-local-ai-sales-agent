@@ -57,9 +57,11 @@ workflow milestones; prompt tuning and live results remain operator-owned.
 - The persistent `pipeline_runs` / `pipeline_steps` records include run status,
   ordered per-prospect step status, timestamps, error/skip reason, and child
   workflow run IDs. `GET /api/pipeline-runs/{run_id}` polls a run;
-  `GET /api/products/{product_id}/pipeline` reads the latest one. The API is the
-  current pipeline control; the dashboard does not yet expose a pipeline button
-  or configurable-limit control.
+  `GET /api/products/{product_id}/pipeline` reads the latest one. The API and
+  workflow console at `/operations` both expose full-pipeline controls,
+  including the configurable prospect limit and saved progress. The main React
+  workspace at `/` is a separate interface; use `/operations` to launch and
+  monitor the pipeline in the demo.
 - If Ollama becomes unavailable during inference, the in-progress child run and
   pipeline step return to `queued`; the same product pipeline resumes at that
   step after worker retry. Completed steps are not repeated. A terminal failure
