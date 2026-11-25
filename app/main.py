@@ -742,9 +742,9 @@ def api_import_sample_replies() -> dict:
         logger.exception("sample replies import failed: %s", exc)
         raise HTTPException(
             status_code=500,
-            detail="Sample replies could not be imported; check data/sample/replies.csv.",
+            detail="Sample replies could not be imported; check the bundled CSV.",
         ) from exc
-    return {"imported": imported, "source": "data/sample/replies.csv"}
+    return {"imported": imported, "source": "sample replies"}
 
 
 @app.post("/api/replies/classify-text", tags=["replies"])

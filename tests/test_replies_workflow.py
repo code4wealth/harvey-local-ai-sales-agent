@@ -101,7 +101,7 @@ def test_sample_reply_import_endpoint_is_idempotent_and_text_only(db_path):
     second = _post("/api/replies/import-sample")
 
     assert first.status_code == 200
-    assert first.json() == {"imported": 60, "source": "data/sample/replies.csv"}
+    assert first.json() == {"imported": 60, "source": "sample replies"}
     assert second.status_code == 200
     assert second.json() == first.json()
     conn = db.connect()
@@ -124,7 +124,7 @@ def test_sample_reply_import_endpoint_reports_invalid_bundled_csv(monkeypatch, d
 
     assert response.status_code == 500
     assert response.json() == {
-        "detail": "Sample replies could not be imported; check data/sample/replies.csv."
+        "detail": "Sample replies could not be imported; check the bundled CSV."
     }
 
 
