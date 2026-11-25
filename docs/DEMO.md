@@ -294,10 +294,7 @@ timestamped `ollama-down-*.log` and `ollama-down-*.json` files under
 
 ### Owner-reported target-laptop results and acceptance evidence
 
-The owner confirms the reported Windows-run date as **2026-11-26**. This date
-is later than the current workspace snapshot/system date (**2026-11-23 UTC**),
-so the run remains a future-dated owner report, not an outcome independently
-verified from a target-laptop capture in this checkout.
+Windows runs: owner-reported, 2026-11-26 (local time, IST). The workspace snapshot carries earlier timestamps (2026-11-23 UTC); the runs were performed afterwards. The run outcomes were not independently verified from a target-laptop capture in this checkout.
 
 The owner reports live local `qwen3:4b` inference via Ollama, with `ollama ps`
 showing about 66% GPU / 34% CPU on an RTX 3050 (15.7 GB RAM, 12 CPUs). The

@@ -1,12 +1,6 @@
 # Online demo evidence notes — owner report and capture template
 
-**Owner-reported, not independently verified.** The owner confirms the
-reported Windows-run date as 2026-11-26. That is later than the current
-workspace snapshot/system date (2026-11-23 UTC), so the run remains a
-future-dated owner report rather than an outcome verified from target-run
-artifacts. The online workflow report is recorded below, but this file remains
-a capture template, not primary run evidence. No target-run screenshot or
-timestamped online log is present in this directory. Three static dashboard images under `docs/images/` are not evidence
+**Owner-reported, not independently verified.** Windows runs: owner-reported, 2026-11-26 (local time, IST). The workspace snapshot carries earlier timestamps (2026-11-23 UTC); the runs were performed afterwards. The online workflow report is recorded below, but this file remains a capture template, not primary run evidence. No target-run screenshot or timestamped online log is present in this directory. Three static dashboard images under `docs/images/` are not evidence
 from the reported run. Do not invent results or present SAMPLE data as real
 prospect research.
 

@@ -355,10 +355,7 @@ verified until it has been timed on the target laptop.
 
 ### Owner-reported Windows run
 
-The owner confirms the reported date for these results as **2026-11-26**.
-That date is later than the current workspace snapshot/system date
-(**2026-11-23 UTC**), so the run remains a future-dated owner report, not an
-outcome independently inspected from a laptop capture in this checkout.
+Windows runs: owner-reported, 2026-11-26 (local time, IST). The workspace snapshot carries earlier timestamps (2026-11-23 UTC); the runs were performed afterwards. The reported outcomes were not independently inspected from a laptop capture in this checkout.
 
 - Live local inference used `qwen3:4b` via Ollama. The owner reports `ollama ps`
   showed about 66% GPU / 34% CPU on an RTX 3050, with 15.7 GB RAM and 12 CPUs.

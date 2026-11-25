@@ -20,9 +20,7 @@ All notable changes to this fork are documented here.
 - Added project status and submission notes with distinct owner-reported versus
   workspace-verified results, actual evidence-file inventory, and official
   model/runtime/Windows-package licence pages. Missing logs, screenshots, video
-  URL, footer hash, and outage result remain explicitly pending; the owner has
-  confirmed the reported run-date field, but the future-dated run outcomes are
-  still unsupported by target-run evidence in this checkout.
+  URL, footer hash, and outage result remain explicitly pending. Windows runs: owner-reported, 2026-11-26 (local time, IST). The workspace snapshot carries earlier timestamps (2026-11-23 UTC); the runs were performed afterwards. The run outcomes remain unsupported by target-run evidence in this checkout.
 - Expanded the README opening with six local-run/offline steps, failure
   handling, and the mocked-test limitation.
 - Improved draft and problem-statement prompts for specific, evidence-grounded

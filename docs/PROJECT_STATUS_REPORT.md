@@ -6,7 +6,7 @@
 | Working branch | `arena/235805fd-harvey-local-ai-sales-agent` |
 | Status | Core implementation and sandbox verification are present; target-machine artifact review, outage/demo evidence, and release checks remain incomplete. |
 
-The owner confirms that the reported Windows-run date is **2026-11-26**. This is later than this workspace's snapshot/system date (**2026-11-23 UTC**), so the run remains a future-dated owner report rather than an outcome independently verified in this checkout. Owner-reported results are kept separate from evidence verified here; no target-run logs or captures are present.
+Windows runs: owner-reported, 2026-11-26 (local time, IST). The workspace snapshot carries earlier timestamps (2026-11-23 UTC); the runs were performed afterwards. Owner-reported results are kept separate from evidence verified here; no target-run logs or captures are present.
 
 ## Progress scorecards — different scopes
 

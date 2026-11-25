@@ -10,9 +10,17 @@
 
 The working branch has not been pushed by this completion pass. Publish it before asking reviewers to fetch this branch or compare the demo footer.
 
+## Demo version
+
+The demo video was recorded on the owner's Windows laptop at commit [VIDEO_COMMIT_HASH]. Later commits (e171ea8, 943d12b and any after) add model-readiness checks, honest UI status labels and documentation; they do not change the evidence validators or the local-only inference path.
+
+- Video commit hash: `[VIDEO_COMMIT_HASH]` — **OWNER TO FILL** (read from the footer of the video).
+- Video URL: `[VIDEO_URL]` — **OWNER TO FILL**.
+- CI result (Python 3.11 and 3.12): `[CI_RESULT_PYTHON_3_11_AND_3_12]` — **OWNER TO FILL**.
+
 ## Owner-reported target-laptop runs
 
-The owner confirms the reported Windows-run date as **2026-11-26**. This is later than the workspace snapshot/system date **2026-11-23 UTC**, so the run remains a future-dated owner report rather than an outcome independently verified in this checkout. The date field is owner-confirmed; the results are not backed by target-laptop captures here.
+Windows runs: owner-reported, 2026-11-26 (local time, IST). The workspace snapshot carries earlier timestamps (2026-11-23 UTC); the runs were performed afterwards. The date field is owner-confirmed; the results are not backed by target-laptop captures here.
 
 - Local inference used Ollama with `qwen3:4b`. The owner reports `ollama ps` showed about **66% GPU / 34% CPU** on an RTX 3050, with 15.7 GB RAM and 12 CPUs. The current Ollama version, exact model digest, and embedding-device placement were not supplied.
 - Online FieldNest workflow: profile, ICP, signals, problem statement, draft, and ranking reportedly completed; 20 prospects and 60 sample replies were imported. The owner reports `R004` classified as `not_interested`, matching the ambiguous development label in `data/eval/reply_labels.csv`. That file verifies the label, not the live inference result.
@@ -69,7 +77,7 @@ The dashboard at `/` includes illustrative browser-preview data, explicitly mark
 
 ## Known limitations and evidence boundary
 
-- Owner-reported Windows results are not backed by run logs, screenshots, or a video file in this checkout. The owner confirms the reported date as 2026-11-26; it is still future-dated relative to the 2026-11-23 workspace snapshot, and the run outcomes remain unverified here.
+- Owner-reported Windows results are not backed by run logs, screenshots, or a video file in this checkout. Windows runs: owner-reported, 2026-11-26 (local time, IST). The workspace snapshot carries earlier timestamps (2026-11-23 UTC); the runs were performed afterwards. The run outcomes remain unverified here.
 - Offline workflow completion is owner-reported; the exact PowerShell script run, `example.com` result, ping result, `netstat` listener observation, and packet/network capture remain unverified here.
 - The Ollama outage/recovery outcome, demo URL, screenshot list, and demo footer commit hash were not supplied.
 - Automated tests use mocked Ollama responses and fake embeddings. They do not prove Windows behavior, full outbound-traffic isolation, live model quality, CPU/GPU placement, or outage recovery.

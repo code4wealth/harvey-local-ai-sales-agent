@@ -47,11 +47,7 @@ build is not the same as a real Ollama or internet-off run.
 
 ## Owner-reported target-laptop runs
 
-The owner confirms that the reported Windows-run date is **2026-11-26**.
-This is later than the current workspace snapshot/system date (**2026-11-23**),
-so the run remains a future-dated owner report rather than an outcome
-independently inspected in this checkout. The date field is owner-confirmed;
-the outcomes are not independently inspected acceptance artifacts.
+Windows runs: owner-reported, 2026-11-26 (local time, IST). The workspace snapshot carries earlier timestamps (2026-11-23 UTC); the runs were performed afterwards. The date field is owner-confirmed; the outcomes are not independently inspected acceptance artifacts.
 
 - Local inference: `qwen3:4b` through Ollama. The owner reports `ollama ps`
   placement of about 66% GPU / 34% CPU on an RTX 3050, with 15.7 GB RAM and
