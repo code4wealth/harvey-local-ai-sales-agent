@@ -30,7 +30,8 @@ Windows machine. Target resolution/licence checks remain **VERIFY**.
 | `httpx` | `0.28.1` | BSD-3-Clause | Sandbox metadata; target resolution **VERIFY**. Fixed loopback Ollama transport. |
 | `pydantic` | `2.14.4` | MIT | Sandbox metadata; target resolution **VERIFY**. Structured request/response validation. |
 | `starlette` | `1.10.0` | BSD-3-Clause | Sandbox metadata; target resolution **VERIFY**. FastAPI's ASGI/web dependency. |
-| `beautifulsoup4` | `4.15.0` | MIT License | Sandbox metadata; target resolution **VERIFY**. Stored-text HTML parsing. |
+| `beautifulsoup4` | `4.15.0` | MIT License | Sandbox metadata; target resolution **VERIFY**. Stored-text HTML parsing and optional online page-text extraction. |
+| `requests` | `2.34.2` | Apache-2.0 | Sandbox metadata; target resolution **VERIFY**. HTTP client for the manually invoked optional public-page collector only; not used for AI inference. |
 | `pytest` | `8.4.2` | MIT | Sandbox metadata; target resolution **VERIFY**. Development/test dependency. |
 | `sentence-transformers` | `3.4.1` (user-reported `pip show`) | Apache 2.0 (user-reported `pip show`) | Package metadata is user-reported; installed target version **VERIFY**. Does not verify the embedding model licence above. |
 | `huggingface-hub` | **VERIFY** — not inspected | **VERIFY** — no local package metadata | Transitive embedding-runtime dependency; inspect after installing the target environment. |

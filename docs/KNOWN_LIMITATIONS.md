@@ -34,12 +34,23 @@ influencer score. Other modifiers, unusual title spellings, abbreviations,
 regional conventions, and genuine role equivalences may still be misclassified.
 No external title dictionary or LLM is consulted.
 
-## Stored-page research and crawling
+## Optional public-page collection
 
-Research uses locally stored page content; BeautifulSoup is the only HTML
-parser in use. Scrapy and Playwright are not used. The application does not
-perform fresh page crawling or browser automation, so newly collected page
-content must be supplied separately.
+The AI workflows still read only prospect page text already stored locally; the
+FastAPI service does not crawl websites. For an operator who explicitly needs
+fresh public-page research, `scripts/fetch_public_pages.py` is an optional
+**online** helper. It reads user-supplied URLs from a CSV, uses `requests` and
+BeautifulSoup, checks each site's `robots.txt` before fetching, applies a
+per-host delay and response-size limit, rejects private/local destinations, and
+writes extracted text under `data/prospect_pages/`. Its output must still be
+imported as local prospect-page data before an AI workflow can use it. The
+helper does not import `app.llm_client` and is not part of the offline workflow.
+
+Scrapy and Playwright are not installed or used by this project. The helper
+fetches only explicit CSV URLs; it does not discover prospects, automate a
+browser, log into sites, or access paywalled/private pages. Fresh collection
+requires internet access, and operators must review site terms and the fetched
+content.
 
 ## Local page embeddings
 

@@ -19,6 +19,10 @@ resources and are not priced here.
   the existing product and prospect workflows retained at `/operations`.
 - Product-scoped profile and ICP generation from local product information.
 - Product-scoped CSV prospect import and explicit local page-text storage.
+- Optional **online-only** public-page collection via `scripts/fetch_public_pages.py`.
+  It reads explicitly supplied URLs from CSV, observes `robots.txt`, and writes
+  extracted text under `data/prospect_pages/`; it is separate from the API and
+  local-inference path and is never run automatically.
 - Buying-signal extraction with source-grounded evidence and persisted runs.
 - Deterministic product-specific prospect rankings, including missing-input
   reporting and component explanations.
@@ -62,6 +66,23 @@ The service stores its SQLite database at `data/harvey.db` by default. Override
 `DB_PATH` if needed. Ollama and downloaded local models must be installed before
 running AI workflows; tests use mocked Ollama responses and do not need a live
 model.
+
+### Optional online page research
+
+The FastAPI application uses only page text already stored locally. If fresh
+public-page text is needed, run the separate, opt-in online helper with a CSV
+containing a `url` column:
+
+```bash
+python scripts/fetch_public_pages.py urls.csv
+```
+
+The helper checks each site's `robots.txt`, applies request limits, and saves
+text files under `data/prospect_pages/`. Review the fetched text and use its
+printed relative path in a prospect CSV before running local workflows. This
+helper requires internet access, does not discover URLs, and does not call or
+import `app.llm_client`; do not use it for private or login-only pages. See
+`docs/KNOWN_LIMITATIONS.md` for its scope and caveats.
 
 ### Dashboard frontend
 
@@ -107,10 +128,12 @@ GNU Make on `PATH`; if it is not available in PowerShell, run that command in
 Git Bash or WSL with the repository's Python environment active. The check suite
 uses mocked Ollama responses and fake embeddings; it does not need a live model.
 
-The Windows count supplied for this repository is **224 passed, 1 skipped**.
-This Linux session did not reproduce that Windows result; the current Windows
-count after these changes remains unverified. Run `make verify` to obtain a
-current count. Keep the API on
+An earlier Windows run was reported as **224 passed, 1 skipped**, before the
+optional public-page helper and its tests were added. The current workspace
+measured **234 passed, 2 skipped** with `make verify`; both skips are PowerShell
+parser checks because PowerShell is not installed here. This is not a current
+Windows result: rerun `make verify` on the target laptop to establish its count.
+Keep the API on
 `127.0.0.1`; do not expose it to a LAN. Set `$env:OFFLINE_STRICT = "1"` before
 starting the API to disable Hugging Face Hub telemetry and implicit-token use
 during local embedding loads; model files must already be cached. The loader

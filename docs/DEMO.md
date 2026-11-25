@@ -201,21 +201,27 @@ These checks use tests and mocked Ollama responses; they do not count as a live
 model demonstration and do not rerun either held-out evaluator.
 
 ```text
-RESULT: Historical release-pass verification — make verify passed (156 tests);
-git diff --check passed. Current branch verification after the problem-statement
-workflow — make verify passed (172 tests); git diff --check passed. These are
-mocked/source checks, not live-model proof.
+RESULT: Current workspace verification — `make verify` passed with 234 passed
+and 2 skipped; the two local skips are PowerShell parser checks because
+PowerShell is not installed here. Corpus validation and the no-cloud guard
+passed. `npm run build` and `git diff --check` passed after the final edits.
+These are automated/source checks, not a real Ollama or internet-off run.
 ```
 
 ## Offline acceptance test
 
-These PowerShell scripts use only the local Harvey API over a loopback HTTP
-connection. They do not call `pip`, `git`, or an external network service, and
-they do not include response text, page text, reply text, rationale, or model
-output in their evidence files. Evidence contains timestamps, statuses, counts,
-model/settings/hash metadata, error classes, and record IDs only. The main
-acceptance log is written to `test_evidence/offline/`; the separate outage log
-is written to `test_evidence/ollama_outage/`. Both are ignored by Git.
+Both PowerShell scripts call the Harvey API only over loopback and do not call
+`pip`, `git`, or any external AI service. The offline acceptance script makes
+one explicit, non-AI HTTPS request to `example.com` as an internet-connectivity
+indicator; if it receives an HTTP response, it marks the run as **not offline**.
+That single probe is not a complete firewall or network-isolation proof. The
+Ollama outage script contacts only the local Harvey API and Ollama endpoints.
+Neither script includes response text, page text, reply text, rationale, or
+model output in its evidence files. Evidence contains timestamps, statuses,
+counts, model/settings/hash metadata, error classes, and record IDs only. The
+main acceptance log is written to `test_evidence/offline/`; the separate outage
+log is written to `test_evidence/ollama_outage/`. Those generated run folders
+are ignored by Git.
 
 ### Prepare the local demo data
 
@@ -237,17 +243,19 @@ From PowerShell in the repository root, with the API and Ollama running:
 ```
 
 The script checks API/hardware/status fields and the dashboard route at `/`,
-resolves product IDs, runs all eight workflows (business profile, ICP, signals,
-deterministic ranking, unsent draft, problem statement, reply classification,
-and the full resumable product pipeline), and checks the reported Ollama host
-and established API-process peers. Standalone signals are run for up to three
-stored-page RelayCue prospects. Problem-statement evidence reports at most three
-prospect IDs, workflow statuses, and counts only; it omits statement and
-source text. The pipeline summary records only step counts/statuses, not child
-results or model output. The script prints `[PASS]` or `[FAIL]` per step and
-writes a timestamped `acceptance-*.json` file. Use `-SignalLimit` to change the
-standalone signal sample, `-WaitSeconds` for individual workflows, and
-`-PipelineWaitSeconds` for the full pipeline (default 900 seconds).
+resolves product IDs, then runs these workflows in order: business profile,
+product ICP, research by reading saved prospect-page text, signals, problem
+statement, deterministic scoring/ranking, unsent draft, and reply classification.
+It runs the full resumable product pipeline as an extra final step, then checks
+the reported Ollama host and established API-process peers. Standalone signals
+are run for up to three stored-page RelayCue prospects. Problem-statement
+evidence reports at most three prospect IDs, workflow statuses, and counts only;
+it omits statement and source text. The pipeline summary records only step
+counts/statuses, not child results or model output. The script prints `[PASS]`
+or `[FAIL]` per step and writes timestamped `acceptance-*.log` and
+`acceptance-*.json` files. Use `-SignalLimit` to change the standalone signal
+sample, `-WaitSeconds` for individual workflows, and `-PipelineWaitSeconds` for
+the full pipeline (default 900 seconds).
 
 ### Check outage, deterministic ranking, and retry
 
@@ -261,9 +269,10 @@ polls for completion of the same queued signal run after recovery:
 .\scripts\ollama_down_check.ps1
 ```
 
-If Ollama was already stopped, use `-OllamaAlreadyStopped`. It writes a
-timestamped `ollama-down-*.json` file under `test_evidence/ollama_outage/`.
-The recovery wait is configurable with `-WaitSeconds`.
+If Ollama was already stopped, use `-OllamaAlreadyStopped`. It writes
+timestamped `ollama-down-*.log` and `ollama-down-*.json` files under
+`test_evidence/ollama_outage/`. The recovery wait is configurable with
+`-WaitSeconds`.
 
 ### Offline acceptance results
 
@@ -274,8 +283,9 @@ and Ollama-down outcomes remain `not run` until their evidence files exist.
 
 | Check | Status | Evidence / result |
 |---|---|---|
-| `make verify` for the current implementation | passed — 165 tests; corpus validation and no-cloud scan passed. | Mocked/source checks, not live-model proof. |
-| `git diff --check` | passed. | No whitespace errors reported. |
+| `make verify` for the current workspace | passed — 234 passed, 2 skipped; corpus validation and no-cloud scan passed. | The two skips are PowerShell parser checks because PowerShell is unavailable here. Mocked/source checks, not live-model proof. |
+| `npm run build` | passed. | React production bundle built successfully. |
+| `git diff --check` | passed after the documentation edits. | No whitespace errors reported. |
 | PowerShell script execution | not run — no PowerShell result is present in `test_evidence/offline/`. | Script syntax and real Windows networking behavior remain to be verified on the target laptop. |
 | Ollama version, installed model list, and local status | reported by user — Ollama `0.40.17`; `qwen3:4b`, ID `359d7dd4bcda`, `2.5 GB`; `/api/status` local-only, available at loopback, queue empty. | User-supplied facts; not a timestamped acceptance-script result. |
 | Hardware recommendation | reported by user — 15.7 GB RAM, 12 CPUs, 4.0 GB NVIDIA VRAM; standard-laptop, `qwen3:4b`, num_ctx 4096. | User-supplied `/api/hardware` output; not a timestamped acceptance-script result. |

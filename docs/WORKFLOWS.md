@@ -26,7 +26,10 @@ workflow milestones; prompt tuning and live results remain operator-owned.
   rather than the process working directory. Absolute paths and any `..`
   component are rejected on POSIX and Windows. Page text is explicitly
   stored/read as local UTF-8 text. Replacing it clears the cached page
-  embedding. The API does not fetch a URL or perform online research.
+  embedding. The API does not fetch a URL or perform online research. An
+  optional operator-run helper, `scripts/fetch_public_pages.py`, can collect
+  explicitly supplied public URLs separately; it observes `robots.txt`, saves
+  text locally, and is not imported by or connected to the inference path.
 - Queue handlers `prospects.import_csv` and `prospects.score` are
   **deterministic** and do not require an Ollama health probe. A slow or
   unavailable probe must not block these local tasks. LLM-dependent handlers

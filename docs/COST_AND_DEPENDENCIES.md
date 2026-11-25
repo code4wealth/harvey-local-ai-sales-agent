@@ -9,18 +9,22 @@
 - **Inference is local only.** Model requests go to the local Ollama service;
   embeddings run from the locally cached sentence-transformer model. There is
   no cloud fallback.
-- Internet is needed only to install the project dependencies, obtain/cache
-  model files, or conduct fresh web research. The current application uses
-  stored-page research and does not fetch new pages itself; once dependencies,
-  models, and data are available locally, its workflows can run offline.
+- Internet is needed to install dependencies, obtain/cache model files, or
+  when an operator explicitly runs the separate online helper
+  `scripts/fetch_public_pages.py`. The FastAPI application itself uses only
+  stored-page research and does not fetch new pages. Once dependencies, models,
+  and data are available locally, its workflows can run offline; the optional
+  page-collection helper cannot.
 
 ## Dependencies
 
 The authoritative dependency declarations and version ranges are in
 `pyproject.toml` and `requirements.txt`. The project uses FastAPI, Uvicorn,
-HTTPX, Pydantic, Sentence-Transformers, and BeautifulSoup; pytest is a
-development dependency. Exact locally observed package versions/licences and
-items that remain `not run` are listed in [`LICENSES.md`](LICENSES.md).
+HTTPX, Pydantic, Sentence-Transformers, BeautifulSoup, and Requests. Requests
+and BeautifulSoup support the separately invoked, optional online collector;
+they are not used by the FastAPI inference path. Pytest is a development
+dependency. Exact locally observed package versions/licences and items that
+remain `not run` are listed in [`LICENSES.md`](LICENSES.md).
 
-BeautifulSoup is used with stored-page research. Scrapy and Playwright are not
-used or required by the current application.
+Stored-page workflows require no web fetcher. Scrapy and Playwright are not
+installed or used by this project.

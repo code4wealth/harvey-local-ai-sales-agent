@@ -8,15 +8,21 @@ FastAPI (app/main.py)
   |       `-- llm_client.py --> Ollama @127.0.0.1:11434  [ONLY AI PATH]
   |-- ranking.py / scoring.py                 [model inputs + rule-based scoring]
   |-- embeddings.py --> sentence-transformers [local model cache]
-  |-- research/                                [internet-capable, not AI]
   `-- SQLite: products, business_profiles, icps, prospects, signal_runs,
               signals, scores, reply_classifications, draft_runs,
               workflow_runs, inference_log, task_queue
+
+Separate, operator-invoked online helper (not part of FastAPI):
+scripts/fetch_public_pages.py --CSV URLs--> requests + robots.txt checks
+                                      `--> data/prospect_pages/ [stored text]
 ```
 
-`app/research/` may fetch public web pages but must never import
-`llm_client.py`. The local inference client must never import research and is
-hard-coded to the loopback Ollama endpoint. There is no cloud fallback.
+The optional `scripts/fetch_public_pages.py` helper can fetch only explicit
+public URLs when manually run. It uses Requests and BeautifulSoup, checks
+`robots.txt`, and writes text under `data/prospect_pages/`; it must never import
+`app.llm_client` or call local inference. AI workflows read stored page text
+only. The local inference client is hard-coded to loopback Ollama. There is no
+cloud fallback.
 
 ## Runtime boundaries
 

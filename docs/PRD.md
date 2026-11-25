@@ -1,7 +1,7 @@
 PRD — Harvey Local Multi-Product AI Sales Agent
 1. Objective
 
-Fork ethanplusai/harvey and extend it into a multi-product AI sales agent that runs entirely locally with zero LLM cost: Ollama + Qwen3 (or another permissively licensed open-weight model), SQLite, Python, FastAPI, Harvey's frontend or React, sentence-transformers, and Scrapy/BS4/Playwright for public-web research only.
+Fork ethanplusai/harvey and extend it into a multi-product AI sales agent that runs locally with zero paid LLM inference: Ollama + Qwen3 (or another appropriately licensed open-weight model), SQLite, Python, FastAPI, React, and sentence-transformers. In this implementation, optional public-page collection is a separate `requests` + BeautifulSoup script that reads operator-supplied URLs; Scrapy and Playwright are not used (see `docs/KNOWN_LIMITATIONS.md`).
 
 2. Hard constraints (non-negotiable)
 No OpenAI / Anthropic / Gemini / Codex / any paid LLM API, cloud inference, paid agent platform, paid enrichment API, or per-token service.
@@ -19,10 +19,10 @@ ID	Requirement	Acceptance
 F1	Product/company configuration (multiple products, each with docs)	Create/edit/list products; docs stored locally
 F2	Business profile generation from local company info	JSON profile saved; regenerable
 F3	Product-specific ICP generation	Different products give different ICPs
-F4	Prospect import (CSV) + local page data; optional online research	20–30 prospects loaded; research module isolated
+F4	Prospect import (CSV) + local page data; optional online research	CSV and saved page text work offline; optional URL-CSV fetch helper is separate from inference and observes robots.txt
 F5	Prospect research from downloaded data	Summary per prospect + embedding similarity to ICP
 F6	Buying-signal classification	Typed signals with verified evidence quotes + confidence
-F7	Problem statement generation	2–3 sentences tied to signals and product pain points (not in the current workflow slice)
+F7	Problem statement generation	Persist a conservative one- or two-sentence statement grounded in the product profile, ICP, and verified prospect signals; skip model inference when evidence is missing
 F8	Prospect scoring & prioritisation	Deterministic product-specific ranking + component explanations and missing-input reporting
 F9	Personalised email draft	Grounded draft from stored product profile and verified signals; persisted, never sent
 F10	Reply classification	8 labels + confidence + rationale; separately measured on the 36-reply development split
@@ -32,7 +32,7 @@ F13	Traceability	inference_log page with model, host, tokens, latency, timestamp
 F14	Full pipeline run per product	One click runs steps 2–9 with per-step status
 5. Non-functional requirements
 Reliability: JSON validation + retries; timeouts; graceful errors.
-Reproducibility: single setup path (README), pinned dependencies.
+Reproducibility: setup path is in README; the frontend has a lockfile, while Python dependencies currently use bounded version ranges rather than a complete exact lock.
 Privacy: no telemetry; only localhost for AI.
 Performance: laptop tier (qwen3:4b) completes one prospect end-to-end in a reasonable time; pipeline shows progress.
 Licences: every model/library/major dependency documented with exact licence.

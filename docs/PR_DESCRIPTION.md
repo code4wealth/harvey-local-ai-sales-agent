@@ -5,6 +5,9 @@
 - Keeps AI inference local to Ollama and the dashboard on same-origin API paths.
 - Keeps reply ground truth isolated; the reply evaluator reports aggregates and
   misclassified IDs without including reply text or rationale.
+- Adds `scripts/fetch_public_pages.py` as a clearly labelled, opt-in online
+  helper for CSV-supplied public URLs. It respects `robots.txt`, bounds requests,
+  saves extracted text locally, and does not import the local LLM client.
 - Adds deterministic product-specific ranking using stored ICP, local page text,
   and valid signals from the latest successful signal run.
 - Adds product-scoped profile, ICP, signal, reply-classification, and draft
@@ -13,13 +16,23 @@
   of this prospect's verified signal evidence and the body after case and
   whitespace normalization only; each span must be enclosed in double quotes.
   Drafts are stored with `sent=false`.
-- Updates the demo, limitations, setup, and workflow documentation with reported
-  results and explicit limitations.
+- Documents the timestamped offline acceptance and Ollama-outage scripts,
+  updates the acceptance checklist using measured results, and revises the PRD
+  problem-statement scope to match the implemented workflow.
 
 ## Validation
 
-- `make verify` — passed; corpus checks and **156 tests**.
-- `git diff --check` — passed.
+- `make verify` — passed locally; corpus checks and **234 passed, 2 skipped**. The two skips are PowerShell parser checks because PowerShell is not installed in this workspace.
+- `npm run build` — passed for the React production bundle.
+- `pytest -q -rs tests/test_offline_scripts.py` — 7 passed, 2 skipped because
+  PowerShell is unavailable locally; the acceptance scripts were source-checked.
+- `python scripts/fetch_public_pages.py --help` — passed.
+- `git diff --check` — passed after the final documentation edits.
+- The fetcher tests use stubbed HTTP responses; no real public pages were fetched.
+- PowerShell parser tests were skipped locally because PowerShell is unavailable;
+  neither acceptance script was executed, and no new live Ollama run was made for
+  these additions. The historical smoke results below are not current acceptance
+  evidence.
 
 ## Reported live results
 

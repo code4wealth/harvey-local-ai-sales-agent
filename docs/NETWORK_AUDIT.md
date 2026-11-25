@@ -7,12 +7,15 @@
 | `app/llm_client.py` (`httpx.Client`) | Ollama health/version probes and model inference | Yes | The `OLLAMA_URL` constant is `http://127.0.0.1:11434`; there is no environment/config override and the HTTPX client sets `trust_env=False`. |
 | `app/embeddings.py` (`SentenceTransformer`) | Loads the local sentence-transformer model and encodes product/page text for ranking | Yes | The loader forces `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` before import/load. With `OFFLINE_STRICT=1`, Hub telemetry and implicit-token use are disabled too. Cache model files in advance; no hosted inference endpoint is used. |
 | `frontend/index.html` (`fetch`) | Dashboard calls the Harvey API | No direct model call | All URLs are relative `/api/...` paths and therefore use the service's same origin. AI requests are delegated to the backend above. |
-| Other `app/**/*.py` source in the audited checkout | Static scan for URLs, cloud SDK imports, and common HTTP client imports/calls | No outbound client found | No other explicit external client or non-local URL was found by the audit scan. |
+| `scripts/fetch_public_pages.py` (`requests.Session`) | Optional, manual fetch of URLs supplied in CSV; checks per-origin `robots.txt`, follows only validated public redirects, and saves extracted text under `data/prospect_pages/` | No | Requires an explicit online invocation. Standard ports only; rejects non-global IP destinations; bounds redirects, bytes, timeout, and per-origin request rate. It does not import `app.llm_client`. |
+| Other `app/**/*.py` source in the audited checkout | Static scan for URLs, cloud SDK imports, and common HTTP client imports/calls | No outbound client found | No other explicit external client or non-local URL was found in application source. |
 
 All server-side model calls use the single HTTPX path in `app/llm_client.py`.
 There is no cloud SDK, hosted model fallback, or paid AI service in the app
-source inventory. Product page text is stored locally and is not fetched by an
-external research client in this checkout.
+source inventory. The FastAPI application reads locally stored prospect-page
+text only; fresh public-page collection is an opt-in script outside the API
+and AI workflow. A source-level test asserts that this helper does not import
+`app.llm_client`.
 
 ## Local-service security controls
 

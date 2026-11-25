@@ -59,7 +59,8 @@ resolved versions and licence notices in the actual deployment environment.
 | `httpx` | Runtime HTTP client for local Ollama; `>=0.27.0,<1` | `0.28.1` | BSD-3-Clause in observed metadata; target resolution **VERIFY**. |
 | `pydantic` | Runtime data/schema validation; `>=2.5,<3` | `2.14.4` | MIT in observed metadata; target resolution **VERIFY**. |
 | `sentence-transformers` | Runtime local embeddings; `>=2.7,<4` | Not installed; `3.4.1` / Apache-2.0 was previously operator-reported | **VERIFY** — package version and licence metadata were not independently confirmed here. |
-| `beautifulsoup4` | Runtime parsing of stored page text; `>=4.12.3,<5` | `4.15.0` | MIT License in observed metadata; target resolution **VERIFY**. |
+| `beautifulsoup4` | Runtime parsing of stored page text and optional online page-text extraction; `>=4.12.3,<5` | `4.15.0` | MIT License in observed metadata; target resolution **VERIFY**. |
+| `requests` | Optional public-page helper HTTP client; `>=2.31,<3` | `2.34.2` | Apache-2.0 in observed metadata; target resolution **VERIFY**. Used only when the separate online collector is explicitly run, not by local inference. |
 | `pytest` | Development/test dependency; `>=8.0,<9` | `8.4.2` | MIT in observed metadata; target resolution **VERIFY**. |
 | `setuptools` | PEP 517 build backend; `>=68.0` | Sandbox has `66.1.1`, below the declared minimum | Metadata did not declare a licence; build resolution and licence **VERIFY**. |
 
