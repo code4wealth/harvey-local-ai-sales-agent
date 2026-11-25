@@ -26,6 +26,17 @@ PROFILE = {
 }
 QUOTE = "The team hired five support specialists this month."
 QUOTE_SPAN = "The team hired five support specialists"
+DRAFT_SUBJECT = "Hiring: five new support specialists"
+DRAFT_BODY = (
+    f'Hello, I noticed "{QUOTE_SPAN}". '
+    "The product's stated value proposition is: Keeps service handoffs in one workspace. "
+    "Would a brief, no-pressure conversation be useful?"
+)
+VALID_DRAFT = {
+    "subject": DRAFT_SUBJECT,
+    "body": DRAFT_BODY,
+    "evidence_used": [QUOTE_SPAN],
+}
 
 
 def _post(path: str) -> httpx.Response:
@@ -156,11 +167,7 @@ def test_draft_uses_only_profile_and_verified_signals_and_is_never_sent(
     )
     payloads = []
     calls = 0
-    draft = {
-        "subject": "A brief note",
-        "body": f'"{QUOTE_SPAN}"',
-        "evidence_used": [QUOTE_SPAN],
-    }
+    draft = VALID_DRAFT
 
     def handler(request):
         nonlocal calls
@@ -210,7 +217,13 @@ def test_draft_uses_only_profile_and_verified_signals_and_is_never_sent(
     assert "4-to-15-word fragments" in prompt
     assert "inside double quotation marks in the body" in prompt
     assert "Claim nothing else about the prospect" in prompt
-    assert "context only; neither may ever be quoted as evidence" in prompt
+    assert "never evidence about the prospect" in prompt
+    assert "3-or-4-sentence body" in prompt
+    assert "subject specific to the verified signal or event" in prompt
+    assert "one sentence naming a feature or value proposition" in prompt
+    assert "one low-pressure question" in prompt
+    assert PROFILE["value_proposition"] in prompt
+    assert "format illustration, not a real generated result" in prompt
     assert "ALLOWED EVIDENCE" in prompt
     assert prompt.count('"evidence_used":') == 1
     assert QUOTE_SPAN in prompt
@@ -486,11 +499,7 @@ def test_unavailable_ollama_queues_and_worker_replays_draft(db_path, monkeypatch
     finally:
         conn.close()
 
-    healthy_draft = {
-        "subject": "A brief note",
-        "body": f'"{QUOTE_SPAN}"',
-        "evidence_used": [QUOTE_SPAN],
-    }
+    healthy_draft = VALID_DRAFT
     _use_mock_transport(monkeypatch, lambda _request: _response(healthy_draft))
     import app.queue_worker as queue_worker
 
