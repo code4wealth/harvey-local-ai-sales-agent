@@ -35,7 +35,7 @@ DEFAULT_SEED = 42
 DEFAULT_REPEAT_PENALTY = 1.0
 
 logger = logging.getLogger("harvey.llm")
-DEFAULT_TIMEOUT = 120.0
+DEFAULT_TIMEOUT = 300.0
 UP_TIMEOUT = 5.0
 
 

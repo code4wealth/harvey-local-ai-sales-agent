@@ -59,7 +59,9 @@ cloud fallback.
 The first inference request uses temperature `0` and seed `42`; the single
 validation retry uses temperature `0.2` and the next seed. Every request uses
 repeat penalty `1.0`, explicit context budgets, JSON-schema mode, and Pydantic
-validation. Workflow validators also reject unsupported source claims. A
+validation. The default per-request Ollama timeout is 300 seconds;
+`OLLAMA_TIMEOUT_SECONDS` can override it for the local hardware/model. Workflow
+validators also reject unsupported source claims. A
 stricter prompt is used on the retry; if the second response is still invalid,
 the workflow fails with the validation reason. Signal quote verification uses
 that same two-attempt limit. `think=false` is always set by the Ollama client.

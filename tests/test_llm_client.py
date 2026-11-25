@@ -70,7 +70,13 @@ def test_ollama_timeout_seconds_environment_setting_is_used(db_path, monkeypatch
     )
     assert result.answer == "ok"
     assert seen_timeouts == [17.5]
-    assert llm_client.DEFAULT_TIMEOUT == 120.0
+    assert llm_client.DEFAULT_TIMEOUT == 300.0
+
+
+def test_default_ollama_inference_timeout_is_300_seconds(monkeypatch):
+    monkeypatch.delenv("OLLAMA_TIMEOUT_SECONDS", raising=False)
+
+    assert llm_client._resolve_timeout() == 300.0
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "not-a-number"])
