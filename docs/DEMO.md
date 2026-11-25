@@ -229,7 +229,9 @@ model output in its evidence files. Evidence contains timestamps, statuses,
 counts, model/settings/hash metadata, error classes, and record IDs only. The
 main acceptance log is written to `test_evidence/offline/`; the separate outage
 log is written to `test_evidence/ollama_outage/`. Those generated run folders
-are ignored by Git.
+are ignored by Git. For exact Windows model-cache, `HF_HUB_OFFLINE=1`, Wi-Fi
+adapter, `netstat`, `ollama ps`, and demo talk-track instructions, see
+[`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md).
 
 ### Prepare the local demo data
 

@@ -39,4 +39,8 @@ Thumbs.db
 test_evidence/real_run/*.json
 test_evidence/real_run/*.db*
 test_evidence/offline/*.json
+test_evidence/offline/*.log
+test_evidence/offline/*.txt
 test_evidence/ollama_outage/*.json
+test_evidence/ollama_outage/*.log
+test_evidence/ollama_outage/*.txt

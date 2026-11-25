@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Load the real local sentence-embedding model and verify two vectors.
+"""Load the real, cached sentence-embedding model and verify two vectors.
 
-First run (downloads the model if needed):
-    python scripts/smoke_embeddings.py
-Subsequent offline run after the cache is populated:
+Pre-cache the model while online by constructing SentenceTransformer directly;
+the application loader sets HF_HUB_OFFLINE=1 before loading and never downloads
+model files. After the cache is populated, verify it offline with:
     HF_HUB_OFFLINE=1 python scripts/smoke_embeddings.py
 """
 

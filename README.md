@@ -159,7 +159,9 @@ not proof of a fully internet-disconnected run. `ollama_down_check.ps1`
 interactively guides an Ollama stop/restart and writes evidence beneath
 `test_evidence/ollama_outage/`. These scripts perform live local acceptance
 only when an operator runs them; their source tests do not count as a real
-Ollama result.
+Ollama result. Exact Windows cache, Wi-Fi-off, eight-workflow, port-check, and
+outage/recovery instructions are in [`docs/DEMO_RUNBOOK.md`](docs/DEMO_RUNBOOK.md);
+physical-device results remain **PENDING** until those steps are run.
 
 The API has no user authentication and is intended for one local operator:
 bind it to `127.0.0.1` (as above), not `0.0.0.0` or a LAN address. Mutating
