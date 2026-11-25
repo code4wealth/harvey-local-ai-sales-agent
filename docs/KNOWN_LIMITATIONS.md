@@ -2,19 +2,31 @@
 
 ## Research, tests, and verification scope
 
-Research reads only prospect page text already stored locally; the app does not
-fetch fresh web pages or crawl prospects. Workflow tests replace Ollama HTTP
-responses with mocks; embedding tests use fake models. `make verify` validates
-source boundaries and deterministic/mock behavior without making a real model
-request. It does not establish live Ollama quality, Windows/PowerShell
+There is **no automatic prospect discovery**: operators import prospect CSVs
+and provide any public-page URLs explicitly. The app's AI workflows read only
+page text already stored locally. The separate online helper does not discover
+leads or follow page links (see the design note in
+[`COST_AND_DEPENDENCIES.md`](COST_AND_DEPENDENCIES.md)). Workflow tests replace
+Ollama HTTP responses with mocks; embedding tests use fake models. `make verify`
+checks source boundaries and deterministic/mock behavior without making a real
+model request. It does not establish live Ollama quality, Windows/PowerShell
 execution, Wi-Fi-off behavior, or outage/recovery against a running Ollama
 server.
 
+The latest local full-suite result recorded for this update is **239 passed,
+2 skipped**. Both skips are the PowerShell parser checks for
+`scripts/offline_acceptance.ps1` and `scripts/ollama_down_check.ps1`, because
+neither `pwsh` nor `powershell` is installed here. Source assertions ran, but
+the scripts themselves have not been executed by PowerShell. This is not a pass
+for PowerShell syntax or Windows/offline acceptance.
+
 No fresh real-hardware run or performance measurement was performed for this
 verification. Hardware-tier unit tests supply fake RAM/VRAM values to the pure
-selection rule; they do not detect or benchmark a physical machine. The
-historical operator-reported Windows laptop results below are prior observations,
-not a new hardware run or evidence for the current model setup.
+selection rule; they do not detect or benchmark a physical machine. The demo's
+reported target laptop has 15.7 GB RAM, 12 CPUs, and 4.0 GB NVIDIA VRAM, but no
+current per-model CPU/GPU offload split, embedding-device placement, or live
+performance measurement is recorded. See [`HARDWARE.md`](HARDWARE.md); target
+CPU/GPU placement remains **PENDING**.
 
 The duplicate-product database merge is covered only by a synthetic SQLite
 fixture in `tests/test_db.py::test_init_db_merges_casefold_duplicate_products_and_repoints_all_records`.

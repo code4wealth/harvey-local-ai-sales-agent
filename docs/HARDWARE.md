@@ -5,7 +5,11 @@ when available through `nvidia-smi`, the selected tier, model recommendation,
 and context-window recommendation. `GET /api/status` includes the same
 hardware object plus the currently configured model. CPU count is informational;
 the current tier rule uses RAM and NVIDIA VRAM. Only NVIDIA GPUs are detected
-by this implementation.
+by this implementation. This capacity report is **not** a runtime CPU/GPU
+placement report or benchmark: the Ollama client does not set or record a GPU
+layer/offload split, and the embedding loader does not pass a `device` argument
+to Sentence-Transformers. The selected model and embedding runtime use their
+local runtime defaults; actual placement must be observed on the target laptop.
 
 ## Tier selection rule
 
@@ -36,6 +40,16 @@ selection tests.
 This hardware tier is separate from prospect **Size Fit**. Hardware selection
 uses local RAM/NVIDIA VRAM; Size Fit compares imported employee count with ICP
 size bounds and cannot infer either value from the hardware profile.
+
+## Target-device CPU/GPU placement is unverified
+
+The demo records a user-supplied target-laptop report of 15.7 GB RAM, 12 CPUs,
+and 4.0 GB NVIDIA VRAM, which selects the standard-laptop tier. That reports
+hardware capacity and the recommended tag only. No current runtime measurement
+shows how Ollama splits model layers between CPU and GPU, and no embedding-device
+placement or target-laptop benchmark is recorded. Keep the actual CPU/GPU split
+**PENDING** until it is observed during a live target run (for example, with
+`ollama ps` and `nvidia-smi`); do not infer it from the hardware recommendation.
 
 ## Decision-rule tests
 
