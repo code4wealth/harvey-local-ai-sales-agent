@@ -15,12 +15,31 @@ live model run.
 
 ## Harvey and upstream notice
 
-Harvey Local AI Sales Agent is declared `AGPL-3.0-only` in `pyproject.toml`; the
-repository `LICENSE` contains the AGPL-3.0 text and `NOTICE` preserves the
-upstream Harvey/Sellbird attribution and the upstream MIT notice for releases
-through 0.3.x. Keep both `LICENSE` and `NOTICE` with distributions. This
-project's notice does not grant or verify licences for third-party models or
-packages.
+The upstream Harvey/Sellbird project is licensed `AGPL-3.0-only` starting
+with upstream version 0.4.0. This fork keeps that licence: `pyproject.toml`
+declares `AGPL-3.0-only`, and the repository `LICENSE` contains the AGPL-3.0
+text. `NOTICE` preserves the upstream attribution and explains that older
+upstream releases through 0.3.x were MIT-licensed. Keep both `LICENSE` and
+`NOTICE` with distributions. This project notice does not grant or verify
+licences for third-party models or packages.
+
+## Core runtime and UI licence summary
+
+The following application components are called out explicitly. Sandbox package
+metadata and lockfile observations are not a substitute for checking the exact
+Windows installation, bundled notices, and deployment versions; mark unresolved
+target artifacts **VERIFY**.
+
+| Component | Role | Licence evidence and target status |
+|---|---|---|
+| FastAPI (`fastapi`) | Local API framework | MIT in observed Python metadata; target resolution/licence **VERIFY**. |
+| Uvicorn (`uvicorn`) | Local ASGI server | BSD-3-Clause in observed Python metadata; target resolution/licence **VERIFY**. |
+| SQLite (`sqlite3` Python wrapper and linked SQLite runtime) | Local database storage | **VERIFY** — linked runtime version and applicable target distribution notice were not inspected. |
+| Sentence-Transformers (`sentence-transformers`) | Local embedding package | Apache-2.0 was previously operator-reported, not independently confirmed here; target version/licence **VERIFY**. The model weights have a separate `VERIFY` entry below. |
+| BeautifulSoup (`beautifulsoup4`) | Stored HTML parsing and optional public-page helper | MIT in observed Python metadata; target resolution/licence **VERIFY**. |
+| Requests (`requests`) | Optional public-page helper HTTP client | Apache-2.0 in observed Python metadata; target resolution/licence **VERIFY**. |
+| Pydantic (`pydantic`) | Structured request/response validation | MIT in observed Python metadata; target resolution/licence **VERIFY**. |
+| React (`react`, `react-dom`) | Dashboard UI runtime | MIT in `frontend/package-lock.json` metadata (`19.3.1`); exact deployed bundle and target notices **VERIFY**. |
 
 ## Models and local runtime
 

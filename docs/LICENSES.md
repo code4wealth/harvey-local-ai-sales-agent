@@ -3,7 +3,10 @@
 This table separates repository/package metadata and user-reported observations
 from licence facts not verified in this environment. Every outstanding check is
 marked **VERIFY**; a Python distribution's licence is not the licence of its
-separately downloaded model weights. No files were present under
+separately downloaded model weights. Upstream Harvey/Sellbird is AGPL-3.0-only
+from upstream version 0.4.0, and this fork keeps that licence as declared in
+`pyproject.toml` and `LICENSE`; older upstream releases through 0.3.x remain
+under their historical MIT notice. No files were present under
 `test_evidence/offline/` for this update, and Ollama/PowerShell were not
 available for a fresh local inspection.
 
@@ -29,6 +32,7 @@ Windows machine. Target resolution/licence checks remain **VERIFY**.
 | `uvicorn` | `0.54.0` | BSD-3-Clause | Sandbox metadata; target resolution **VERIFY**. ASGI server. |
 | `httpx` | `0.28.1` | BSD-3-Clause | Sandbox metadata; target resolution **VERIFY**. Fixed loopback Ollama transport. |
 | `pydantic` | `2.14.4` | MIT | Sandbox metadata; target resolution **VERIFY**. Structured request/response validation. |
+| SQLite (`sqlite3` Python wrapper and linked runtime) | **VERIFY** | **VERIFY** | Python's standard-library wrapper is present; inspect the linked target runtime version and applicable distribution notice. |
 | `starlette` | `1.10.0` | BSD-3-Clause | Sandbox metadata; target resolution **VERIFY**. FastAPI's ASGI/web dependency. |
 | `beautifulsoup4` | `4.15.0` | MIT License | Sandbox metadata; target resolution **VERIFY**. Stored-text HTML parsing and optional online page-text extraction. |
 | `requests` | `2.34.2` | Apache-2.0 | Sandbox metadata; target resolution **VERIFY**. HTTP client for the manually invoked optional public-page collector only; not used for AI inference. |
@@ -51,8 +55,8 @@ framework, icon, and bundled-font notices into `frontend/static/licenses/`.
 
 | Distribution | Locked version | Observed licence | Role |
 |---|---:|---|---|
-| `react` | `19.3.1` | MIT | Dashboard UI runtime. |
-| `react-dom` | `19.3.1` | MIT | Dashboard DOM renderer. |
+| `react` | `19.3.1` | MIT in lockfile metadata; deployed bundle notice **VERIFY** | Dashboard UI runtime. |
+| `react-dom` | `19.3.1` | MIT in lockfile metadata; deployed bundle notice **VERIFY** | Dashboard DOM renderer. |
 | `lucide-react` | `0.468.0` | ISC | Dashboard icons. |
 | `tailwindcss` | `4.3.5` | MIT | Dashboard stylesheet generation. |
 | `@tailwindcss/vite` | `4.3.5` | MIT | Vite integration for Tailwind CSS. |

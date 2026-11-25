@@ -9,9 +9,10 @@ hardware, electricity, and one-time model-download bandwidth are user-provided
 resources and are not priced here.
 
 > Upstream attribution: Harvey/Sellbird was created by Ethan Rogers and the
-> Sellbird contributors, AGPL-3.0-only (earlier releases MIT). See `NOTICE` and
-> `LICENSE`. This fork replaces the subscription-CLI architecture with
-> local-only inference.
+> Sellbird contributors. Upstream is AGPL-3.0-only from version 0.4.0 onward,
+> and this fork keeps that licence; releases through 0.3.x have a separate MIT
+> notice. See `NOTICE` and `LICENSE`. This fork replaces the subscription-CLI
+> architecture with local-only inference.
 
 ## Current capabilities
 
