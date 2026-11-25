@@ -371,10 +371,11 @@ Windows runs: owner-reported, 2026-11-26 (local time, IST). The workspace snapsh
   acceptance script was used, that the screen recording is stored here, or
   that network traces/listener logs were captured.
 
-The owner-provided prompts for ping failure / `netstat` on port 11434, Ollama
-outage/recovery status, demo-video URL, screenshot file list, and the demo footer
-commit hash were unresolved alternatives/placeholders, not confirmed values.
-Leave each pending until the owner supplies a value or an artifact is verified.
+Ping failure / `netstat` on port 11434, Ollama outage/recovery status, screenshot
+file list, and demo footer commit hash remain unresolved. The owner supplied two
+Drive links, but their roles and contents are unconfirmed; the demo-video URL
+remains unresolved until the recording link is identified. Leave each item
+pending until the owner supplies a value or an artifact is verified.
 
 ### Evidence present in this checkout
 
@@ -392,14 +393,15 @@ There are no files under `test_evidence/offline/` or
 
 ### Still pending
 
-- Verify the owner-reported run date and review/attach the screen recording.
+- The owner confirms the reported date as 2026-11-26 (local time, IST); review/attach the screen recording and verify which supplied Drive link contains it.
 - Confirm whether the offline PowerShell script ran; save/review its actual log
   and JSON if available. Confirm the `example.com` probe result and any ping,
   listener (`netstat`), or network-capture evidence; do not infer these.
 - Run and record the controlled Ollama stop, queued task, deterministic ranking,
   restart, worker wake, and replay if it was not completed.
-- Supply the end-to-end demo video URL and the commit hash visible in its footer;
-  check that the video matches the final branch commit.
+- Identify which of the two owner-supplied Drive links is the demo video, then
+  record its URL and the commit hash visible in its footer; check the video
+  matches the final branch commit.
 - Add actual target-run screenshots, if they exist, and record their real
   paths. No screenshot is present under `test_evidence/`; three static dashboard
   images under `docs/images/` are not evidence from the owner-reported run.

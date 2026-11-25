@@ -122,8 +122,9 @@ log or result was supplied. All items in this section remain **PENDING**.
 - [x] Local setup and the local-only API binding are documented in `README.md`.
 - [x] Sample data and preview/simulated behavior are labelled in the application.
 - [ ] Record and link the 5–10 minute end-to-end demo, including the internet-
-  off test. An offline screen recording is owner-reported, but no video URL was
-  supplied and no recording file is present in this checkout.
+  off test. An offline screen recording is owner-reported; two Drive links were
+  supplied, but neither has been identified as the demo video and no recording
+  file is present in this checkout.
 - [ ] Ensure the recorded demo footer matches the final pushed commit; the demo
   footer hash was not supplied. Create a release tag only after verification.
 - [ ] Add the final acceptance logs and actual target-run screenshots to the

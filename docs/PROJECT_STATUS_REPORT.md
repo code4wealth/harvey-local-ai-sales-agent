@@ -40,7 +40,7 @@ The repository also contains earlier operator-provided single-call Ollama and em
 - The owner reports local inference with `qwen3:4b` via Ollama and `ollama ps` placement of about **66% GPU / 34% CPU** on an RTX 3050, with **15.7 GB RAM** and **12 CPUs**. The current Ollama version, exact model digest, and embedding-device placement were not supplied.
 - The owner reports an online FieldNest run completed profile, ICP, signals, problem statement, draft, and ranking; **20 prospects** and **60 sample replies** were imported. The owner reports `R004` classified `not_interested`. The checked-in evaluator data confirms that `R004` has the ambiguous development label; it does not independently confirm the runtime result or establish an accuracy metric.
 - The owner reports that all eight workflows worked with Wi-Fi disconnected and that the run was screen-recorded. The exact script invocation, recording path, timestamped logs/JSON, ping result, and port-11434 `netstat` capture were not supplied.
-- The Ollama outage/recovery status, screenshot list, demo URL, and commit hash shown in the video footer were left as unresolved alternatives/placeholders. They remain **PENDING**.
+- The Ollama outage/recovery status, screenshot list, and commit hash shown in the video footer remain **PENDING**. The owner supplied two Drive links, but their roles and contents are unconfirmed, so the demo video URL remains unresolved.
 
 ### Evidence files actually present under `test_evidence/`
 
@@ -52,7 +52,7 @@ No files are present under `test_evidence/offline/` or `test_evidence/ollama_out
 
 ## Remaining work
 
-1. The owner confirms the reported Windows-run date as 2026-11-26 (local time, IST), after the 2026-11-23 UTC workspace snapshot. Add the actual screen recording, demo-video URL, and footer commit hash if available. Verify the demo corresponds to the final pushed branch commit.
+1. The owner confirms the reported Windows-run date as 2026-11-26 (local time, IST), after the 2026-11-23 UTC workspace snapshot. The owner supplied two Drive links, but their roles and contents are unconfirmed; identify the recording and add its footer commit hash if available. Verify the demo corresponds to the final pushed branch commit.
 2. Confirm whether `scripts/offline_acceptance.ps1` ran. Preserve and review its actual `.log`/`.json` if available. Confirm the `example.com` probe, ping result, and `netstat` observation; add a network trace or equivalent evidence for the full run. The single probe is not proof that all outbound routes are blocked.
 3. Run or provide evidence for the controlled Ollama stop/queue/restart/replay test and unavailable-model message. The outage result is unresolved; do not treat mock queue tests as live proof.
 4. The offline two-product ICP comparison and target-run confirmation that a draft remained `sent=false` are still pending. The owner reported generation workflows, but did not explicitly supply those specific checks or records.

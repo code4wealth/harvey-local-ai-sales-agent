@@ -2,20 +2,22 @@
 
 ## Repository and demo identity
 
-- Repository: [code4wealth/harvey-local-ai-sales-agent](https://github.com/code4wealth/harvey-local-ai-sales-agent) — `gh repo view` currently reports it as a public fork. Recheck access after the branch is pushed.
+- Repository: [code4wealth/harvey-local-ai-sales-agent](https://github.com/code4wealth/harvey-local-ai-sales-agent) — `gh repo view` currently reports it as a public fork. Reviewer access should still be confirmed from a clean session before submission.
 - Working branch: `arena/235805fd-harvey-local-ai-sales-agent`
 - Demo footer commit hash: **PENDING** — the owner-provided field was left as `[HASH]`; do not substitute the current local `HEAD` without checking the recording.
-- Demo video URL: **PENDING** — no URL was supplied. The prompt's `[PASTE LINK or "not yet uploaded"]` is an unresolved choice, not a confirmed upload status.
+- Demo video URL: **PENDING** — two Drive links were supplied by the owner (listed below), but their contents and roles are not confirmed; identify which is the demo recording. Google Drive is not connected in this session, so the links could not be inspected.
 - Demo screen: `/operations` (the product-level workflow console). The eight individual PowerShell acceptance workflows are a separate run, not a ninth `/operations` step.
 
-The branch was pushed to `origin` through commit `b5b56d3`. This follow-up update is local until pushed; publish the latest branch tip before asking reviewers to fetch these final notes or compare the demo footer.
+The branch is published on `origin`; check the current branch tip before asking reviewers to fetch the final notes or compare the demo footer.
 
 ## Demo version
 
 The demo video was recorded on the owner's Windows laptop at commit [VIDEO_COMMIT_HASH]. Later commits (e171ea8, 943d12b and any after) add model-readiness checks, honest UI status labels and documentation; they do not change the evidence validators or the local-only inference path.
 
 - Video commit hash: `[VIDEO_COMMIT_HASH]` — **OWNER TO FILL** (read from the footer of the video).
-- Video URL: `[VIDEO_URL]` — **OWNER TO FILL**.
+- Video URL: `[VIDEO_URL]` — **OWNER TO FILL** until the demo recording is identified.
+- Owner-supplied Drive link 1 (role unconfirmed): https://drive.google.com/file/d/1Ne3gKuj5MjViwLC3YmCt1PaYRSVx2iNZ/view?usp=sharing
+- Owner-supplied Drive link 2 (role unconfirmed): https://drive.google.com/file/d/12Q6rl-F6CLzpi1XMIGBbP6K8Tog4afw5/view?usp=sharing
 - CI result (Python 3.11 and 3.12): **PASS** in GitHub Actions push runs `45707464736` and `45708213250`; both matrix jobs passed in each. The pull-request run `45707489154` also passed. These CI checks are not live Ollama or target-Windows acceptance.
 
 ## Owner-reported target-laptop runs
@@ -25,7 +27,7 @@ Windows runs: owner-reported, 2026-11-26 (local time, IST). The workspace snapsh
 - Local inference used Ollama with `qwen3:4b`. The owner reports `ollama ps` showed about **66% GPU / 34% CPU** on an RTX 3050, with 15.7 GB RAM and 12 CPUs. The current Ollama version, exact model digest, and embedding-device placement were not supplied.
 - Online FieldNest workflow: profile, ICP, signals, problem statement, draft, and ranking reportedly completed; 20 prospects and 60 sample replies were imported. The owner reports `R004` classified as `not_interested`, matching the ambiguous development label in `data/eval/reply_labels.csv`. That file verifies the label, not the live inference result.
 - Offline workflow: the owner reports all eight workflows worked with Wi-Fi disconnected and that the run was screen-recorded. The exact script, run logs, ping result, and port-11434 `netstat` capture were not supplied.
-- Ollama outage/recovery result, screenshots, demo-video URL, and demo footer commit hash remain **PENDING** because the fields were left as unresolved alternatives/placeholders.
+- Ollama outage/recovery result, screenshot evidence, and demo footer commit hash remain **PENDING**. Two owner-provided Drive links are listed in the Demo version section, but their roles and contents are unconfirmed; the demo video URL remains **PENDING** until the recording is identified.
 
 ### Evidence files present in this checkout
 
@@ -79,7 +81,7 @@ The dashboard at `/` includes illustrative browser-preview data, explicitly mark
 
 - Owner-reported Windows results are not backed by run logs, screenshots, or a video file in this checkout. Windows runs: owner-reported, 2026-11-26 (local time, IST). The workspace snapshot carries earlier timestamps (2026-11-23 UTC); the runs were performed afterwards. The run outcomes remain unverified here.
 - Offline workflow completion is owner-reported; the exact PowerShell script run, `example.com` result, ping result, `netstat` listener observation, and packet/network capture remain unverified here.
-- The Ollama outage/recovery outcome, demo URL, screenshot list, and demo footer commit hash were not supplied.
+- The Ollama outage/recovery outcome, screenshot list, and demo footer commit hash were not supplied. Two owner-provided Drive links are listed above, but their roles and contents are unconfirmed, so the demo video URL remains unresolved.
 - Automated tests use mocked Ollama responses and fake embeddings. They do not prove Windows behavior, full outbound-traffic isolation, live model quality, CPU/GPU placement, or outage recovery.
 - The optional explicit-URL page collector requires internet access. It is not used by local inference, but the product is not an all-network-activity-off application while that helper is run.
 - Model weights and target Windows package licences/resolutions remain **VERIFY**. See the official-page checklist below and [`MODELS_AND_LICENCES.md`](MODELS_AND_LICENCES.md).

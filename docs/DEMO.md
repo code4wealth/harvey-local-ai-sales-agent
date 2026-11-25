@@ -304,8 +304,9 @@ imported. The owner reports `R004` classified `not_interested`, matching the
 ambiguous development label in `data/eval/reply_labels.csv`. Separately, the
 owner reports all eight workflows worked with Wi-Fi disconnected and that the
 offline run was screen-recorded. The exact script, `.log`/`.json`, ping result,
-`netstat` capture, screenshot files, outage result, video link, and demo footer
-commit were not supplied.
+`netstat` capture, screenshot files, outage result, and demo footer commit were
+not supplied. The owner supplied two Drive links, but their roles and contents
+are unconfirmed, so the demo video URL is not yet identified.
 
 Files actually present under `test_evidence/` are `online/README.md` (template
 only), `real_run/smoke_embeddings.txt`, and `real_run/smoke_ollama.txt` (earlier
@@ -331,7 +332,7 @@ not present in these folders.
 | Problem-statement target-machine workflow | **Owner-reported complete** in the online FieldNest run and as part of the reported offline eight workflows. | No target output, run ID, or acceptance log was supplied; do not infer statement quality from completion status. |
 | Ollama-down / recovery acceptance | **PENDING** — the owner did not resolve the `[DONE and recorded / NOT DONE]` choice. | No outage result or file is present; mocked queue tests are not live outage evidence. |
 | Wi-Fi-disconnected test | **Owner-reported complete** for all eight workflows. | Whether ping failed and whether `netstat` on port 11434 was captured were left as unresolved choices; no network trace is present here. A successful Wi-Fi toggle is not comprehensive network-isolation proof. |
-| Demo video / footer commit | **PENDING** — no URL or hash was supplied. | The offline screen recording is reported but not linked or present in this checkout; confirm the video matches the final commit. |
+| Demo video / footer commit | **PENDING** — two Drive links were supplied, but neither has been identified as the video; the footer hash was not supplied. | The offline screen recording is reported but not present in this checkout. Google Drive is not connected here, so the links could not be inspected; confirm the video matches the final commit. |
 | Screenshot evidence | **PENDING** — no screenshot image exists under `test_evidence/` in this checkout. | `test_evidence/online/README.md` is a template, not a screenshot. |
 
 ### Unresolved limitations
