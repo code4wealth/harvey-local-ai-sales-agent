@@ -1,16 +1,17 @@
 """Real, local-only sentence embeddings with a lazy model cache.
 
-The model downloads from Hugging Face Hub only when it is not already cached.
-After the first successful download, set ``HF_HUB_OFFLINE=1`` to ensure loading
-and inference use the local cache without Hub access. This module never uses an
-LLM or a hosted inference endpoint.
+The app forces Hugging Face and Transformers offline mode before loading the
+model. Model files must be cached separately before offline use; this AI path
+never downloads them or calls a hosted inference endpoint.
 """
 
 from __future__ import annotations
 
 import math
+import os
 import struct
 import threading
+from pathlib import Path
 from collections.abc import Sequence
 from typing import Any
 
@@ -19,6 +20,8 @@ EMBEDDING_MODEL = DEFAULT_MODEL
 _EMBEDDING_MAGIC = b"HE01"
 _MODEL_CACHE: dict[str, Any] = {}
 _MODEL_LOCK = threading.Lock()
+LONG_TEXT_CHUNK_CHARS = 800
+MAX_LONG_TEXT_CHUNKS = 6
 
 
 class EmbeddingError(RuntimeError):
@@ -29,7 +32,23 @@ class EmbeddingModelUnavailable(EmbeddingError):
     """The model or its required files are not available locally."""
 
 
+def _strict_offline_enabled() -> bool:
+    return os.environ.get("OFFLINE_STRICT", "").strip().casefold() in {
+        "1", "true", "yes", "on"
+    }
+
+
+def _configure_offline_environment() -> None:
+    # Do not let a missing cache trigger an outbound Hub download from an AI path.
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    if _strict_offline_enabled():
+        os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+        os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
+
+
 def _load_model(model_name: str) -> Any:
+    _configure_offline_environment()
     try:
         from sentence_transformers import SentenceTransformer
     except ImportError as exc:
@@ -41,9 +60,70 @@ def _load_model(model_name: str) -> Any:
     except Exception as exc:
         raise EmbeddingModelUnavailable(
             f"Could not load local embedding model {model_name!r}. "
-            "Download it once while online, then retry with HF_HUB_OFFLINE=1. "
+            "Cache its files before running the app; AI paths stay offline. "
             f"Cause: {exc}"
         ) from exc
+
+
+def _huggingface_cache_roots() -> list[Path]:
+    candidates = [
+        os.environ.get("HF_HUB_CACHE"),
+        os.environ.get("HUGGINGFACE_HUB_CACHE"),
+        os.environ.get("TRANSFORMERS_CACHE"),
+    ]
+    hf_home = os.environ.get("HF_HOME")
+    if hf_home:
+        candidates.append(str(Path(hf_home) / "hub"))
+    xdg_home = os.environ.get("XDG_CACHE_HOME")
+    if xdg_home:
+        candidates.append(str(Path(xdg_home) / "huggingface" / "hub"))
+    candidates.append(str(Path.home() / ".cache" / "huggingface" / "hub"))
+    roots: list[Path] = []
+    for value in candidates:
+        if value:
+            path = Path(value).expanduser()
+            if path not in roots:
+                roots.append(path)
+    return roots
+
+
+def local_model_cache_status(model_name: str = DEFAULT_MODEL) -> dict[str, Any]:
+    """Check the local Hugging Face cache without loading or downloading a model."""
+    normalized = str(model_name or "").strip()
+    if not normalized:
+        return {"model": normalized, "available": False, "loaded": False, "cached": False}
+    loaded = _MODEL_CACHE.get(normalized) is not None
+    if Path(normalized).expanduser().is_dir():
+        return {"model": normalized, "available": True, "loaded": loaded, "cached": True}
+
+    repository = f"models--{normalized.replace('/', '--')}"
+    weight_names = ("model.safetensors", "pytorch_model.bin", "tf_model.h5")
+    cached = False
+    for root in _huggingface_cache_roots():
+        snapshots = root / repository / "snapshots"
+        try:
+            snapshot_dirs = list(snapshots.iterdir())
+        except OSError:
+            continue
+        for snapshot in snapshot_dirs:
+            if not snapshot.is_dir() or not (snapshot / "config.json").is_file():
+                continue
+            has_weights = any(
+                candidate.is_file()
+                for name in weight_names
+                for candidate in snapshot.rglob(name)
+            )
+            if has_weights:
+                cached = True
+                break
+        if cached:
+            break
+    return {
+        "model": normalized,
+        "available": loaded or cached,
+        "loaded": loaded,
+        "cached": cached,
+    }
 
 
 def _get_model(model_name: str) -> Any:
@@ -108,6 +188,54 @@ def embed_texts(
     if any(not math.isfinite(value) for vector in vectors for value in vector):
         raise EmbeddingError("Embedding model returned a non-finite value")
     return vectors
+
+
+def _chunk_long_text(text: str) -> list[str]:
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    words = text.split()
+    if not words:
+        return [""]
+
+    chunks: list[str] = []
+    current_words: list[str] = []
+    current_chars = 0
+    for word in words:
+        next_chars = current_chars + (1 if current_words else 0) + len(word)
+        if current_words and next_chars > LONG_TEXT_CHUNK_CHARS:
+            chunks.append(" ".join(current_words))
+            if len(chunks) >= MAX_LONG_TEXT_CHUNKS:
+                return chunks
+            current_words = [word]
+            current_chars = len(word)
+        else:
+            current_words.append(word)
+            current_chars = next_chars
+    if current_words and len(chunks) < MAX_LONG_TEXT_CHUNKS:
+        chunks.append(" ".join(current_words))
+    return chunks
+
+
+def embed_long_text(
+    text: str,
+    *,
+    model_name: str = DEFAULT_MODEL,
+    batch_size: int = 32,
+) -> list[float]:
+    """Embed up to six ~800-character chunks and renormalize their mean vector."""
+    chunks = _chunk_long_text(text)
+    vectors = embed_texts(chunks, model_name=model_name, batch_size=batch_size)
+    if not vectors:
+        raise EmbeddingError("Long-text embedding produced no chunks")
+    dimensions = len(vectors[0])
+    mean_vector = [
+        sum(vector[index] for vector in vectors) / len(vectors)
+        for index in range(dimensions)
+    ]
+    norm = math.sqrt(sum(value * value for value in mean_vector))
+    if norm == 0.0 or not math.isfinite(norm):
+        raise EmbeddingError("Long-text chunk embeddings average to a zero-length vector")
+    return [value / norm for value in mean_vector]
 
 
 def embed_text(text: str, *, model_name: str = DEFAULT_MODEL) -> list[float]:

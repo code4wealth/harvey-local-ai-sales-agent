@@ -106,7 +106,7 @@ def test_deterministic_score_handler_uses_only_persisted_inputs(db_path, monkeyp
             "VALUES (?, ?, ?, ?, ?)",
             (
                 product_id,
-                json.dumps({"company_size_min": 50, "company_size_max": 500, "buyer_titles": ["VP of Sales"]}),
+                json.dumps({"company_size": {"min": 50, "max": 500}, "buyer_titles": ["VP of Sales"]}),
                 vector,
                 embeddings.DEFAULT_MODEL,
                 now,
@@ -174,22 +174,27 @@ def test_embed_and_score_uses_test_only_embedding_stub_for_local_inputs(
         seen = {}
 
         def test_embedder(texts, *, model_name):
-            seen["texts"] = list(texts)
+            seen["icp_texts"] = list(texts)
             seen["model_name"] = model_name
             return [[1.0, 0.0] for _ in texts]
 
+        def test_page_embedder(text, *, model_name):
+            seen["page_text"] = text
+            seen["page_model_name"] = model_name
+            return [1.0, 0.0]
+
         monkeypatch.setattr(batch, "embed_texts", test_embedder)
+        monkeypatch.setattr(batch, "embed_long_text", test_page_embedder)
         result = batch.embed_and_score_prospect(conn, prospect_id, page_dir=page_dir)
         icp_row = conn.execute(
             "SELECT embedding, embedding_model FROM icps WHERE product_id = ?", (product_id,)
         ).fetchone()
         prospect_row = db.get_prospect(conn, prospect_id)
         saved = db.latest_score(conn, prospect_id)
-        assert seen["texts"] == [
-            json.dumps(icp_data, ensure_ascii=False, sort_keys=True),
-            "Local prospect page.",
-        ]
+        assert seen["icp_texts"] == [json.dumps(icp_data, ensure_ascii=False, sort_keys=True)]
+        assert seen["page_text"] == "Local prospect page."
         assert seen["model_name"] == embeddings.DEFAULT_MODEL
+        assert seen["page_model_name"] == embeddings.DEFAULT_MODEL
         assert embeddings.unpack_embedding(icp_row["embedding"]) == [1.0, 0.0]
         assert icp_row["embedding_model"] == embeddings.DEFAULT_MODEL
         assert embeddings.unpack_embedding(prospect_row["page_embedding"]) == [1.0, 0.0]
@@ -237,6 +242,36 @@ def test_missing_embedding_model_leaves_similarity_null_and_score_partial(
         assert result["partial"] is True
         assert breakdown["icp_similarity"] is None
         assert db.get_prospect(conn, prospect_id)["page_embedding"] is None
+    finally:
+        conn.close()
+
+
+def test_stale_research_similarity_cannot_fill_current_missing_embedding(db_path):
+    conn = db.connect()
+    try:
+        product_id, prospect_id = _product_and_prospect(conn)
+        icp_data = {
+            "company_size_min": 50,
+            "company_size_max": 500,
+            "buyer_titles": ["VP of Sales"],
+        }
+        conn.execute(
+            "INSERT INTO icps (product_id, icp_json, embedding, embedding_model, created_at) "
+            "VALUES (?, ?, NULL, '', ?)",
+            (product_id, json.dumps(icp_data), db.utcnow()),
+        )
+        conn.execute(
+            "INSERT INTO prospect_research "
+            "(prospect_id, summary, embedding, embedding_model, icp_similarity, source_path, created_at) "
+            "VALUES (?, 'old summary', NULL, '', 0.95, 'old-source.txt', ?)",
+            (prospect_id, db.utcnow()),
+        )
+        conn.commit()
+
+        result = batch.score_and_store_prospect(conn, prospect_id)
+
+        assert result["breakdown"]["icp_similarity"] is None
+        assert result["partial"] is True
     finally:
         conn.close()
 

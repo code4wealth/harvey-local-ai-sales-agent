@@ -1,0 +1,7 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Rainline Thermal Assemblies
+Industry: Thermal equipment manufacturing
+
+Rainline assembles industrial heating units at two plants. Its maintenance team tracks service checks for test equipment and production-line machinery, with records kept by shift.
+
+A recruitment notice dated October 6, 2026 seeks two maintenance mechanics for the evening shift. The listing gives the site location and describes routine equipment servicing as part of the role.

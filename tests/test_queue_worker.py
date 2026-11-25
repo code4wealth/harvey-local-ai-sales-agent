@@ -37,6 +37,35 @@ def test_fastapi_lifespan_starts_and_stops_background_worker(db_path, monkeypatc
     asyncio.run(exercise_lifespan())
 
 
+def test_queue_worker_wake_triggers_an_immediate_poll(db_path):
+    first_poll = threading.Event()
+    second_poll = threading.Event()
+    lock = threading.Lock()
+    calls = 0
+    worker = QueueWorker(poll_seconds=60.0)
+
+    def fake_run_once():
+        nonlocal calls
+        with lock:
+            calls += 1
+            current = calls
+        if current == 1:
+            first_poll.set()
+        else:
+            second_poll.set()
+        return 0
+
+    worker.run_once = fake_run_once
+    worker.start()
+    try:
+        assert first_poll.wait(timeout=1.0)
+        worker.wake()
+        assert second_poll.wait(timeout=1.0)
+    finally:
+        worker.stop(timeout=1.0)
+    assert calls >= 2
+
+
 def test_queue_worker_survives_read_timeout_from_health_probe(db_path, monkeypatch):
     probe_called = threading.Event()
 
@@ -148,8 +177,48 @@ def test_queue_worker_retries_then_fails_without_deleting_task(db_path, monkeypa
         HANDLERS.pop(task_type, None)
 
 
-@pytest.mark.parametrize("error_type", [OllamaUnavailable, OllamaTimeout])
-def test_queue_worker_requeues_unavailable_and_slow_model_errors(db_path, monkeypatch, error_type):
+def test_three_consecutive_ollama_unavailable_errors_do_not_exhaust_task(
+    db_path, monkeypatch
+):
+    monkeypatch.setattr(queue_worker, "ollama_up", lambda: True)
+    task_type = "test.three.unavailable"
+    calls = []
+
+    def unavailable_handler(payload):
+        calls.append(payload)
+        raise OllamaUnavailable("Ollama disappeared during the request")
+
+    register_handler(task_type, unavailable_handler)
+    conn = db.connect()
+    try:
+        task_id = db.enqueue_task(conn, task_type, {"attempt": "keep"}, max_attempts=3)
+    finally:
+        conn.close()
+
+    try:
+        worker = QueueWorker()
+        for _ in range(3):
+            assert worker.run_once() == 1
+            conn = db.connect()
+            try:
+                row = db.get_task(conn, task_id)
+                assert row["status"] == "queued"
+                assert row["attempts"] == 0
+                assert row["last_error"].startswith("OllamaUnavailable:")
+            finally:
+                conn.close()
+        assert calls == [{"attempt": "keep"}] * 3
+    finally:
+        HANDLERS.pop(task_type, None)
+
+
+@pytest.mark.parametrize(
+    ("error_type", "expected_attempts"),
+    [(OllamaUnavailable, 0), (OllamaTimeout, 1)],
+)
+def test_queue_worker_requeues_unavailable_and_slow_model_errors(
+    db_path, monkeypatch, error_type, expected_attempts
+):
     def probe(request):
         return httpx.Response(200, json={"models": []})
 
@@ -180,7 +249,7 @@ def test_queue_worker_requeues_unavailable_and_slow_model_errors(db_path, monkey
         try:
             row = db.get_task(conn, task_id)
             assert row["status"] == "queued"
-            assert row["attempts"] == 1
+            assert row["attempts"] == expected_attempts
             assert row["last_error"].startswith(f"{error_type.__name__}:")
         finally:
             conn.close()

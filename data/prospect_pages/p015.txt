@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Lantern Mill Foods
+Industry: Food processing
+
+The fictional facility page describes a local grain-milling operation and its regular production schedule. A safety page lists standard sanitation and equipment checks. It does not mention hiring, a new production line, funding, or equipment changes.

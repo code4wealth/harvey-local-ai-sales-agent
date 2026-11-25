@@ -1,9 +1,10 @@
 """The ONE AI path in this application.
 
 Every AI inference call in Harvey Local goes through this module, which talks
-ONLY to a local Ollama server at http://127.0.0.1:11434. There is no
-configuration override and no cloud fallback. If Ollama is down, callers get
-OllamaUnavailable and should queue the task (see app/queue_worker.py).
+ONLY to a local Ollama server at http://127.0.0.1:11434. The endpoint is fixed;
+model selection may use DEFAULT_MODEL or the local hardware recommendation,
+and there is no cloud fallback. If Ollama is down, callers get OllamaUnavailable
+and should queue the task (see app/queue_worker.py).
 
 app/research/ may touch the internet but must never import this module. This
 module may receive researched text as input, but must never import research.
@@ -13,25 +14,42 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
 from app import db as _db
+from app.traceability import prompt_traceability
 
 # Hard-coded by design. Do not read this value from environment/configuration.
 OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_NUM_CTX = 4096
-DEFAULT_TEMPERATURE = 0.2
+DEFAULT_TEMPERATURE = 0.0
+RETRY_TEMPERATURE = 0.2
+DEFAULT_SEED = 42
+DEFAULT_REPEAT_PENALTY = 1.0
 
 logger = logging.getLogger("harvey.llm")
-DEFAULT_TIMEOUT = 180.0
+DEFAULT_TIMEOUT = 300.0
 UP_TIMEOUT = 5.0
+
+
+def _resolve_timeout(timeout: float | None = None) -> float:
+    """Read the configurable local Ollama request timeout in seconds."""
+    raw = os.environ.get("OLLAMA_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT)) if timeout is None else timeout
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("OLLAMA_TIMEOUT_SECONDS must be a positive number of seconds") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError("OLLAMA_TIMEOUT_SECONDS must be a positive number of seconds")
+    return value
 
 
 class OllamaError(Exception):
@@ -58,6 +76,18 @@ class InvalidJsonResponse(OllamaResponseError):
     """The model did not return JSON matching the requested schema after retries."""
 
 
+class ValidationFailure(ValueError):
+    """A custom workflow check failure with structured retry and storage diagnostics.
+
+    ``details`` include rejected values and, for evidence checks, the allowed
+    source quotes so the model can correct its response on the single retry.
+    """
+
+    def __init__(self, message: str, *, details: list[dict[str, Any]] | None = None):
+        super().__init__(message)
+        self.details = [dict(item) for item in (details or [])]
+
+
 @dataclass(frozen=True)
 class _ChatResult:
     content: str
@@ -70,6 +100,13 @@ _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 def strip_think(text: str) -> str:
     """Remove Qwen3-style <think>...</think> blocks from generated content."""
     return _THINK_RE.sub("", text).strip()
+
+
+def clean_reply(text: str) -> str:
+    """Remove reasoning and an optional enclosing Markdown code fence."""
+    cleaned = strip_think(str(text)).strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    return fenced.group(1).strip() if fenced else cleaned
 
 
 def _client(timeout: float) -> httpx.Client:
@@ -109,6 +146,40 @@ def ollama_up(timeout: float = UP_TIMEOUT) -> bool:
     return True
 
 
+def list_installed_models(timeout: float = UP_TIMEOUT) -> list[str]:
+    """Return locally installed Ollama model tags from ``/api/tags``.
+
+    This endpoint is the authority for model availability. Names are returned
+    exactly as Ollama reports them so inference requests and status views use
+    the same installed-model inventory.
+    """
+    try:
+        with _client(timeout) as client:
+            response = client.get("/api/tags")
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        raise _unavailable(exc) from exc
+    except httpx.TimeoutException as exc:
+        raise OllamaTimeout(f"Ollama model list did not answer within {timeout:g}s.") from exc
+    if response.status_code != 200:
+        raise OllamaResponseError(
+            f"Ollama /api/tags returned HTTP {response.status_code}: {response.text[:300]}"
+        )
+    try:
+        body = response.json()
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise OllamaResponseError(f"Ollama /api/tags returned invalid JSON: {exc}") from exc
+    if not isinstance(body, dict) or not isinstance(body.get("models"), list):
+        raise OllamaResponseError("Ollama /api/tags response must contain a models list")
+    names: list[str] = []
+    for item in body["models"]:
+        if not isinstance(item, dict):
+            raise OllamaResponseError("Ollama /api/tags model entries must be objects")
+        name = item.get("name") or item.get("model")
+        if isinstance(name, str) and name.strip():
+            names.append(name.strip())
+    return sorted(set(names), key=str.casefold)
+
+
 def ollama_version(timeout: float = UP_TIMEOUT) -> dict[str, Any]:
     """Return the local Ollama ``/api/version`` JSON or raise a typed error."""
     try:
@@ -131,15 +202,66 @@ def ollama_version(timeout: float = UP_TIMEOUT) -> dict[str, Any]:
     return body
 
 
-def _resolve_model(model: str | None) -> str:
-    if model:
-        return model
+def model_preference(model: str | None = None) -> tuple[str, str]:
+    """Return the requested model and its single authoritative selection source."""
+    explicit = str(model or "").strip()
+    if explicit:
+        return explicit, "request"
     configured = os.environ.get("DEFAULT_MODEL", "").strip()
     if configured:
-        return configured
+        return configured, "DEFAULT_MODEL"
     from app.hardware import detect
 
-    return detect().recommended_model
+    return detect().recommended_model, "hardware recommendation"
+
+
+def _resolve_model(
+    model: str | None,
+    *,
+    installed_models: list[str] | None = None,
+    defer_when_unavailable: bool = False,
+) -> str:
+    requested, _source = model_preference(model)
+    if installed_models is None:
+        try:
+            installed_models = list_installed_models()
+        except OllamaError as exc:
+            if defer_when_unavailable:
+                # Workflow submitters need the intended name to persist a
+                # replayable queue payload. Inference uses the strict default
+                # and must never send /api/chat without a successful tag check.
+                return requested
+            if isinstance(exc, OllamaUnavailable):
+                raise
+            raise OllamaUnavailable(
+                f"Could not verify Ollama's installed model tags at {OLLAMA_URL}: {exc}"
+            ) from exc
+    installed_by_casefold = {name.casefold(): name for name in installed_models}
+    installed = installed_by_casefold.get(requested.casefold())
+    if installed is None:
+        raise ModelNotPulled(
+            f"model not installed: run ollama pull {requested}"
+        )
+    return installed
+
+
+def resolve_model_name(
+    model: str | None = None, *, installed_models: list[str] | None = None
+) -> str:
+    """Resolve a model against local Ollama tags for workflow queue payloads.
+
+    ``DEFAULT_MODEL`` takes precedence when configured; otherwise the exact
+    model recommended by local hardware is required. Explicit callers are also
+    checked against installed tags. When the local server cannot be reached,
+    this returns only a deferred target so workflow submitters can persist a
+    replayable queue payload. The inference client performs a strict second
+    check and will not call ``/api/chat`` until tags are available.
+    """
+    return _resolve_model(
+        model,
+        installed_models=installed_models,
+        defer_when_unavailable=True,
+    )
 
 
 def _write_inference_log(
@@ -151,6 +273,10 @@ def _write_inference_log(
     seconds: float,
     status: str,
     load_seconds: float | None = None,
+    temperature: float = DEFAULT_TEMPERATURE,
+    seed: int = DEFAULT_SEED,
+    prompt_hash: str = "",
+    commit_hash: str = "",
 ) -> int:
     """Persist one request row. Success-path write errors intentionally propagate."""
     conn = _db.connect()
@@ -165,6 +291,11 @@ def _write_inference_log(
             seconds=seconds,
             load_seconds=load_seconds,
             status=status,
+            temperature=temperature,
+            seed=seed,
+            repeat_penalty=DEFAULT_REPEAT_PENALTY,
+            prompt_hash=prompt_hash,
+            commit_hash=commit_hash,
         )
     finally:
         conn.close()
@@ -179,6 +310,10 @@ def _write_error_log_best_effort(
     seconds: float,
     status: str,
     load_seconds: float | None = None,
+    temperature: float = DEFAULT_TEMPERATURE,
+    seed: int = DEFAULT_SEED,
+    prompt_hash: str = "",
+    commit_hash: str = "",
 ) -> int | None:
     try:
         return _write_inference_log(
@@ -189,6 +324,10 @@ def _write_error_log_best_effort(
             seconds=seconds,
             load_seconds=load_seconds,
             status=status,
+            temperature=temperature,
+            seed=seed,
+            prompt_hash=prompt_hash,
+            commit_hash=commit_hash,
         )
     except Exception:
         logger.exception("could not write inference_log error row: task=%s status=%s", task, status)
@@ -241,10 +380,14 @@ def _chat(
     system: str | None,
     timeout: float,
     num_ctx: int,
+    temperature: float = DEFAULT_TEMPERATURE,
+    seed: int = DEFAULT_SEED,
+    on_raw: Callable[[str], None] | None = None,
 ) -> _ChatResult:
     if num_ctx <= 0:
         raise ValueError("num_ctx must be a positive integer")
     resolved_model = _resolve_model(model)
+    traceability = prompt_traceability(prompt)
     messages = ([{"role": "system", "content": system}] if system else []) + [
         {"role": "user", "content": prompt}
     ]
@@ -253,7 +396,12 @@ def _chat(
         "messages": messages,
         "stream": False,
         "think": False,
-        "options": {"temperature": DEFAULT_TEMPERATURE, "num_ctx": num_ctx},
+        "options": {
+            "temperature": temperature,
+            "seed": seed,
+            "repeat_penalty": DEFAULT_REPEAT_PENALTY,
+            "num_ctx": num_ctx,
+        },
     }
     if format is not None:
         payload["format"] = format
@@ -265,47 +413,59 @@ def _chat(
     except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
         elapsed = time.monotonic() - started
         _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=0,
             eval_tokens=0,
             seconds=elapsed,
             status="error:unavailable",
+            temperature=temperature,
+            seed=seed,
         )
         raise _unavailable(exc) from exc
     except httpx.TimeoutException as exc:
         elapsed = time.monotonic() - started
         _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=0,
             eval_tokens=0,
             seconds=elapsed,
             status="error:timeout",
+            temperature=temperature,
+            seed=seed,
         )
         raise _timed_out(resolved_model, timeout, exc) from exc
 
     wall_seconds = time.monotonic() - started
     if response.status_code == 404 and "not found" in response.text.lower():
         _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=0,
             eval_tokens=0,
             seconds=wall_seconds,
             status="error:http",
+            temperature=temperature,
+            seed=seed,
         )
         raise ModelNotPulled(
             f"Model {resolved_model!r} is not pulled. Run: ollama pull {resolved_model}"
         )
     if response.status_code != 200:
         _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=0,
             eval_tokens=0,
             seconds=wall_seconds,
             status="error:http",
+            temperature=temperature,
+            seed=seed,
         )
         raise OllamaResponseError(
             f"Ollama returned HTTP {response.status_code}: {response.text[:300]}"
@@ -314,12 +474,15 @@ def _chat(
         body = response.json()
     except json.JSONDecodeError as exc:
         _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=0,
             eval_tokens=0,
             seconds=wall_seconds,
             status="error:invalid_json",
+            temperature=temperature,
+            seed=seed,
         )
         raise OllamaResponseError(f"Ollama returned a non-JSON body: {exc}") from exc
 
@@ -334,17 +497,23 @@ def _chat(
         )
     if not isinstance(body, dict):
         _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=prompt_tokens,
             eval_tokens=eval_tokens,
             seconds=seconds,
             status="error:invalid_json",
+            temperature=temperature,
+            seed=seed,
         )
         raise OllamaResponseError("Ollama /api/chat response must be a JSON object")
     message = body.get("message")
     content = message.get("content", "") if isinstance(message, dict) else ""
-    content = strip_think(str(content))
+    raw_reply = str(content)
+    if on_raw is not None:
+        on_raw(raw_reply)
+    content = clean_reply(raw_reply)
 
     initial_status = "ok"
     if format is not None:
@@ -355,6 +524,7 @@ def _chat(
 
     if initial_status == "ok":
         log_id = _write_inference_log(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=prompt_tokens,
@@ -362,9 +532,12 @@ def _chat(
             seconds=seconds,
             status="ok",
             load_seconds=load_seconds,
+            temperature=temperature,
+            seed=seed,
         )
     else:
         log_id = _write_error_log_best_effort(
+            **traceability,
             task=task,
             model=resolved_model,
             prompt_tokens=prompt_tokens,
@@ -372,6 +545,8 @@ def _chat(
             seconds=seconds,
             status=initial_status,
             load_seconds=load_seconds,
+            temperature=temperature,
+            seed=seed,
         )
     return _ChatResult(content=content, log_id=log_id)
 
@@ -383,7 +558,7 @@ def chat(
     task: str = "manual",
     format: dict | None = None,
     system: str | None = None,
-    timeout: float = DEFAULT_TIMEOUT,
+    timeout: float | None = None,
     num_ctx: int = DEFAULT_NUM_CTX,
 ) -> str:
     """Make one non-streaming local Ollama chat call and return its content.
@@ -401,7 +576,7 @@ def chat(
         task=task,
         format=format,
         system=system,
-        timeout=timeout,
+        timeout=_resolve_timeout(timeout),
         num_ctx=num_ctx,
     ).content
 
@@ -412,7 +587,7 @@ def generate(
     model: str | None = None,
     task: str = "manual",
     system: str | None = None,
-    timeout: float = DEFAULT_TIMEOUT,
+    timeout: float | None = None,
     num_ctx: int = DEFAULT_NUM_CTX,
 ) -> str:
     """Plain-text generation convenience wrapper around :func:`chat`."""
@@ -428,7 +603,7 @@ def generate(
 
 def _extract_json(text: str) -> Any:
     """Parse JSON directly, then try the outermost JSON object/array."""
-    cleaned = strip_think(text)
+    cleaned = clean_reply(text)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
@@ -444,6 +619,50 @@ def _extract_json(text: str) -> Any:
     raise ValueError("no JSON object or array found in model output")
 
 
+def _format_diagnostic_value(value: Any, *, limit: int = 600) -> str:
+    if isinstance(value, BaseModel):
+        value = value.model_dump(mode="json")
+    try:
+        rendered = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        rendered = repr(value)
+    if len(rendered) > limit:
+        return rendered[: limit - 3] + "..."
+    return rendered
+
+
+def _validation_diagnostic(
+    error: Exception, *, parsed_value: Any, invalid_output: str
+) -> str:
+    if isinstance(error, ValidationFailure) and error.details:
+        reasons = []
+        for detail in error.details:
+            field = str(detail.get("field", "<unknown>"))
+            check = str(detail.get("check", str(error)))
+            value = _format_diagnostic_value(detail.get("value"))
+            allowed_quotes = detail.get("allowed_quotes")
+            if allowed_quotes is None:
+                reasons.append(f"{field}: {check}; value={value}")
+            else:
+                allowed = _format_diagnostic_value(allowed_quotes)
+                reasons.append(f"{field}: {check}; value={value}; allowed_quotes={allowed}")
+        return f"{error}; " + " | ".join(reasons)
+
+    if isinstance(error, ValidationError):
+        reasons = []
+        for detail in error.errors(include_url=False):
+            path = ".".join(str(part) for part in detail.get("loc", ())) or "<root>"
+            message = str(detail.get("msg", "validation failed"))
+            value = _format_diagnostic_value(detail.get("input"))
+            reasons.append(f"{path}: {message}; value={value}")
+        if reasons:
+            return "; ".join(reasons)
+
+    if parsed_value is not None:
+        return f"{error}; value={_format_diagnostic_value(parsed_value)}"
+    return f"{error}; invalid_output={_format_diagnostic_value(invalid_output)}"
+
+
 def generate_json(
     prompt: str,
     schema: type[BaseModel],
@@ -451,19 +670,53 @@ def generate_json(
     model: str | None = None,
     task: str = "manual",
     system: str | None = None,
-    retries: int = 2,
-    timeout: float = DEFAULT_TIMEOUT,
+    retries: int = 1,
+    timeout: float | None = None,
     num_ctx: int = DEFAULT_NUM_CTX,
+    base_seed: int = DEFAULT_SEED,
+    attempt_offset: int = 0,
+    post_validate: Callable[[BaseModel], None] | None = None,
+    retry_instruction: str | None = None,
+    on_attempt_options: Callable[[dict[str, Any]], None] | None = None,
+    on_raw: Callable[[str], None] | None = None,
 ) -> BaseModel:
     """Generate structured output and validate it with Pydantic.
 
-    ``retries=2`` means up to three total inference calls. Each retry includes
-    the previous validation error. Transport/response failures propagate
-    immediately so callers can queue or report the task instead of hot-looping.
+    ``retries=1`` means one initial inference plus at most one validation retry.
+    The first request uses temperature 0 and ``base_seed + attempt_offset``;
+    the retry uses temperature 0.2 and the next seed. ``attempt_offset`` lets a
+    multi-stage workflow continue the same seed/temperature sequence. The retry
+    prompt includes the previous schema or ``post_validate`` error and stricter
+    instructions to check every constraint and source claim. Transport/response
+    failures propagate immediately so callers can queue or report the task
+    instead of hot-looping. If supplied, ``retry_instruction`` adds
+    workflow-specific constraints to the single retry; ``on_attempt_options``
+    receives the options before each request, and ``on_raw`` receives each
+    reply before cleanup.
     """
+    if retries < 0 or retries > 1:
+        raise ValueError("retries must be 0 or 1; at most one validation retry is allowed")
+    if attempt_offset < 0:
+        raise ValueError("attempt_offset must be non-negative")
+    timeout = _resolve_timeout(timeout)
+
     last_error: Exception | None = None
+    last_value: Any = None
+    last_output = ""
     retry_prompt = prompt
     for attempt in range(retries + 1):
+        request_number = attempt_offset + attempt
+        attempt_seed = int(base_seed) + request_number
+        attempt_temperature = (
+            DEFAULT_TEMPERATURE if request_number == 0 else RETRY_TEMPERATURE
+        )
+        options = {
+            "temperature": attempt_temperature,
+            "seed": attempt_seed,
+            "repeat_penalty": DEFAULT_REPEAT_PENALTY,
+        }
+        if on_attempt_options is not None:
+            on_attempt_options(dict(options))
         result = _chat(
             retry_prompt,
             model=model,
@@ -472,26 +725,51 @@ def generate_json(
             system=system,
             timeout=timeout,
             num_ctx=num_ctx,
+            temperature=attempt_temperature,
+            seed=attempt_seed,
+            on_raw=on_raw,
         )
+        candidate_value: Any = None
         try:
-            return schema.model_validate(_extract_json(result.content))
+            candidate_value = schema.model_validate(_extract_json(result.content))
+            if post_validate is not None:
+                post_validate(candidate_value)
+            return candidate_value
         except (ValueError, ValidationError) as exc:
             last_error = exc
+            last_value = candidate_value
+            last_output = result.content
             _mark_error_log_best_effort(
                 result.log_id, task=task, status="error:invalid_json"
             )
             logger.warning(
-                "generate_json task=%s attempt %d/%d returned invalid output: %s",
+                "generate_json task=%s attempt %d/%d returned invalid output (%s)",
                 task,
-                attempt + 1,
-                retries + 1,
-                exc,
+                request_number + 1,
+                attempt_offset + retries + 1,
+                type(exc).__name__,
+            )
+            retry_feedback = _validation_diagnostic(
+                exc, parsed_value=candidate_value, invalid_output=result.content
             )
             retry_prompt = (
                 prompt
-                + f"\n\nYour previous answer was invalid: {last_error}. "
-                "Return only valid JSON matching the schema."
+                + f"\n\nYour previous answer was invalid: {retry_feedback}. "
+                "This is the only retry. Correct the reported issue, follow every schema field, "
+                "allowed value, range, and validation constraint exactly, and re-check every "
+                "factual claim against the supplied source data. Do not invent or paraphrase "
+                "source facts. Return only valid JSON matching the schema."
             )
-    raise InvalidJsonResponse(
-        f"Model did not return valid {schema.__name__} after {retries + 1} attempts: {last_error}"
+            if retry_instruction:
+                retry_prompt += f"\nAdditional workflow checks: {retry_instruction}"
+    reason = (
+        _validation_diagnostic(
+            last_error, parsed_value=last_value, invalid_output=last_output
+        )
+        if last_error is not None
+        else "unknown validation error"
     )
+    raise InvalidJsonResponse(
+        f"Model did not return valid {schema.__name__} after {retries + 1} attempts; "
+        f"last validation failure: {reason}"
+    ) from last_error

@@ -1,0 +1,1248 @@
+<!doctype html>
+<html lang="en" data-type="software" data-radius="soft" data-buttons="solid">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f2ec">
+  <meta name="page-type" content="software">
+  <meta name="site-kind" content="software">
+  <meta name="description" content="A local workspace for product context, prospect research and reviewed Email Drafts.">
+  <meta property="og:title" content="Harvey · Prospect workflows">
+  <meta property="og:description" content="A local workspace for product context, prospect research and reviewed Email Drafts.">
+  <meta property="og:type" content="website">
+  <title>Harvey · Prospect workspace</title>
+  <style>
+    :root{
+      color-scheme:light;
+      --canvas:#f3f2ec;
+      --paper:#fffefa;
+      --paper-soft:#f8f8f2;
+      --ink:#1b2d25;
+      --muted:#43544a;
+      --quiet:#5e6f64;
+      --line:#dce1d8;
+      --line-strong:#c5cec2;
+      --forest:#173b2d;
+      --forest-2:#244f3b;
+      --moss:#dce7ac;
+      --amber:#a9621c;
+      --amber-soft:#f7ead3;
+      --red:#a33d32;
+      --red-soft:#f6e5e1;
+      --blue:#315a70;
+      --radius-xl:22px;
+      --radius-lg:16px;
+      --radius-md:11px;
+      --shadow:0 12px 32px rgba(24,43,33,.055);
+      --focus:#4e7336;
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:auto;scroll-padding-top:24px}
+    body{margin:0;background:var(--canvas);color:var(--ink);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+    button,input,select{font:inherit}
+    button,a,input,select{outline-offset:3px}
+    button{cursor:pointer}
+    button:disabled{cursor:not-allowed;opacity:1;transform:none!important}
+    .button:disabled:not(.button-primary){background:#f3f5f0;color:#5d6d62;border-color:#d5ddd3}
+    .button-primary:disabled{background:#5f786b;color:#fff;border-color:#5f786b}
+    a{color:inherit}
+    .skip-link{position:fixed;z-index:30;top:12px;left:12px;padding:11px 15px;border-radius:8px;background:var(--moss);color:var(--ink);font-weight:700;transform:translateY(-160%);transition:transform .16s ease}
+    .skip-link:focus{transform:translateY(0)}
+    :focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+    .sidebar :focus-visible{outline-color:var(--moss)}
+    .app-shell{min-height:100vh;display:grid;grid-template-columns:248px minmax(0,1fr)}
+    .sidebar{position:sticky;top:0;height:100vh;padding:25px 17px 18px;background:var(--forest);color:#f5f7ed;display:flex;flex-direction:column;gap:35px;z-index:5}
+    .brand{min-height:44px;display:flex;align-items:center;gap:11px;padding:2px 10px;text-decoration:none}
+    .brand-mark{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:var(--moss);color:var(--forest);font:700 20px/1 Georgia,serif;letter-spacing:-.06em}
+    .brand-copy{display:grid;gap:1px}
+    .brand-name{font-size:15px;line-height:1.2;font-weight:750;letter-spacing:.13em}
+    .brand-caption{font-size:11px;color:#c6d5ca;letter-spacing:.02em}
+    .side-label,.eyebrow{margin:0;color:var(--quiet);font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase}
+    .sidebar .side-label{padding:0 12px;color:#adc1b1}
+    .side-nav{display:grid;gap:5px}
+    .side-link{min-height:44px;display:flex;align-items:center;gap:12px;padding:0 12px;border-radius:10px;text-decoration:none;color:#d7e1d8;font-size:13px;font-weight:560;transition:background .16s ease,color .16s ease,transform .16s ease}
+    .side-link:hover,.side-link:focus-visible{background:rgba(255,255,255,.095);color:#fff;transform:translateX(2px)}
+    .side-link[aria-current="page"]{background:rgba(220,231,172,.16);color:#fff}
+    .nav-mark{width:23px;height:23px;display:grid;place-items:center;border:1px solid rgba(230,239,226,.26);border-radius:7px;color:var(--moss);font:700 10px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.02em}
+    .sidebar-bottom{margin-top:auto;padding:15px 12px 4px;border-top:1px solid rgba(230,239,226,.18);display:grid;gap:9px}
+    .local-note{display:flex;align-items:center;gap:9px;font-size:12px;color:#e2eadc}
+    .local-note .dot,.status-dot{width:8px;height:8px;flex:0 0 auto;border-radius:50%;background:#a9c86d;box-shadow:0 0 0 3px rgba(169,200,109,.15)}
+    .local-note small{color:#b8cabc;font-size:11px}
+    .main-area{min-width:0}
+    .main-wrap{width:min(1420px,100%);margin:0 auto;padding:30px clamp(20px,3.2vw,48px) 42px}
+    .topbar{min-height:38px;display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:23px}
+    .topbar-actions{display:flex;align-items:center;gap:9px}
+    .crumb{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12px}
+    .crumb .separator{color:#a5aea4}
+    .local-badge{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid #cad8c4;border-radius:99px;background:#edf3e8;color:#294b37;font-size:11px;font-weight:750;letter-spacing:.075em}
+    .local-badge .status-dot{width:7px;height:7px;box-shadow:none}
+    .intro-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(370px,.92fr);align-items:end;gap:30px;margin-bottom:21px}
+    .intro-copy{max-width:650px}
+    .intro-copy .eyebrow{margin-bottom:9px;color:#53705d}
+    h1,h2,h3,p{margin-top:0}
+    h1{margin-bottom:8px;font:500 clamp(30px,3.2vw,42px)/1.08 Georgia,"Times New Roman",serif;letter-spacing:-.035em;color:#1e3429}
+    .intro-lede{max-width:580px;margin:0;color:var(--muted);font-size:14px;line-height:1.65}
+    .workflow-map{min-height:104px;padding:15px 18px 14px;border:1px solid #d7ded2;border-radius:var(--radius-lg);background:var(--paper);box-shadow:0 4px 18px rgba(28,47,35,.035)}
+    .workflow-map-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:13px}
+    .workflow-map-title{margin:0;color:#627168;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+    .workflow-map-note{color:#68776d;font-size:11px}
+    .workflow-track{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:center;list-style:none;margin:0;padding:0}
+    .workflow-track li{position:relative;min-width:0;display:flex;align-items:center;gap:7px;color:#33483a;font-size:11px;font-weight:650;white-space:nowrap}
+    .workflow-track li:not(:last-child)::after{content:"";height:1px;flex:1;min-width:8px;margin:0 6px;background:#bdcbb7}
+    .step-mark{width:23px;height:23px;flex:0 0 auto;display:grid;place-items:center;border-radius:8px;background:#edf2e5;color:#37543c;font-size:10px;font-weight:800}
+    .workflow-track li:nth-child(3) .step-mark{background:var(--forest);color:#f5f6e9}
+    .status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}
+    .status-card{min-height:92px;display:flex;align-items:center;gap:13px;padding:15px 17px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--paper)}
+    .status-icon{width:37px;height:37px;flex:0 0 auto;display:grid;place-items:center;border-radius:11px;background:#edf1e7;color:var(--forest);font-size:12px;font-weight:800;letter-spacing:.02em}
+    .status-card:nth-child(2) .status-icon{background:#f4eedb;color:#715722}
+    .status-card:nth-child(3) .status-icon{background:#e8eef0;color:#3d5e69}
+    .status-card-label{margin:0 0 2px;color:#5c6b61;font-size:11px;font-weight:650;letter-spacing:.07em;text-transform:uppercase}
+    .status-card-value{margin:0;color:#263b2e;font-size:14px;font-weight:700;line-height:1.35;overflow-wrap:anywhere}
+    .status-card-detail{margin:2px 0 0;color:#66756a;font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+    .status-card-value[data-state="available"]{color:#2f6a3f}
+    .status-card-value[data-state="unavailable"],.status-card-value[data-state="error"]{color:var(--red)}
+    .status-card-value[data-state="slow"]{color:var(--amber)}
+    .main-grid{display:grid;grid-template-columns:minmax(0,1.18fr) minmax(340px,.82fr);gap:18px;align-items:start}
+    .left-stack,.right-stack{display:grid;gap:18px;min-width:0}
+    .panel{min-width:0;border:1px solid var(--line);border-radius:var(--radius-xl);background:var(--paper);box-shadow:var(--shadow)}
+    .panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:21px 22px 15px}
+    .panel-head h2{margin:3px 0 0;font-size:16px;font-weight:720;letter-spacing:-.015em}
+    .panel-head .eyebrow{font-size:10px;color:#748177}
+    .panel-body{padding:0 22px 22px}
+    .product-selector-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px}
+    .field{display:grid;gap:6px;min-width:0}
+    .field label{color:#506158;font-size:12px;font-weight:650}
+    input,select{width:100%;min-height:44px;padding:10px 12px;border:1px solid #cfd7cd;border-radius:9px;background:#fff;color:var(--ink)}
+    input::placeholder{color:#78867d}
+    input:focus,select:focus{border-color:var(--forest);outline:3px solid var(--forest);box-shadow:0 0 0 3px var(--moss)}
+    .button{min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border:1px solid transparent;border-radius:9px;background:#e9eee5;color:#284533;font-size:12px;font-weight:700;text-align:center;transition:background .16s ease,border-color .16s ease,transform .16s ease}
+    .button:hover:not(:disabled){background:#dfe8d9;border-color:#c3d0bd;transform:translateY(-1px)}
+    .button:active:not(:disabled){transform:translateY(1px)}
+    .button-primary{background:var(--forest);color:#fff}
+    .button-primary:hover:not(:disabled){background:#254f3b;border-color:#254f3b}
+    .button-outline{border-color:#cad4c8;background:transparent;color:#294534}
+    .button-outline:hover:not(:disabled){background:#f2f5ee}
+    .button-small{min-height:44px;padding:9px 11px;font-size:11px}
+    .button-full{width:100%}
+    .product-count{min-width:78px;padding:8px 11px;border:1px solid #e0e4dc;border-radius:9px;background:#f7f8f3;text-align:center}
+    .product-count strong{display:block;font:500 20px/1.15 Georgia,serif;color:#294735}
+    .product-count span{display:block;color:#59685e;font-size:10px}
+    .product-tools{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}
+    .product-tools .button{flex:1 1 130px}
+    .pipeline-limit-field{max-width:230px;margin-top:13px}
+    details.create-product{margin-top:15px;border-top:1px solid #e8ebe5;padding-top:13px}
+    details.create-product summary{min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:10px;color:#33563e;font-size:12px;font-weight:700;cursor:pointer;list-style:none}
+    details.create-product summary::-webkit-details-marker{display:none}
+    details.create-product summary::after{content:"+";width:22px;height:22px;display:grid;place-items:center;border:1px solid #d1dbcd;border-radius:7px;font-size:15px;font-weight:500}
+    details.create-product[open] summary::after{content:"−"}
+    .create-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:12px}
+    .create-grid .field:first-child{grid-column:1/-1}
+    .field-hint{margin:0;color:#6b786f;font-size:11px}
+    .form-error{grid-column:1/-1;margin:0;padding:9px 11px;border:1px solid #e5c9c4;border-radius:8px;background:var(--red-soft);color:#7e3028;font-size:12px;font-weight:650}
+    .create-submit{grid-column:1/-1;justify-self:start}
+    .count-pill{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:25px;padding:0 7px;border-radius:99px;background:#eff3e9;color:#36513b;font-size:11px;font-weight:750}
+    #prospects{display:grid;gap:7px;max-height:400px;overflow:auto;padding-right:3px}
+    .prospect{width:100%;min-height:61px;display:grid;grid-template-columns:34px minmax(0,1fr) 18px;align-items:center;gap:11px;padding:9px 11px;border:1px solid transparent;border-radius:11px;background:#f8f9f5;color:var(--ink);text-align:left;transition:background .15s ease,border-color .15s ease,transform .15s ease}
+    .prospect:hover{border-color:#d4dfce;background:#f1f5ec;transform:translateX(2px)}
+    .prospect[aria-pressed="true"]{border-color:#9db18c;background:#edf3e7;box-shadow:inset 3px 0 0 #4f754b}
+    .prospect-index{width:31px;height:31px;display:grid;place-items:center;border-radius:9px;background:#e9eee5;color:#48644c;font-size:10px;font-weight:800;font-variant-numeric:tabular-nums}
+    .prospect-copy{min-width:0;display:grid;gap:2px}
+    .prospect-name{overflow:hidden;color:#25382d;font-size:12px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+    .prospect-meta{overflow:hidden;color:#6a786e;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+    .prospect-arrow{color:#7d8b80;font-size:17px;text-align:center}
+    .empty-state{min-height:100px;display:grid;align-content:center;gap:5px;padding:17px;border:1px dashed #cbd5c8;border-radius:12px;background:#fafbf8}
+    .empty-state strong{color:#374d3c;font-size:13px}
+    .empty-state span{max-width:42ch;color:#58685e;font-size:12px}
+    .selection-card{padding:18px;border:1px solid #cbd7c5;border-radius:15px;background:#f5f7ef}
+    .selection-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .selection-placeholder{width:39px;height:39px;display:grid;place-items:center;border-radius:12px;background:#e3ebdc;color:#33523a;font:500 18px/1 Georgia,serif}
+    .selection-company{margin:0 0 3px;font:500 19px/1.25 Georgia,"Times New Roman",serif;color:#20382a;overflow-wrap:anywhere}
+    .selection-title{margin:0;color:#66756b;font-size:12px}
+    .selection-id{display:inline-flex;margin-top:14px;padding:5px 8px;border:1px solid #d8dfd3;border-radius:99px;color:#5c6a61;font-size:10px;font-weight:650;font-variant-numeric:tabular-nums}
+    .action-group{display:grid;gap:10px;margin-top:16px}
+    .action-group + .action-group{padding-top:15px;border-top:1px solid #e6eae2}
+    .action-heading{margin:0;color:#64736a;font-size:10px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
+    .action-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .action-grid .button{min-width:0}
+    .action-grid .button-primary,#ranking,#view-draft{grid-column:1/-1}
+    .helper-line{margin:12px 0 0;color:#68766d;font-size:11px;line-height:1.5}
+    .reply-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:end}
+    .reply-row .button{min-width:146px}
+    .section-note{max-width:58ch;margin:0;color:#68766e;font-size:12px;line-height:1.55}
+    .prospect-import-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px 12px;align-items:end;margin:14px 0;padding:12px;border:1px solid #dfe6dc;border-radius:12px;background:#f8faf6}
+    .prospect-import-form .field{gap:5px}
+    .prospect-import-form input[type="file"]{min-height:42px;padding:6px;font-size:11px}
+    .prospect-import-submit{min-width:128px}
+    .prospect-import-status{grid-column:1/-1;min-height:16px;margin:0;color:#58685e;font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+    .prospect-import-status[data-error="true"]{color:#8b3028;font-weight:650}
+    .result-panel{margin-top:18px;overflow:hidden}
+    .result-head{align-items:center}
+    .result-state{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid #d8dfd5;border-radius:99px;background:#f5f7f2;color:#526257;font-size:10px;font-weight:700}
+    .result-state::before{content:"";width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:#a8b5a9}
+    .result-state[data-state="succeeded"],.result-state[data-state="done"]{border-color:#c2d4bb;background:#edf4e8;color:#2f6a3f}
+    .result-state[data-state="failed"]{border-color:#e5c9c4;background:var(--red-soft);color:#8b342b}
+    .result-state[data-state="queued"],.result-state[data-state="running"]{border-color:#e7d7b9;background:#fbf3e5;color:#795318}
+    .result-state[data-waiting="true"]::before{width:10px;height:10px;border:2px solid #c4d2bd;border-top-color:#294b37;border-radius:50%;background:transparent;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .result-content{display:grid;gap:12px}
+    .result-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#66756b;font-size:11px}
+    .result-badge{display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border:1px solid #d8dfd5;border-radius:99px;background:#f5f7f2;color:#45564b;font-weight:750;text-transform:capitalize}
+    .result-badge[data-state="succeeded"]{border-color:#c2d4bb;background:#edf4e8;color:#2f6a3f}
+    .result-badge[data-state="failed"]{border-color:#e5c9c4;background:var(--red-soft);color:#8b342b}
+    .result-badge[data-state="queued"],.result-badge[data-state="running"]{border-color:#e7d7b9;background:#fbf3e5;color:#795318}
+    .result-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+    .pipeline-progress{display:grid;gap:7px;max-height:520px;overflow:auto;margin:0;padding:0;list-style:none}
+    .pipeline-step{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:10px 12px;border:1px solid #dce3d9;border-radius:10px;background:#fbfcf8}
+    .pipeline-step strong{color:#334b3a;font-size:12px;font-weight:700}
+    .pipeline-step small{grid-column:1/-1;color:#66756b;font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+    .pipeline-step-status{align-self:start;padding:3px 7px;border-radius:99px;background:#eef1eb;color:#56655b;font-size:9px;font-weight:750;text-transform:uppercase}
+    .pipeline-step[data-state="done"] .pipeline-step-status{background:#edf4e8;color:#2f6a3f}
+    .pipeline-step[data-state="failed"] .pipeline-step-status{background:var(--red-soft);color:#8b342b}
+    .pipeline-step[data-state="queued"] .pipeline-step-status,.pipeline-step[data-state="running"] .pipeline-step-status{background:#fbf3e5;color:#795318}
+    .result-card{min-width:0;padding:14px 15px;border:1px solid #dce3d9;border-radius:12px;background:#fbfcf8}
+    .result-card h3{margin:0 0 7px;color:#334b3a;font-size:12px;font-weight:750;letter-spacing:.015em}
+    .result-card p{margin:0;color:#35483b;font-size:13px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
+    .result-card ul{display:grid;gap:6px;margin:0;padding-left:19px;color:#35483b;font-size:12px;line-height:1.55}
+    .result-card dl,.technical-list{display:grid;gap:7px;margin:0}
+    .result-card dl div,.technical-list div{display:grid;grid-template-columns:minmax(90px,.4fr) minmax(0,1fr);gap:10px}
+    .result-card dt,.technical-list dt{color:#647369;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+    .result-card dd,.technical-list dd{margin:0;color:#35483b;font-size:12px;overflow-wrap:anywhere;white-space:pre-wrap}
+    .ranking-method-note{margin:0;padding:10px 12px;border:1px solid #d7e0cf;border-radius:10px;background:#f2f6ec;color:#435847;font-size:11px;line-height:1.5}
+    .ranking-result-card{grid-column:1/-1}
+    .ranking-score-summary{margin:0 0 10px!important;color:#244d35!important;font-size:15px!important;font-weight:750}
+    .score-components{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0!important;padding:0!important;list-style:none}
+    .score-component{display:grid;gap:4px;padding:10px 11px;border:1px solid #e0e6dd;border-radius:9px;background:#fff}
+    .score-component strong{color:#465b4c;font-size:10px;letter-spacing:.055em;text-transform:uppercase}
+    .score-component span{color:#34483a;font-size:11px;line-height:1.4}
+    .ranking-missing-note{margin:10px 0 0!important;padding:8px 10px;border-radius:8px;background:#fbf3e5;color:#72501c!important;font-size:11px!important}
+    .ranking-explanation{margin-top:10px}
+    .result-error{padding:12px 14px;border:1px solid #e5c9c4;border-radius:11px;background:var(--red-soft);color:#7e3028;font-size:12px;line-height:1.55}
+    .result-details{border-top:1px solid #e5e9e2;padding-top:9px}
+    .result-details summary{min-height:36px;display:flex;align-items:center;color:#4a5d50;font-size:11px;font-weight:700;cursor:pointer}
+    .technical-list{margin:8px 0 12px}
+    pre{max-height:430px;overflow:auto;margin:0;padding:14px 15px;border:1px solid #d7ddd4;border-radius:10px;background:#f2f5ee;color:#34473a;font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;tab-size:2;white-space:pre-wrap;overflow-wrap:anywhere}
+    .output-wrap{padding:0 22px 22px}
+    .footer-bar{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-top:18px;padding-top:15px;border-top:1px solid #d8ded6;color:#536258}
+    .footer-bar p{margin:0;font-size:10px;line-height:1.6;overflow-wrap:anywhere}
+    .footer-bar p:first-child{max-width:75%}
+    .footer-privacy{font-size:10px;font-weight:650;white-space:nowrap}
+    .status-offline .status-dot{background:#d29b56;box-shadow:none}
+    .status-failed .status-dot{background:#c65d4d;box-shadow:none}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    @media(max-width:1120px){
+      .intro-row{grid-template-columns:1fr;gap:17px}
+      .workflow-map{max-width:700px}
+      .main-grid{grid-template-columns:minmax(0,1fr) minmax(300px,.82fr)}
+    }
+    @media(max-width:900px){
+      .app-shell{grid-template-columns:1fr}
+      .sidebar{position:relative;height:auto;min-height:0;padding:14px 18px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px}
+      .brand{padding:0}
+      .side-label,.sidebar-bottom{display:none}
+      .side-nav{display:flex;justify-content:center;gap:4px;overflow-x:auto}
+      .side-link{min-height:44px;padding:0 10px;white-space:nowrap}
+      .nav-mark{display:none}
+      .main-wrap{padding-top:23px}
+    }
+    @media(max-width:680px){
+      .sidebar{grid-template-columns:1fr;gap:11px;padding:13px 16px 9px}
+      .brand{justify-self:start}
+      .side-nav{justify-content:flex-start;padding-bottom:2px}
+      .side-link{min-height:44px;font-size:11px}
+      .main-wrap{padding:19px 14px 28px}
+      .topbar{margin-bottom:17px;align-items:flex-start;flex-wrap:wrap}
+      .topbar-actions{flex-wrap:wrap;justify-content:flex-end}
+      .intro-row{margin-bottom:16px}
+      h1{font-size:34px}
+      .intro-lede{font-size:13px}
+      .workflow-map{padding:13px}
+      .workflow-map-note{display:none}
+      .workflow-track li{display:grid;justify-items:center;gap:5px;white-space:normal;text-align:center;font-size:9px;line-height:1.25}
+      .workflow-track li:not(:last-child)::after{position:absolute;left:calc(50% + 15px);top:11px;width:calc(100% - 30px);margin:0;z-index:0}
+      .step-mark{position:relative;z-index:1}
+      .status-grid{grid-template-columns:1fr;gap:8px;margin-bottom:13px}
+      .status-card{min-height:75px;padding:12px 14px}
+      .status-icon{width:34px;height:34px}
+      .main-grid{grid-template-columns:1fr;gap:13px}
+      .left-stack,.right-stack{gap:13px}
+      .panel{border-radius:17px}
+      .panel-head{padding:17px 16px 13px}
+      .panel-body{padding:0 16px 17px}
+      .product-selector-row{grid-template-columns:minmax(0,1fr) 65px;gap:8px}
+      .prospect-import-form{grid-template-columns:minmax(0,1fr)}
+      .prospect-import-submit{width:100%}
+      .prospect-import-status{grid-column:auto}
+      .product-count{min-width:0;padding:7px 5px}
+      .product-count strong{font-size:18px}
+      .create-grid{grid-template-columns:1fr}
+      .create-grid .field:first-child,.create-submit{grid-column:auto}
+      .create-submit{width:100%}
+      .selection-card{padding:15px}
+      .action-grid{grid-template-columns:1fr}
+      .action-grid .button{padding:10px 12px;font-size:12px}
+      .reply-row{grid-template-columns:1fr}
+      .reply-row .button{width:100%}
+      .output-wrap{padding:0 16px 17px}
+      pre{min-height:115px;padding:14px;font-size:11px}
+      .footer-bar{display:grid;gap:8px}
+      .footer-bar p:first-child{max-width:none}
+    }
+    @media(max-width:360px){
+      .action-grid{grid-template-columns:1fr}
+      .action-grid .button-primary{grid-column:auto}
+      .product-tools{display:grid;grid-template-columns:1fr}
+      .local-badge{font-size:10px}
+    }
+    @media(prefers-reduced-motion:reduce){
+      *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Workspace navigation">
+      <a class="brand" href="#main-content" aria-label="Harvey workspace home">
+        <span class="brand-mark" aria-hidden="true">H</span>
+        <span class="brand-copy"><span class="brand-name">HARVEY</span><span class="brand-caption">Sales workspace</span></span>
+      </a>
+      <nav class="side-nav" aria-label="Main navigation">
+        <a class="side-link" href="#main-content" aria-current="page"><span class="nav-mark" aria-hidden="true">01</span>Overview</a>
+        <a class="side-link" href="#product-panel"><span class="nav-mark" aria-hidden="true">02</span>Products</a>
+        <a class="side-link" href="#prospect-panel"><span class="nav-mark" aria-hidden="true">03</span>Prospects</a>
+        <a class="side-link" href="#reply-panel"><span class="nav-mark" aria-hidden="true">04</span>Replies</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="local-note"><span class="dot" aria-hidden="true"></span><span>Local-only service</span></div>
+        <small>Inference stays on this machine.</small>
+      </div>
+    </aside>
+
+    <div class="main-area">
+      <main class="main-wrap" id="main-content">
+        <div class="topbar">
+          <div class="crumb"><span>Workspace</span><span class="separator" aria-hidden="true">/</span><span>Overview</span></div>
+          <div class="topbar-actions">
+            <div class="local-badge"><span class="status-dot" aria-hidden="true"></span><span>LOCAL ONLY</span></div>
+            <button class="button button-outline button-small" id="retry-queue" type="button">Retry queued tasks</button>
+          </div>
+        </div>
+
+        <section class="intro-row" aria-labelledby="page-title">
+          <div class="intro-copy">
+            <p class="eyebrow">Harvey · Local sales workspace</p>
+            <h1 id="page-title">Prospect workflows</h1>
+            <p class="intro-lede">Run the full product workflow locally, from stored company context through explainable ranking and reviewed Email Drafts that are never automatically sent.</p>
+          </div>
+          <div class="workflow-map" role="group" aria-label="Workflow sequence">
+            <div class="workflow-map-top"><p class="workflow-map-title">Workflow sequence</p><span class="workflow-map-note">Stored context to reviewed outreach</span></div>
+            <ol class="workflow-track">
+              <li><span class="step-mark">P</span><span>Profile + ICP</span></li>
+              <li><span class="step-mark">S</span><span>Signals</span></li>
+              <li><span class="step-mark">PS</span><span>Problem</span></li>
+              <li><span class="step-mark">D</span><span>Email Draft</span></li>
+              <li><span class="step-mark">R</span><span>Ranking</span></li>
+            </ol>
+          </div>
+        </section>
+
+        <section class="status-grid" aria-label="Local service status">
+          <article class="status-card">
+            <span class="status-icon" aria-hidden="true">AI</span>
+            <div><p class="status-card-label">Local inference</p><p class="status-card-value" id="status" role="status">Checking Ollama…</p><p class="status-card-detail" id="model-detail">Model details load from the local API.</p></div>
+          </article>
+          <article class="status-card">
+            <span class="status-icon" aria-hidden="true">Q</span>
+            <div><p class="status-card-label">Task queue</p><p class="status-card-value" id="queue-count">Checking queue…</p><p class="status-card-detail" id="queue-detail">Queued work stays in the local database.</p></div>
+          </article>
+          <article class="status-card">
+            <span class="status-icon" aria-hidden="true">HW</span>
+            <div><p class="status-card-label">Hardware profile</p><p class="status-card-value" id="hardware" role="status">Checking hardware…</p><p class="status-card-detail" id="hardware-detail">Recommendation loads from this machine.</p></div>
+          </article>
+        </section>
+
+        <div class="main-grid">
+          <div class="left-stack">
+            <section class="panel" id="product-panel" aria-labelledby="product-heading">
+              <div class="panel-head"><div><h2 id="product-heading">Product context</h2></div><span class="product-count"><strong id="product-count">—</strong><span>products</span></span></div>
+              <div class="panel-body">
+                <div class="product-selector-row">
+                  <div class="field"><label for="products">Active product</label><select id="products" aria-describedby="product-help"><option value="">Select a product</option></select><p class="field-hint" id="product-help">Profiles and ICPs are stored per product.</p></div>
+                  <div class="product-count"><strong id="prospect-count">—</strong><span>prospects</span></div>
+                </div>
+                <div class="field pipeline-limit-field">
+                  <label for="pipeline-prospect-limit">Prospects in this full run</label>
+                  <input id="pipeline-prospect-limit" type="number" min="1" step="1" value="3" inputmode="numeric" aria-describedby="pipeline-limit-help">
+                  <p class="field-hint" id="pipeline-limit-help">Default: 3 prospects. Increase the limit for a longer run.</p>
+                </div>
+                <div class="product-tools">
+                  <button class="button button-primary" id="run-pipeline" type="button" data-requires-product disabled>Run full product workflow</button>
+                  <button class="button button-outline" id="view-pipeline" type="button" data-requires-product disabled>View latest progress</button>
+                  <button class="button button-outline" data-workflow="profile" type="button" disabled>Generate profile</button>
+                  <button class="button button-outline" data-view-workflow="profile" type="button" disabled>View profile</button>
+                  <button class="button button-outline" data-workflow="icp" type="button" disabled>Generate ICP</button>
+                  <button class="button button-outline" data-view-workflow="icp" type="button" disabled>View ICP</button>
+                  <button class="button button-outline" id="delete-product" type="button" data-requires-product disabled>Delete product</button>
+                </div>
+                <p class="helper-line">The run processes up to the selected number of prospects in stable ID order. Each adds signals, a problem statement, and a draft; deterministic ranking remains product-wide. Progress is saved per step.</p>
+                <details class="create-product">
+                  <summary>Create a product</summary>
+                  <form id="product-form" class="create-grid">
+                    <div class="field"><label for="product-name">Product name</label><input id="product-name" name="name" required maxlength="200" autocomplete="organization"></div>
+                    <div class="field"><label for="product-description">Description</label><input id="product-description" name="description" maxlength="500"></div>
+                    <div class="field"><label for="docs-path">Local company-info path</label><input id="docs-path" name="docs_path" autocomplete="off"><p class="field-hint">Use a repository-relative file path.</p></div>
+                    <p id="product-form-status" class="sr-only" role="status" aria-live="polite"></p>
+                    <p id="product-form-error" class="form-error" role="alert" hidden></p>
+                    <button id="create-product-button" class="button button-primary create-submit" type="submit">Create product</button>
+                  </form>
+                </details>
+              </div>
+            </section>
+
+            <section class="panel" id="prospect-panel" aria-labelledby="prospect-heading">
+              <div class="panel-head"><div><h2 id="prospect-heading">Prospects</h2></div><span class="count-pill" id="prospect-list-count" aria-label="Prospect count">0</span></div>
+              <div class="panel-body">
+                <p class="section-note" id="prospect-intro">Choose a product to load its stored prospects.</p>
+                <form id="prospect-import-form" class="prospect-import-form">
+                  <div class="field">
+                    <label for="prospect-csv">Import prospects from CSV</label>
+                    <input id="prospect-csv" name="prospect_csv" type="file" accept=".csv,text/csv" required aria-describedby="prospect-import-help">
+                    <p class="field-hint" id="prospect-import-help">Required column: company_name. Optional columns: contact_name, contact_title, company_domain, employee_count, contact_email, page_text_path, do_not_contact. Page text paths must be local.</p>
+                  </div>
+                  <button id="prospect-import-button" class="button button-outline prospect-import-submit" type="submit" data-requires-product disabled>Import CSV</button>
+                  <p id="prospect-import-status" class="prospect-import-status" role="status" aria-live="polite"></p>
+                </form>
+                <div id="prospects" aria-live="polite"><div class="empty-state"><strong>No product selected</strong><span>Select a stored product to see its prospects.</span></div></div>
+              </div>
+            </section>
+          </div>
+
+          <div class="right-stack">
+            <section class="panel" aria-labelledby="selected-heading">
+              <div class="panel-head"><div><h2 id="selected-heading">Selected prospect</h2></div></div>
+              <div class="panel-body">
+                <div class="selection-card" id="selection-card" aria-live="polite">
+                  <div class="selection-top"><div><p class="selection-company" id="selected-company">No prospect selected</p><p class="selection-title" id="selected-title">Choose a prospect from the list.</p></div><span class="selection-placeholder" id="selection-mark" aria-hidden="true">—</span></div>
+                  <span class="selection-id" id="selected-id">No record selected</span>
+                </div>
+                <div class="action-group">
+                  <p class="action-heading">Research</p>
+                  <div class="action-grid">
+                    <button class="button button-outline" id="signals" type="button" data-requires-prospect disabled>Extract signals</button>
+                    <button class="button button-outline" id="view-signals" type="button" data-requires-prospect disabled>View latest signals</button>
+                    <button class="button button-outline" id="ranking" type="button" data-requires-product disabled>Refresh ranking</button>
+                  </div>
+                </div>
+                <div class="action-group">
+                  <p class="action-heading">Prepare outreach</p>
+                  <div class="action-grid">
+                    <button class="button button-primary" id="problem-statement" type="button" data-requires-prospect disabled>Generate problem statement</button>
+                    <button class="button button-outline" id="view-problem-statement" type="button" data-requires-prospect disabled>View latest problem statement</button>
+                    <button class="button button-outline" id="draft" type="button" data-requires-prospect disabled>Draft Email</button>
+                    <button class="button button-outline" id="view-draft" type="button" data-requires-prospect disabled>View Email Draft</button>
+                  </div>
+                  <p class="helper-line">Email Drafts are saved for review only. This local workflow never sends them.</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel" id="reply-panel" aria-labelledby="reply-heading">
+              <div class="panel-head"><div><h2 id="reply-heading">Reply classification</h2></div></div>
+              <div class="panel-body">
+                <form id="reply-form" class="reply-row">
+                  <div class="field"><label for="reply-id">Reply ID</label><input id="reply-id" name="reply_id" placeholder="R001" pattern="R[0-9]{3}" required autocomplete="off"></div>
+                  <p id="reply-form-status" class="sr-only" role="status" aria-live="polite"></p>
+                  <button class="button button-outline" type="submit">Classify reply</button>
+                </form>
+                <p class="helper-line">The classifier reads the stored reply. Labels remain separate from model input.</p>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <section class="panel result-panel" id="result-panel" aria-labelledby="result-heading">
+          <div class="panel-head result-head"><div><h2 id="result-heading">Latest result</h2></div><span class="result-state" id="result-status" role="status" aria-live="polite">Waiting for a workflow</span></div>
+          <div class="output-wrap"><div id="output" class="result-content" aria-live="polite">Choose a product and prospect, then run a workflow. Results appear here.</div></div>
+        </section>
+
+        <footer class="footer-bar">
+          <p id="traceability" aria-live="polite">Build and inference traceability: checking local API status…</p>
+          <p class="footer-privacy">Local inference · Email Drafts never sent</p>
+        </footer>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const output = $("output"), products = $("products"), prospects = $("prospects");
+    let selectedProspect = null;
+    let productRows = [];
+    let importingProspects = false;
+    const WORKFLOW_POLL_INTERVAL_MS = 2000;
+    const WORKFLOW_MAX_WAIT_MS = 10 * 60 * 1000;
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, options);
+      const text = await response.text();
+      let data;
+      try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${typeof data === "string" ? data : JSON.stringify(data)}`);
+      return data;
+    }
+
+    function humanErrorMessage(error) {
+      const message = String(error?.message || error || "Request failed");
+      const separator = message.indexOf(": ");
+      if (message.startsWith("HTTP ") && separator >= 0) {
+        const body = message.slice(separator + 2);
+        try {
+          const parsed = JSON.parse(body);
+          if (parsed && typeof parsed.detail === "string") return parsed.detail;
+          if (parsed && typeof parsed.message === "string") return parsed.message;
+        } catch { /* Keep the plain response text below. */ }
+        return body;
+      }
+      return message;
+    }
+
+    function humanLabel(key) {
+      const labels = {
+        summary: "Summary",
+        value_proposition: "Value proposition",
+        key_features: "Key features",
+        pain_points_solved: "Problems addressed",
+        differentiators: "Differentiators",
+        typical_buyer: "Typical buyer",
+        typical_team_size: "Typical team size",
+        working_situation: "Working situation",
+        not_for: "Not a fit for",
+        industries: "Industries",
+        company_size: "Company size",
+        buyer_titles: "Buyer titles",
+        pain_points: "Pain points",
+        trigger_events: "Trigger events",
+        disqualifiers: "Disqualifiers",
+        evidence_used: "Facts used",
+        evidence: "Evidence",
+        confidence: "Confidence",
+        rationale: "Reasoning",
+        score_breakdown: "Score breakdown",
+        steps: "Workflow steps",
+      };
+      return labels[key] || String(key).replaceAll("_", " ").replace(/\b\w/g, letter => letter.toUpperCase());
+    }
+
+    function valueNode(value) {
+      if (Array.isArray(value)) {
+        const list = document.createElement("ul");
+        value.forEach(item => {
+          const entry = document.createElement("li");
+          entry.append(valueNode(item));
+          list.append(entry);
+        });
+        return list;
+      }
+      if (value && typeof value === "object") {
+        const details = document.createElement("dl");
+        Object.entries(value).forEach(([key, item]) => {
+          const row = document.createElement("div");
+          const term = document.createElement("dt");
+          term.textContent = humanLabel(key);
+          const description = document.createElement("dd");
+          description.append(valueNode(item));
+          row.append(term, description);
+          details.append(row);
+        });
+        return details;
+      }
+      const text = document.createElement("p");
+      text.textContent = value === null || value === undefined || value === "" ? "Not available" : String(value);
+      return text;
+    }
+
+    function appendResultCard(container, title, value) {
+      if (value === null || value === undefined || value === "") return;
+      const card = document.createElement("article");
+      card.className = "result-card";
+      const heading = document.createElement("h3");
+      heading.textContent = title;
+      card.append(heading, valueNode(value));
+      container.append(card);
+    }
+
+    function appendPipelineProgress(container, payload) {
+      const steps = Array.isArray(payload.steps) ? payload.steps : [];
+      const counts = payload.step_counts || {};
+      const finished = (counts.done || 0) + (counts.failed || 0) + (counts.skipped || 0);
+      const pending = (counts.queued || 0) + (counts.running || 0);
+      appendResultCard(container, "Pipeline progress", `${finished} of ${steps.length} steps finished · ${payload.prospect_count ?? "?"} prospects included · limit ${payload.prospect_limit ?? "?"} · ${counts.done || 0} complete · ${counts.failed || 0} failed · ${counts.skipped || 0} skipped · ${pending} pending`);
+      const list = document.createElement("ol");
+      list.className = "pipeline-progress";
+      list.setAttribute("aria-label", "Product workflow step progress");
+      steps.forEach(step => {
+        const item = document.createElement("li");
+        item.className = "pipeline-step";
+        item.dataset.state = step.status || "queued";
+        const title = document.createElement("strong");
+        title.textContent = step.label || humanLabel(step.step_name || "workflow step");
+        const badge = document.createElement("span");
+        badge.className = "pipeline-step-status";
+        badge.textContent = statusLabel(step.status || "queued");
+        const detail = document.createElement("small");
+        const result = step.result && typeof step.result === "object" ? step.result : {};
+        const notes = [];
+        if (step.error) notes.push(friendlyWorkflowError(step.error, step.status));
+        else if (result.reason) notes.push(String(result.reason));
+        if (result.signal_count !== undefined) notes.push(`${result.signal_count} verified signal${result.signal_count === 1 ? "" : "s"}`);
+        if (result.prospect_count !== undefined) notes.push(`${result.scored_count || 0} scored of ${result.prospect_count} prospects · ICP ${result.icp_status || "unknown"}`);
+        if (result.workflow_run_id) notes.push(`Workflow run ${result.workflow_run_id}`);
+        if (result.signal_run_id) notes.push(`Signal run ${result.signal_run_id}`);
+        if (result.problem_statement_id) notes.push(`Problem statement ${result.problem_statement_id}`);
+        if (result.draft_run_id) notes.push(`Email Draft ${result.draft_run_id}`);
+        detail.textContent = notes.join(" · ") || (step.status === "running" ? "Running locally…" : "Waiting for this step.");
+        item.append(title, badge, detail);
+        list.append(item);
+      });
+      container.append(list);
+    }
+
+    function appendRankingResults(container, report) {
+      const note = document.createElement("p");
+      note.className = "ranking-method-note";
+      note.textContent = "Model-derived: ICP embedding similarity and signal type/confidence. Rule-based: size/title fit, quote verification, component weighting, tiers, and evidence-quality checks. Evidence quality is an audit indicator, not extra score points.";
+      container.append(note);
+      const rows = Array.isArray(report.prospects) ? report.prospects : [];
+      rows.forEach(prospect => {
+        const card = document.createElement("article");
+        card.className = "result-card ranking-result-card";
+        const heading = document.createElement("h3");
+        const rankLabel = prospect.rank === null || prospect.rank === undefined ? "Unranked" : `#${prospect.rank}`;
+        heading.textContent = `${rankLabel} · ${prospect.company_name || "Unnamed company"}`;
+        const summary = document.createElement("p");
+        const score = typeof prospect.score === "number" ? `${prospect.score.toFixed(1)} / 100` : "No score available";
+        summary.className = "ranking-score-summary";
+        summary.textContent = `${score} · ${humanLabel(prospect.tier || "unranked")}${prospect.partial ? " · Partial" : ""}`;
+        card.append(heading, summary);
+
+        const components = document.createElement("ul");
+        components.className = "score-components";
+        const breakdown = prospect.score_breakdown || {};
+        const names = ["icp_similarity", "signal_score", "size_fit", "title_fit"];
+        names.forEach(name => {
+          const row = document.createElement("li");
+          row.className = "score-component";
+          const label = document.createElement("strong");
+          label.textContent = humanLabel(name);
+          const value = breakdown[name];
+          const weight = breakdown.weights?.[name];
+          const contribution = breakdown.weighted_contributions?.[name];
+          const detail = document.createElement("span");
+          if (value === null || value === undefined) {
+            detail.textContent = `Not computed · ${weight === undefined ? "weight unavailable" : `${(Number(weight) * 100).toFixed(0)}% weight`} · missing input`;
+          } else {
+            const displayValue = name === "icp_similarity" ? `${(Number(value) * 100).toFixed(1)}%` : `${Number(value).toFixed(1)} / 100`;
+            const points = typeof contribution === "number" ? ` · +${contribution.toFixed(2)} total points` : "";
+            detail.textContent = `${displayValue} · ${(Number(weight) * 100).toFixed(0)}% weight${points}`;
+          }
+          row.append(label, detail);
+          components.append(row);
+        });
+        card.append(components);
+
+        const missing = [...(prospect.missing_inputs || []), ...(prospect.missing_components || [])];
+        if (missing.length) {
+          const missingNote = document.createElement("p");
+          missingNote.className = "ranking-missing-note";
+          missingNote.textContent = `Missing or unverified: ${[...new Set(missing)].map(humanLabel).join(", ")}`;
+          card.append(missingNote);
+        }
+        const explanations = document.createElement("details");
+        explanations.className = "result-details ranking-explanation";
+        const summaryLine = document.createElement("summary");
+        summaryLine.textContent = "Score explanation, rules, and evidence";
+        explanations.append(summaryLine);
+        explanations.append(valueNode(prospect.score_explanations || {
+          score_breakdown: breakdown,
+          verified_signal_reasons: prospect.verified_signal_reasons || [],
+          icp_field_matches: prospect.icp_field_matches || {},
+        }));
+        card.append(explanations);
+        container.append(card);
+      });
+    }
+
+    function friendlyWorkflowError(error, status) {
+      const message = String(error || "").trim();
+      const lower = message.toLowerCase();
+      if (lower.includes("ollamaunavailable") || lower.includes("not reachable") || lower.includes("connection refused")) {
+        return status === "queued"
+          ? "Ollama is not running. Task queued. Start Ollama, then click Retry queued tasks."
+          : "Ollama is not running. Start Ollama, then retry this task.";
+      }
+      if (lower.includes("ollamatimeout") || lower.includes("timed out") || lower.includes("timeout")) {
+        return "Local Ollama did not respond before the time limit. Check that the model is loaded, then retry.";
+      }
+      if (lower.includes("invalidjsonresponse") || lower.includes("validationfailure")) {
+        return "The local model returned data that did not match the required format. The task was not saved as a successful result.";
+      }
+      return message || "The workflow failed without an error message.";
+    }
+
+    function statusLabel(status) {
+      return ({
+        queued: "Queued",
+        running: "Running",
+        succeeded: "Complete",
+        done: "Complete",
+        failed: "Failed",
+        skipped: "Skipped",
+        not_started: "Not started",
+        selected: "Selected",
+      })[status] || (status ? humanLabel(status) : "Result received");
+    }
+
+    function formatTimestamp(value) {
+      if (!value) return "Timestamp unavailable";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+    }
+
+    function show(value) {
+      output.replaceChildren();
+      if (typeof value === "string") {
+        const message = document.createElement("p");
+        message.textContent = value;
+        output.append(message);
+        $("result-status").textContent = "Result received";
+        clearWaitingStatus();
+        return;
+      }
+      const payload = value && typeof value === "object" ? value : {};
+      const status = String(payload.status || "");
+      const state = $("result-status");
+      const badge = statusLabel(status);
+      state.dataset.state = status || "unknown";
+      state.textContent = `${badge} · ${formatTimestamp(payload.updated_at || payload.created_at || payload.scored_at || payload.timestamp)}`;
+      clearWaitingStatus();
+
+      const message = document.createElement("p");
+      message.textContent = "Choose a product and prospect, then run a workflow. Results appear here.";
+      if (!value) {
+        output.append(message);
+        return;
+      }
+      const content = payload.result && typeof payload.result === "object" ? payload.result : payload;
+      const cards = document.createElement("div");
+      cards.className = "result-cards";
+      const workflow = String(payload.workflow || "").toLowerCase();
+
+      if (payload.pipeline === true && Array.isArray(payload.steps)) {
+        appendPipelineProgress(cards, payload);
+      } else if (Array.isArray(content.prospects) && content.tier_thresholds) {
+        appendRankingResults(cards, content);
+      } else if (workflow === "profile" || (content.summary && content.value_proposition)) {
+        Object.entries(content).forEach(([key, item]) => appendResultCard(cards, humanLabel(key), item));
+      } else if (workflow === "icp" || (content.industries && content.buyer_titles)) {
+        Object.entries(content).forEach(([key, item]) => appendResultCard(cards, humanLabel(key), item));
+      } else if (Array.isArray(content.signals)) {
+        if (!content.signals.length) appendResultCard(cards, "Verified signals", "No verified signals were found in the saved page text.");
+        content.signals.forEach((signal, index) => {
+          appendResultCard(cards, `Signal ${index + 1} · ${humanLabel(signal.type || "unknown")}`, {
+            evidence: signal.evidence,
+            confidence: signal.confidence,
+          });
+        });
+      } else if (content.statement !== undefined) {
+        appendResultCard(cards, "Problem statement", content.statement || payload.reason || "No statement was generated.");
+        appendResultCard(cards, "Evidence", content.evidence);
+      } else if (content.subject !== undefined || content.body !== undefined) {
+        appendResultCard(cards, "Email subject", content.subject);
+        appendResultCard(cards, "Email Draft", content.body);
+        appendResultCard(cards, "Facts used", content.evidence_used);
+        if (content.sent === false) appendResultCard(cards, "Email Draft status", "Not sent · saved for review only");
+      } else if (content.label !== undefined || content.reply_id !== undefined) {
+        appendResultCard(cards, "Reply label", content.label || "Not classified yet");
+        appendResultCard(cards, "Confidence", content.confidence);
+        appendResultCard(cards, "Reason", content.rationale);
+      } else {
+        const omitted = new Set(["result", "error", "reason", "status", "updated_at", "created_at", "model_name", "model", "temperature", "seed", "repeat_penalty", "prompt_hash", "commit_hash"]);
+        Object.entries(content).forEach(([key, item]) => {
+          if (!omitted.has(key)) appendResultCard(cards, humanLabel(key), item);
+        });
+      }
+
+      if (cards.childElementCount) output.append(cards);
+      if (payload.error || payload.reason) {
+        const errorCard = document.createElement("div");
+        errorCard.className = "result-error";
+        errorCard.textContent = friendlyWorkflowError(payload.error || payload.reason, status);
+        output.append(errorCard);
+      } else if (status === "queued" && !cards.childElementCount) {
+        const queued = document.createElement("p");
+        queued.textContent = "Task is queued for local Ollama processing.";
+        output.append(queued);
+      } else if (!cards.childElementCount) {
+        output.append(message);
+      }
+
+      const technical = document.createElement("details");
+      technical.className = "result-details";
+      const summary = document.createElement("summary");
+      summary.textContent = "Technical details";
+      const metadata = document.createElement("dl");
+      metadata.className = "technical-list";
+      const technicalFields = [
+        ["Model", payload.model_name || payload.model],
+        ["Seed", payload.seed],
+        ["Temperature", payload.temperature],
+        ["Prompt hash", payload.prompt_hash],
+        ["Commit hash", payload.commit_hash],
+      ];
+      technicalFields.forEach(([label, item]) => {
+        const row = document.createElement("div");
+        const term = document.createElement("dt");
+        term.textContent = label;
+        const description = document.createElement("dd");
+        description.textContent = item === null || item === undefined || item === "" ? "Not recorded" : String(item);
+        row.append(term, description);
+        metadata.append(row);
+      });
+      const raw = document.createElement("pre");
+      raw.textContent = JSON.stringify(payload, null, 2);
+      technical.append(summary, metadata, raw);
+      output.append(technical);
+    }
+
+    function productId() { return products.value; }
+
+    function updateActionState() {
+      const hasProduct = Boolean(productId());
+      const hasProspect = hasProduct && Boolean(selectedProspect);
+      document.querySelectorAll("[data-workflow], [data-view-workflow], [data-requires-product]").forEach(button => { button.disabled = !hasProduct; });
+      document.querySelectorAll("[data-requires-prospect]").forEach(button => { button.disabled = !hasProspect; });
+      $("prospect-import-button").disabled = !hasProduct || !$("prospect-csv").files?.length || importingProspects;
+      $("product-count").textContent = String(productRows.length);
+      $("prospect-count").textContent = productId() ? $("prospect-list-count").textContent : "—";
+    }
+
+    function refreshProspectImportPrompt() {
+      const status = $("prospect-import-status");
+      const file = $("prospect-csv").files?.[0];
+      const productName = productId() ? products.selectedOptions[0]?.text || "this product" : "";
+      status.removeAttribute("data-error");
+      if (file) {
+        status.textContent = productName
+          ? `${file.name} selected · ready to import to ${productName}`
+          : `${file.name} selected · select a product in Product context above before importing`;
+      } else {
+        status.textContent = productName
+          ? `Choose a CSV file to import to ${productName}.`
+          : "Select a product in Product context above to enable CSV importing.";
+      }
+    }
+
+    function renderSelectedProspect() {
+      if (!selectedProspect) {
+        $("selected-company").textContent = "No prospect selected";
+        $("selected-title").textContent = productId() ? "Choose a prospect from the list." : "Choose a product first.";
+        $("selected-id").textContent = "No record selected";
+        $("selection-mark").textContent = "—";
+        updateActionState();
+        return;
+      }
+      const company = selectedProspect.company_name || "Unnamed company";
+      $("selected-company").textContent = company;
+      $("selected-title").textContent = selectedProspect.contact_title || "Contact title not stored";
+      $("selected-id").textContent = `Prospect ID ${selectedProspect.id}`;
+      $("selection-mark").textContent = company.trim().charAt(0).toUpperCase() || "P";
+      updateActionState();
+    }
+
+    function updateProspectEmpty(title, detail) {
+      prospects.replaceChildren();
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      const heading = document.createElement("strong");
+      heading.textContent = title;
+      const note = document.createElement("span");
+      note.textContent = detail;
+      empty.append(heading, note);
+      prospects.append(empty);
+    }
+
+    async function loadProducts(chooseId = "") {
+      productRows = await api("/api/products");
+      products.replaceChildren(new Option("Select a product", ""));
+      productRows.forEach(row => products.add(new Option(row.name, row.id)));
+      if (chooseId) products.value = String(chooseId);
+      refreshProspectImportPrompt();
+      $("product-count").textContent = String(productRows.length);
+      if (products.value) await loadProspects();
+      else {
+        selectedProspect = null;
+        $("prospect-list-count").textContent = "0";
+        $("prospect-intro").textContent = "Choose a product to load its stored prospects.";
+        updateProspectEmpty(productRows.length ? "Select a product" : "No products stored", productRows.length ? "Select a product above to view its prospects." : "Create a product to start a local workflow.");
+        renderSelectedProspect();
+      }
+    }
+
+    async function loadProspects() {
+      selectedProspect = null;
+      renderSelectedProspect();
+      prospects.replaceChildren();
+      if (!productId()) {
+        $("prospect-list-count").textContent = "0";
+        updateProspectEmpty("No product selected", "Select a stored product to see its prospects.");
+        return;
+      }
+      const rows = await api(`/api/products/${productId()}/prospects`);
+      $("prospect-list-count").textContent = String(rows.length);
+      $("prospect-intro").textContent = rows.length ? "Select a prospect to see its available workflows." : "No prospect records are stored for this product.";
+      $("prospect-count").textContent = String(rows.length);
+      if (!rows.length) {
+        updateProspectEmpty("No prospects stored", "Import a product-scoped prospect CSV to begin research.");
+        updateActionState();
+        return;
+      }
+      rows.forEach((row, index) => {
+        const button = document.createElement("button");
+        button.className = "prospect";
+        button.type = "button";
+        button.setAttribute("aria-pressed", "false");
+        button.setAttribute("aria-label", `${row.company_name || "Unnamed company"}, ${row.contact_title || "contact title not stored"}, prospect ${row.id}`);
+        const number = document.createElement("span");
+        number.className = "prospect-index";
+        number.setAttribute("aria-hidden", "true");
+        number.textContent = String(index + 1).padStart(2, "0");
+        const copy = document.createElement("span");
+        copy.className = "prospect-copy";
+        const name = document.createElement("span");
+        name.className = "prospect-name";
+        name.textContent = row.company_name || "Unnamed company";
+        const meta = document.createElement("span");
+        meta.className = "prospect-meta";
+        meta.textContent = row.contact_title || "Contact title not stored";
+        copy.append(name, meta);
+        const arrow = document.createElement("span");
+        arrow.className = "prospect-arrow";
+        arrow.setAttribute("aria-hidden", "true");
+        arrow.textContent = "›";
+        button.append(number, copy, arrow);
+        button.onclick = () => {
+          selectedProspect = row;
+          prospects.querySelectorAll(".prospect").forEach(item => item.setAttribute("aria-pressed", String(item === button)));
+          renderSelectedProspect();
+          show({ product_id: Number(productId()), prospect_id: row.id, status: "selected" });
+        };
+        prospects.append(button);
+      });
+      updateActionState();
+    }
+
+    function pendingWorkflow(run) {
+      return run && ["queued", "running"].includes(run.status);
+    }
+
+    function pendingPipeline(run) {
+      return run && run.pipeline === true && ["queued", "running"].includes(run.status);
+    }
+
+    function setWaitingStatus(label, startedAt) {
+      const seconds = Math.floor((Date.now() - startedAt) / 1000);
+      const status = $("result-status");
+      status.dataset.waiting = "true";
+      status.textContent = `${label} · ${seconds}s`;
+    }
+
+    function clearWaitingStatus() {
+      delete $("result-status").dataset.waiting;
+    }
+
+    function delay(milliseconds) {
+      return new Promise(resolve => window.setTimeout(resolve, milliseconds));
+    }
+
+    async function pollWorkflowRun(initial, startedAt) {
+      let current = initial;
+      while (pendingWorkflow(current)) {
+        setWaitingStatus(current.status === "queued" ? "Queued · waiting for local Ollama" : "Running local workflow", startedAt);
+        if (Date.now() - startedAt >= WORKFLOW_MAX_WAIT_MS) {
+          show(current);
+          $("result-status").textContent = `Still ${current.status} · wait limit reached; the queued task can continue`;
+          clearWaitingStatus();
+          return current;
+        }
+        await delay(WORKFLOW_POLL_INTERVAL_MS);
+        current = await api(`/api/workflow-runs/${current.id}`);
+        show(current);
+      }
+      clearWaitingStatus();
+      return current;
+    }
+
+    async function run(url, method = "GET", options = {}) {
+      const startedAt = Date.now();
+      const status = $("result-status");
+      status.dataset.waiting = "true";
+      status.textContent = "Starting local workflow · 0s";
+      let ticker = window.setInterval(() => {
+        if (!status.dataset.waiting) return;
+        setWaitingStatus("Starting local workflow", startedAt);
+      }, 250);
+      try {
+        const result = await api(url, { method, ...options });
+        window.clearInterval(ticker);
+        ticker = null;
+        show(result);
+        if (result?.id && result?.workflow && pendingWorkflow(result)) {
+          return await pollWorkflowRun(result, startedAt);
+        }
+        return result;
+      } catch (error) {
+        const message = humanErrorMessage(error);
+        show({ status: "failed", error: message, updated_at: new Date().toISOString() });
+        return null;
+      } finally {
+        if (ticker !== null) window.clearInterval(ticker);
+        clearWaitingStatus();
+      }
+    }
+
+    async function pollPipelineRun(initial, startedAt) {
+      let current = initial;
+      while (pendingPipeline(current)) {
+        const counts = current.step_counts || {};
+        const finished = (counts.done || 0) + (counts.failed || 0) + (counts.skipped || 0);
+        setWaitingStatus(`Product pipeline · ${finished}/${(current.steps || []).length} steps`, startedAt);
+        if (Date.now() - startedAt >= WORKFLOW_MAX_WAIT_MS) {
+          show(current);
+          $("result-status").textContent = `Still ${current.status} · run continues on the local server`;
+          clearWaitingStatus();
+          return current;
+        }
+        await delay(WORKFLOW_POLL_INTERVAL_MS);
+        current = await api(`/api/pipeline-runs/${current.id}`);
+        show(current);
+      }
+      clearWaitingStatus();
+      return current;
+    }
+
+    async function runPipeline(product, viewLatest = false) {
+      if (!product) return null;
+      const startedAt = Date.now();
+      $("result-status").dataset.waiting = "true";
+      $("result-status").textContent = viewLatest ? "Loading saved pipeline progress" : "Queueing full product workflow";
+      try {
+        let result;
+        if (viewLatest) {
+          result = await api(`/api/products/${product}/pipeline`);
+        } else {
+          const control = $("pipeline-prospect-limit");
+          const requestedLimit = Number(control.value);
+          if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1) {
+            control.setAttribute("aria-invalid", "true");
+            control.focus();
+            throw new Error("Enter a whole-number prospect limit of at least 1.");
+          }
+          control.removeAttribute("aria-invalid");
+          result = await api(
+            `/api/products/${product}/pipeline?prospect_limit=${requestedLimit}`,
+            { method: "POST" },
+          );
+        }
+        show(result);
+        return pendingPipeline(result) ? await pollPipelineRun(result, startedAt) : result;
+      } catch (error) {
+        show({ status: "failed", error: humanErrorMessage(error), updated_at: new Date().toISOString() });
+        return null;
+      } finally {
+        clearWaitingStatus();
+      }
+    }
+
+    async function selectedAction(path) {
+      if (!productId() || !selectedProspect) {
+        output.textContent = "Select a product and prospect first.";
+        return;
+      }
+      await run(path(Number(productId()), selectedProspect.id), "POST");
+    }
+
+    async function selectedView(path) {
+      if (!productId() || !selectedProspect) {
+        output.textContent = "Select a product and prospect first.";
+        return;
+      }
+      await run(path(Number(productId()), selectedProspect.id));
+    }
+
+    async function refreshStatus() {
+      try {
+        const s = await api("/api/status"), q = s.queue || {}, h = s.hardware || {}, latest = s.ollama?.last_inference;
+        const state = s.ollama?.state || "unknown";
+        const model = s.ollama?.model || "unknown";
+        $("status").textContent = `Ollama ${state}`;
+        $("status").dataset.state = state;
+        $("model-detail").textContent = `Model · ${model}`;
+        $("queue-count").textContent = `${q.queued || 0} queued · ${q.running || 0} running`;
+        $("queue-detail").textContent = `${q.done || 0} complete · ${q.failed || 0} failed`;
+        $("hardware").textContent = h.tier || "Hardware profile ready";
+        $("hardware-detail").textContent = `RAM ${h.ram_gb ?? "unknown"} GB · ${h.cpu_count ?? "unknown"} CPUs · Recommended ${h.recommended_model || "unknown"}`;
+        const inference = latest ? `${latest.task} · ${latest.model} · ${latest.status} · seed ${latest.seed} · temp ${latest.temperature} · repeat ${latest.repeat_penalty} · prompt ${latest.prompt_hash || "unknown"} · commit ${latest.commit_hash || "unknown"}` : "none recorded";
+        const hashes = s.prompt_hashes || {};
+        $("traceability").textContent = `Commit ${s.git_commit || "unknown"} · Last inference ${inference} · Signal prompt SHA-256 ${hashes.signals || "unknown"} · Reply prompt SHA-256 ${hashes.replies || "unknown"}`;
+      } catch {
+        $("status").textContent = "API unavailable";
+        $("status").dataset.state = "error";
+        $("model-detail").textContent = "Could not read local Ollama status.";
+        $("queue-count").textContent = "Queue unavailable";
+        $("hardware").textContent = "Hardware unavailable";
+        $("hardware-detail").textContent = "Could not read the local API.";
+        $("traceability").textContent = "Build and inference traceability unavailable.";
+      }
+    }
+
+    $("product-form").onsubmit = async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const formStatus = $("product-form-status");
+      const formError = $("product-form-error");
+      const submitButton = $("create-product-button");
+      if (submitButton.disabled) return;
+      formStatus.textContent = "Creating product.";
+      formError.textContent = "";
+      formError.hidden = true;
+      submitButton.disabled = true;
+      const payload = {
+        name: $("product-name").value,
+        description: $("product-description").value,
+        docs_path: $("docs-path").value,
+      };
+      try {
+        const created = await api("/api/products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        show(created);
+        formStatus.textContent = `Created ${created.name || "product"}.`;
+        form.reset();
+        form.closest("details").open = false;
+        await loadProducts(created.id);
+      } catch (error) {
+        const message = humanErrorMessage(error);
+        formError.textContent = message;
+        formError.hidden = false;
+        formStatus.textContent = `Product creation failed: ${message}`;
+      } finally {
+        submitButton.disabled = false;
+      }
+    };
+
+    $("delete-product").onclick = async () => {
+      const id = productId();
+      if (!id) return;
+      const selected = productRows.find(row => String(row.id) === String(id));
+      const name = selected?.name || `product ${id}`;
+      if (!window.confirm(`Delete ${name} and its stored prospects, research, Email Drafts, and workflow history?`)) return;
+      const button = $("delete-product");
+      button.disabled = true;
+      try {
+        await api(`/api/products/${id}`, { method: "DELETE" });
+        await loadProducts();
+        output.textContent = `Deleted ${name}.`;
+        $("result-status").textContent = "Product deleted";
+      } catch (error) {
+        output.textContent = `Could not delete product: ${humanErrorMessage(error)}`;
+        $("result-status").textContent = "Product deletion failed";
+      } finally {
+        updateActionState();
+      }
+    };
+
+    $("prospect-csv").onchange = () => {
+      refreshProspectImportPrompt();
+      updateActionState();
+    };
+    $("prospect-import-form").onsubmit = async event => {
+      event.preventDefault();
+      const file = $("prospect-csv").files?.[0];
+      const status = $("prospect-import-status");
+      if (importingProspects) return;
+      if (!productId() || !file) return;
+      if (file.size > 5 * 1024 * 1024) {
+        status.textContent = "CSV files must be 5 MB or smaller.";
+        status.dataset.error = "true";
+        return;
+      }
+      const selectedProductId = productId();
+      importingProspects = true;
+      updateActionState();
+      status.removeAttribute("data-error");
+      status.textContent = `Importing ${file.name} into the selected product…`;
+      try {
+        const result = await api(`/api/products/${encodeURIComponent(selectedProductId)}/prospects/import`, {
+          method: "POST",
+          headers: { "Content-Type": "text/csv; charset=utf-8" },
+          body: await file.text(),
+        });
+        $("prospect-csv").value = "";
+        const imported = Number(result.imported || 0);
+        const skipped = Number(result.skipped || 0);
+        status.textContent = `Import complete: ${imported} added, ${skipped} duplicate${skipped === 1 ? "" : "s"} skipped.`;
+        try {
+          await loadProspects();
+        } catch (error) {
+          status.textContent = `Import succeeded, but the prospect list could not refresh: ${humanErrorMessage(error)}`;
+          status.dataset.error = "true";
+        }
+      } catch (error) {
+        status.textContent = `Import failed: ${humanErrorMessage(error)}`;
+        status.dataset.error = "true";
+      } finally {
+        importingProspects = false;
+        updateActionState();
+      }
+    };
+    products.onchange = () => {
+      refreshProspectImportPrompt();
+      return loadProspects().catch(error => {
+        output.textContent = `Load failed: ${error.message}`;
+        $("result-status").textContent = "Load failed";
+      });
+    };
+    $("run-pipeline").onclick = () => runPipeline(productId());
+    $("view-pipeline").onclick = () => runPipeline(productId(), true);
+    document.querySelectorAll("[data-workflow]").forEach(button => button.onclick = () => {
+      if (!productId()) return;
+      run(`/api/products/${productId()}/${button.dataset.workflow}`, "POST");
+    });
+    document.querySelectorAll("[data-view-workflow]").forEach(button => button.onclick = () => {
+      if (!productId()) return;
+      run(`/api/products/${productId()}/${button.dataset.viewWorkflow}`);
+    });
+    $("signals").onclick = () => selectedAction((_product, id) => `/api/prospects/${id}/signals`);
+    $("view-signals").onclick = () => selectedView((_product, id) => `/api/prospects/${id}/signals`);
+    $("ranking").onclick = () => { if (productId()) run(`/api/products/${productId()}/ranking`); };
+    $("draft").onclick = () => selectedAction((product, id) => `/api/products/${product}/prospects/${id}/draft`);
+    $("view-draft").onclick = () => selectedView((product, id) => `/api/products/${product}/prospects/${id}/draft`);
+    $("problem-statement").onclick = () => selectedAction((product, id) => `/api/products/${product}/prospects/${id}/problem-statement`);
+    $("view-problem-statement").onclick = () => selectedView((product, id) => `/api/products/${product}/prospects/${id}/problem-statement`);
+    $("retry-queue").onclick = async () => { await run("/api/queue/retry", "POST"); await refreshStatus(); };
+    $("reply-form").onsubmit = async event => {
+      event.preventDefault();
+      const id = encodeURIComponent($("reply-id").value.trim());
+      const formStatus = $("reply-form-status");
+      formStatus.textContent = "Classifying the stored reply.";
+      const result = await run(`/api/replies/${id}/classification`, "POST");
+      formStatus.textContent = result ? "Reply classification complete." : "Classification failed. See the latest result.";
+    };
+
+    loadProducts().catch(error => { output.textContent = `Load failed: ${error.message}`; });
+    refreshStatus();
+  </script>
+</body>
+</html>

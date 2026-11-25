@@ -1,0 +1,6 @@
+SAMPLE — fictional company source for held-out signal evaluation.
+Company: Alder Circuit Works
+Industry: Industrial electronics assembly
+Source: Engineering operations note, August 2026
+
+Alder Circuit Works moved production-test records from shared spreadsheets into the ForgeTrack manufacturing execution system on August 8, 2026. The change covers two assembly cells and replaces the paper traveler used to log inspection results. Quality lead Ravi Sen said operators now enter each test result at the station, while the engineering group reviews exceptions in the same application. The installation was completed during the scheduled summer maintenance pause.

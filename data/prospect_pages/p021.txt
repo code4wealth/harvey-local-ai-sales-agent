@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Grey Alder Laundry
+Industry: Commercial laundry
+
+The fictional business operates a commercial laundry service and lists a Facilities Manager. Its page describes regular building and vehicle checks, but no fabrication or food-processing equipment workflow. No recent hiring or expansion is stated.

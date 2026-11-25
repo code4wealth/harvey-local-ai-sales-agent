@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Arbor Strand Booking
+Industry: Appointment software
+
+The fictional overview describes appointment-booking software for independent service businesses. Its help page lists documentation and a general support inbox. No recent hiring, expansion, funding, or tool change is stated.

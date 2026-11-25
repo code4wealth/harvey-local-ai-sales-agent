@@ -1,7 +1,26 @@
 # Build Plan
 
-Target: 48–72h. Deterministic work in this patch is kept separate from LLM
-workflow/prompt work. See `docs/WORKFLOWS.md` for the detailed data contract.
+This checklist began as the original implementation plan. The current
+repository status is summarized first; historical completed phases below are
+retained as context. See `docs/WORKFLOWS.md` for detailed data contracts.
+
+## Current status
+
+- [x] Local-only profile, ICP, and buying-signal workflows with deterministic
+  Ollama settings and bounded validation retries.
+- [x] Reply classification with isolated labels and a development/held-out
+  evaluator; held-out runs require a frozen matching prompt hash.
+- [x] Product-scoped deterministic prospect ranking.
+- [x] Evidence-grounded unsent draft workflow; no verified signals means a
+  persisted `no verified evidence` skip.
+- [ ] Run the exact commands in `docs/DEMO.md` with local Ollama and save the
+  resulting artifacts. The owner reports separate online and Wi-Fi-disconnected
+  workflow runs; the exact script execution and run files are not present here.
+- [ ] Optionally run held-out evaluation only after reviewing/freezing the
+  prompt; this roadmap has not performed held-out evaluation.
+- [x] Evidence-grounded problem statements and a persistent product-level
+  pipeline run from the `/operations` workflow console with per-step progress;
+  the React workspace remains available at `/`.
 
 ## Phase 0 — Recon and setup
 
@@ -38,7 +57,8 @@ workflow/prompt work. See `docs/WORKFLOWS.md` for the detailed data contract.
 - [x] Product create/list, product-scoped CSV import, prospect listing/detail, and local UTF-8 page-text storage/loading; no URL fetching (deterministic)
 - [x] Atomic CSV import with validated optional fields and local page-path containment (deterministic)
 - [x] Add production `app/embeddings.py` using cached local `all-MiniLM-L6-v2`; vector BLOB encoding is versioned; unit tests use a test-only model stub (mocked)
-- [x] Add `scripts/smoke_embeddings.py` for first download and later `HF_HUB_OFFLINE=1` checks; the actual model download/offline run remains an operator-machine check (script implementation tested with a test stub; no real model run here)
+- [x] Add `scripts/smoke_embeddings.py` to report the cached local model's sequence limit and vector dimension (script implementation tested with the test-only model stub)
+- [x] Historical operator-reported embeddings smoke on Windows, Python 3.12.16; the reported offline run used `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`, with Wi-Fi on for both runs (`test_evidence/real_run/smoke_embeddings.txt`). Current code always forces both offline flags before loading; this historical smoke was not rerun for the current task.
 - [x] Quote verification normalizes NFKC, straightens curly quotes/dashes, collapses whitespace, lowercases, requires at least 8 normalized characters and 2 words, retains only normalized source substrings, and returns the drop count (deterministic)
 - [x] Excel CSV files open as `utf-8-sig`; row errors are reported before any insert, and the import is atomic (deterministic)
 - [x] Prospect page loading rejects absolute paths and `..` components on both POSIX and Windows; local files stay under `data/prospect_pages/` (deterministic)
@@ -50,22 +70,19 @@ workflow/prompt work. See `docs/WORKFLOWS.md` for the detailed data contract.
 - [x] `size_fit` returns safely for `min=0`, missing bounds, and `max < min` (deterministic)
 - [x] Unknown queue task types fail visibly with a terminal failed state and are never marked done (deterministic)
 - [x] Deterministic CSV-import and scoring queue handlers run without Ollama and are not starved by queued LLM tasks (mocked Ollama health failure)
-- [x] Future LLM output schemas are flat, with lists of flat objects at most; no LLM prompts/workflows were started (documented contract)
-
-## Deferred — intentionally not started
-
-The operator will tune prompts against real `qwen3:4b` output before these
-workflows begin. Do not implement them as part of the current deterministic
-patch.
-
-- [ ] Business profile, ICP generation, prospect research summaries, signal classification prompts, problem statement, email generation, and reply classification
-- [ ] LLM workflow schemas, retry policy beyond the existing client contract, and pipeline orchestration
-- [ ] Reply-evaluation script and sample replies
+- [x] Workflow schemas are flat with Pydantic validation; profile, ICP, signal, reply-classification, and unsent-draft workflows use bounded retries and persist outcomes
 
 ## Remaining project work
 
-- [ ] Add labelled sample company information, prospects/page text, and replies (all sample data must be labelled)
-- [ ] Complete PRD API endpoints and dashboard screens
-- [ ] Add full offline test, network proof, Ollama-stop/drain proof, and save test evidence
-- [ ] Finish hardware, offline, failure-handling, cost, and known-limitations documentation; verify model/dependency licence metadata before release
-- [ ] Prepare demo video and release checklist
+- [x] Add fictional SAMPLE product information, product-scoped prospects/page text, and text-only replies; keep reply labels isolated in `data/eval/`.
+- [x] Implement validated local profile, ICP, signal, reply-classification, and outreach-draft workflows with persistent outage replay.
+- [x] Implement deterministic product-specific ranking and expose ranking/draft APIs.
+- [x] Add a reply evaluator with redacted reports, prompt freezing, and a held-out gate.
+- [ ] Complete and preserve the live Ollama demo records. The owner reports
+  online and Wi-Fi-disconnected workflow runs, but the logs, screen recording,
+  and exact script invocation are not present in this checkout.
+- [ ] Complete network-isolation evidence and the Ollama-stop/drain demonstration
+  on the target machine; the outage result and network-capture status were not
+  supplied.
+- [x] Problem-statement generation and full pipeline orchestration are implemented with persistent per-step status, retry, and resume behavior.
+- [ ] Review model/dependency licence metadata and complete release checklist before release.

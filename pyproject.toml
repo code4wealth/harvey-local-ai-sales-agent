@@ -18,9 +18,8 @@ classifiers = [
     "Topic :: Office/Business",
 ]
 # Keep in sync with requirements.txt.
-# Licences: fastapi (MIT), starlette (BSD-3), uvicorn (BSD-3), httpx (BSD-3),
-# pydantic (MIT), sentence-transformers (Apache-2.0), beautifulsoup4 (MIT).
-# Full licence table: docs/MODELS_AND_LICENCES.md.
+# Third-party package and model licence audit, including unresolved VERIFY
+# items, is maintained in docs/MODELS_AND_LICENCES.md.
 dependencies = [
     "fastapi>=0.115,<1",
     "uvicorn>=0.34,<1",
@@ -28,6 +27,7 @@ dependencies = [
     "pydantic>=2.5,<3",
     "sentence-transformers>=2.7,<4",
     "beautifulsoup4>=4.12.3,<5",
+    "requests>=2.31,<3",
 ]
 
 [project.optional-dependencies]

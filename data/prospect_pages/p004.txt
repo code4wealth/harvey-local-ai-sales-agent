@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Quillwood Metrics
+Industry: Analytics software
+
+The company describes a large analytics platform and publishes technical material for data teams. The listed contact is the VP of Data. The page contains no information about support-team structure, support hiring, or recent change.

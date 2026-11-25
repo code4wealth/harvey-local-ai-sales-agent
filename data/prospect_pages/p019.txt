@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Narrowbridge Metalworks
+Industry: Metal fabrication
+
+The fictional workshop fabricates custom metal parts and has a maintenance checklist on its site. The named contact is the Finance Director. No maintenance-related hiring, expansion, or technology change is stated.

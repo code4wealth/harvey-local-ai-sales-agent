@@ -1,0 +1,11 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Northwind Customer Care
+Industry: Outsourced customer support
+
+NAVIGATION: Home | Our services | Support teams | Careers | Contact
+
+Northwind provides customer care for online retailers. Its agents organize cases by account, route open questions through a queue, and pass work between shifts. The page gives a general description of the service and team structure.
+
+COOKIE NOTICE: This sample page uses essential cookies for navigation. Manage preferences | Accept all | Reject optional cookies
+
+FOOTER: SAMPLE site content for offline use only. Privacy | Accessibility | Copyright 2026 Northwind Customer Care

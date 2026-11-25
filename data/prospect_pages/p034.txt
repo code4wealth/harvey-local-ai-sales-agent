@@ -1,0 +1,11 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Kestrel Bay Tooling
+Industry: Precision tool manufacturing
+
+Home  Products  Equipment  Maintenance  Parts  Contact
+
+Kestrel Bay produces small-run machining tools. Its workshop includes several lathes and a finishing area, and the maintenance planner keeps a paper list of service intervals. The company page describes its product range and standard operating hours without mentioning a current project or staffing change.
+
+Cookie banner: We use cookies to keep this SAMPLE page usable. Choose settings, accept, or decline.
+
+Footer navigation: Company | Resources | Privacy | Terms | SAMPLE offline corpus

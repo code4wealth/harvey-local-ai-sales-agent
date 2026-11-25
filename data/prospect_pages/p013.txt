@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Hollowfern Legal
+Industry: Legal services
+
+The fictional site describes a regional legal practice. The office administrator handles general inquiries. It does not describe a software product, a support desk, or any recent operational event.

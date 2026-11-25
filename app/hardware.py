@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 
 TIER_HIGH = "high-performance"
 TIER_PLUS = "standard-plus"
@@ -27,7 +28,7 @@ NUM_CTX_BY_TIER = {
 }
 
 
-@dataclass
+@dataclass(frozen=True)
 class HardwareInfo:
     ram_gb: float | None
     cpu_count: int
@@ -37,7 +38,11 @@ class HardwareInfo:
     recommended_num_ctx: int
 
     def as_dict(self) -> dict:
-        return asdict(self)
+        result = asdict(self)
+        result["gpu_status"] = (
+            "none detected" if self.gpu_vram_gb is None else "NVIDIA GPU detected"
+        )
+        return result
 
 
 def recommend(ram_gb: float | None, vram_gb: float | None) -> tuple[str, str]:
@@ -117,7 +122,9 @@ def _read_gpu_vram_gb() -> float | None:
         return None
 
 
+@lru_cache(maxsize=1)
 def detect() -> HardwareInfo:
+    """Detect hardware once per process; the result is stable for this run."""
     ram = _read_ram_gb()
     vram = _read_gpu_vram_gb()
     tier, model = recommend(ram, vram)

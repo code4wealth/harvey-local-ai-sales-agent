@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +12,7 @@ from app import db, scoring
 from app.embeddings import (
     DEFAULT_MODEL,
     EmbeddingError,
+    embed_long_text,
     embed_texts,
     pack_embedding,
     unpack_embedding,
@@ -27,6 +28,7 @@ logger = logging.getLogger("harvey.batch")
 
 IMPORT_PROSPECTS_TASK = "prospects.import_csv"
 SCORE_PROSPECT_TASK = "prospects.score"
+_USE_STORED_SIGNALS = object()
 
 
 def _handle_import_prospects(payload: dict[str, Any]) -> None:
@@ -39,7 +41,15 @@ def _handle_import_prospects(payload: dict[str, Any]) -> None:
         raise ValueError("csv_text must be a string")
     conn = db.connect()
     try:
-        import_prospects_csv(conn, product_id=product_id, csv_text=csv_text)
+        imported, skipped = import_prospects_csv(
+            conn, product_id=product_id, csv_text=csv_text
+        )
+        logger.info(
+            "prospect CSV import product_id=%s inserted=%s skipped_duplicates=%s",
+            product_id,
+            imported,
+            skipped,
+        )
     finally:
         conn.close()
 
@@ -50,18 +60,13 @@ def _latest_rows(conn, prospect_id: int, product_id: int):
         "WHERE product_id = ? ORDER BY id DESC LIMIT 1",
         (product_id,),
     ).fetchone()
-    research = conn.execute(
-        "SELECT embedding, embedding_model, icp_similarity FROM prospect_research "
-        "WHERE prospect_id = ? ORDER BY id DESC LIMIT 1",
-        (prospect_id,),
-    ).fetchone()
     signals = list(
         conn.execute(
             "SELECT type, confidence FROM signals WHERE prospect_id = ? ORDER BY id",
             (prospect_id,),
         ).fetchall()
     )
-    return icp, research, signals
+    return icp, signals
 
 
 def _unpack_or_none(blob: bytes | None) -> list[float] | None:
@@ -85,12 +90,17 @@ def _icp_data(icp) -> Mapping[str, Any]:
     return {}
 
 
-def score_and_store_prospect(conn, prospect_id: int) -> dict[str, Any]:
-    """Score only persisted inputs; missing data stays null and sets ``partial``."""
+def score_and_store_prospect(
+    conn,
+    prospect_id: int,
+    *,
+    verified_signals: Sequence[Mapping[str, Any]] | None | object = _USE_STORED_SIGNALS,
+) -> dict[str, Any]:
+    """Score persisted inputs; an explicit signal override is for verified runs."""
     prospect = db.get_prospect(conn, prospect_id)
     if prospect is None:
         raise ValueError(f"prospect {prospect_id} not found")
-    icp, research, signals = _latest_rows(
+    icp, signals = _latest_rows(
         conn, prospect_id=int(prospect_id), product_id=prospect["product_id"]
     )
     icp_data = _icp_data(icp)
@@ -99,27 +109,29 @@ def score_and_store_prospect(conn, prospect_id: int) -> dict[str, Any]:
     if icp is not None:
         icp_vector = _unpack_or_none(icp["embedding"])
         icp_model = icp["embedding_model"]
-        prospect_vectors: list[tuple[list[float] | None, str]] = [
-            (_unpack_or_none(prospect["page_embedding"]), prospect["page_embedding_model"])
-        ]
-        if research is not None:
-            prospect_vectors.append(
-                (_unpack_or_none(research["embedding"]), research["embedding_model"])
-            )
-        if icp_vector is not None and icp_model:
-            for vector, model in prospect_vectors:
-                if vector is not None and model == icp_model:
-                    similarity = scoring.icp_similarity(icp_vector, vector)
-                    break
-        if similarity is None and research is not None:
-            # This field stores the normalized 0–1 component, never raw cosine.
-            similarity = research["icp_similarity"]
+        page_vector = _unpack_or_none(prospect["page_embedding"])
+        if (
+            icp_vector is not None
+            and icp_model
+            and page_vector is not None
+            and prospect["page_embedding_model"] == icp_model
+        ):
+            similarity = scoring.icp_similarity(icp_vector, page_vector)
 
-    raw_signals = [dict(row) for row in signals] if signals else None
-    size_range = {
-        "min": icp_data.get("company_size_min"),
-        "max": icp_data.get("company_size_max"),
-    }
+    if verified_signals is _USE_STORED_SIGNALS:
+        raw_signals = [dict(row) for row in signals] if signals else None
+    elif verified_signals is None:
+        raw_signals = None
+    else:
+        raw_signals = [dict(signal) for signal in verified_signals]
+    company_size = icp_data.get("company_size")
+    if isinstance(company_size, Mapping):
+        size_range = {"min": company_size.get("min"), "max": company_size.get("max")}
+    else:
+        size_range = {
+            "min": icp_data.get("company_size_min"),
+            "max": icp_data.get("company_size_max"),
+        }
     buyer_titles = icp_data.get("buyer_titles")
     result = scoring.score_prospect(
         icp_similarity=similarity,
@@ -145,12 +157,15 @@ def embed_and_score_prospect(
     prospect_id: int,
     *,
     page_dir: str | Path | None = None,
+    verified_signals: Sequence[Mapping[str, Any]] | None | object = _USE_STORED_SIGNALS,
 ) -> dict[str, Any]:
     """Embed available persisted ICP/page text locally, then save a score.
 
     If the model/cache or page text is unavailable, embedding similarity remains
     null and the normal partial-score rules apply. No summary or other input is
-    generated to fill the gap.
+    generated to fill the gap. ``verified_signals`` can restrict a product ranking
+    to the latest successfully persisted signal run; the default preserves the
+    ordinary score handler's stored-signal behavior.
     """
     prospect = db.get_prospect(conn, prospect_id)
     if prospect is None:
@@ -161,7 +176,9 @@ def embed_and_score_prospect(
         (prospect["product_id"],),
     ).fetchone()
     if icp is None:
-        return score_and_store_prospect(conn, prospect_id)
+        return score_and_store_prospect(
+            conn, prospect_id, verified_signals=verified_signals
+        )
 
     icp_data = _icp_data(icp)
     icp_vector = _unpack_or_none(icp["embedding"])
@@ -181,37 +198,32 @@ def embed_and_score_prospect(
             logger.info("local page text unavailable for prospect_id=%s: %s", prospect_id, exc)
         needs_page = bool(page_text.strip())
 
-    texts: list[str] = []
-    icp_index: int | None = None
-    page_index: int | None = None
-    if needs_icp:
-        icp_index = len(texts)
-        texts.append(icp_text)
-    if needs_page:
-        page_index = len(texts)
-        texts.append(page_text)
+    new_icp_vector: list[float] | None = None
+    new_page_vector: list[float] | None = None
+    try:
+        if needs_icp:
+            new_icp_vector = embed_texts([icp_text], model_name=DEFAULT_MODEL)[0]
+        if needs_page:
+            new_page_vector = embed_long_text(page_text, model_name=DEFAULT_MODEL)
+    except EmbeddingError as exc:
+        logger.warning("local embeddings unavailable; score will be partial: %s", exc)
 
-    if texts:
-        try:
-            vectors = embed_texts(texts, model_name=DEFAULT_MODEL)
-        except EmbeddingError as exc:
-            logger.warning("local embeddings unavailable; score will be partial: %s", exc)
-        else:
-            if icp_index is not None:
-                icp_vector = vectors[icp_index]
-                conn.execute(
-                    "UPDATE icps SET embedding = ?, embedding_model = ? WHERE id = ?",
-                    (pack_embedding(icp_vector), DEFAULT_MODEL, icp["id"]),
-                )
-            if page_index is not None:
-                page_vector = vectors[page_index]
-                conn.execute(
-                    "UPDATE prospects SET page_embedding = ?, page_embedding_model = ? "
-                    "WHERE id = ?",
-                    (pack_embedding(page_vector), DEFAULT_MODEL, prospect_id),
-                )
-            conn.commit()
-    return score_and_store_prospect(conn, prospect_id)
+    if new_icp_vector is not None:
+        conn.execute(
+            "UPDATE icps SET embedding = ?, embedding_model = ? WHERE id = ?",
+            (pack_embedding(new_icp_vector), DEFAULT_MODEL, icp["id"]),
+        )
+    if new_page_vector is not None:
+        conn.execute(
+            "UPDATE prospects SET page_embedding = ?, page_embedding_model = ? "
+            "WHERE id = ?",
+            (pack_embedding(new_page_vector), DEFAULT_MODEL, prospect_id),
+        )
+    if new_icp_vector is not None or new_page_vector is not None:
+        conn.commit()
+    return score_and_store_prospect(
+        conn, prospect_id, verified_signals=verified_signals
+    )
 
 
 def _handle_score_prospect(payload: dict[str, Any]) -> None:

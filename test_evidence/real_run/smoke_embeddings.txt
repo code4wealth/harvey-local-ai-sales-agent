@@ -1,0 +1,26 @@
+REAL EMBEDDINGS RUN
+
+Operator-provided evidence: Windows, Python 3.12.16.
+Wi-Fi was on for both runs.
+The offline run used HF_HUB_OFFLINE=1 and TRANSFORMERS_OFFLINE=1.
+
+Online run:
+Embedding model: sentence-transformers/all-MiniLM-L6-v2
+HF_HUB_OFFLINE: 0
+(one read-timeout on README.md HEAD, Retry 1/5, then it loaded)
+Model max_seq_length: 256
+Vector count: 2
+Vector dimension: 384
+First vector norm: 1.000000
+Cosine similarity: 0.812549
+PASS: local embeddings are available
+
+Offline run:
+Embedding model: sentence-transformers/all-MiniLM-L6-v2
+HF_HUB_OFFLINE: 1
+Model max_seq_length: 256
+Vector count: 2
+Vector dimension: 384
+First vector norm: 1.000000
+Cosine similarity: 0.812549
+PASS: local embeddings are available

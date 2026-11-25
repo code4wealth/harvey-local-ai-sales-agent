@@ -6,6 +6,7 @@
 data/*.db
 data/*.db-wal
 data/*.db-shm
+data/backups/
 data/prospect_pages/
 *.db
 
@@ -33,3 +34,13 @@ node_modules/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local real-model evidence (never commit generated outputs or databases)
+test_evidence/real_run/*.json
+test_evidence/real_run/*.db*
+test_evidence/offline/*.json
+test_evidence/offline/*.log
+test_evidence/offline/*.txt
+test_evidence/ollama_outage/*.json
+test_evidence/ollama_outage/*.log
+test_evidence/ollama_outage/*.txt

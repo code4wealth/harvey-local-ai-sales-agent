@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Amber Quarry Studio
+Industry: Artisan pottery
+
+The fictional studio makes small batches of ceramic tableware. Its owner handles production and customer messages. The page does not describe a multi-equipment maintenance program, hiring, or a recent expansion.

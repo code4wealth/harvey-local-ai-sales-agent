@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Wrenfield Ledgerworks
+Industry: Bookkeeping software
+
+The site describes a bookkeeping tool maintained by a five-person team. The listed contact is the CTO. The help page contains a short FAQ and no details about a dedicated support operation or recent change.

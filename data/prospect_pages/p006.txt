@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Mellor Finch Analytics
+Industry: Data consulting
+
+The fictional site describes a consulting studio that prepares bespoke analysis for clients. It lists a Data Scientist as the contact for technical questions. It does not describe a product support desk or any recent operational event.

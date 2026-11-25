@@ -31,9 +31,9 @@ app/
   scoring.py         deterministic hybrid scoring
   workflows/         profile.py icp.py research.py signals.py problem.py email.py reply.py
   research/          web scraping (internet, non-AI)
-data/                SAMPLE data (labelled as sample): company_info/, prospects.csv, prospect_pages/, sample_replies.json
+data/                SAMPLE data: company_info/, product-scoped prospects/, prospect_pages/, sample/replies.csv (text-only), eval/ (offline ground truth)
 frontend/            dashboard
-scripts/             verify_no_cloud.py, offline_test.py, eval_replies.py
+scripts/             verify_no_cloud.py, validate_corpus.py, eval_replies.py
 tests/
 docs/                PRD, ARCHITECTURE, WORKFLOWS, TASKS, ACCEPTANCE_CHECKLIST + deliverable docs
 test_evidence/
@@ -44,8 +44,8 @@ ollama pull qwen3:4b                 # laptop model (qwen3:8b / 14b for stronger
 uvicorn app.main:app --reload        # backend
 pytest -q                            # tests
 python scripts/verify_no_cloud.py    # MUST pass before every commit
-python scripts/offline_test.py       # runs full pipeline, prints inference log
-make verify                          # verify + tests
+make verify                          # local-only checks + corpus validation + tests
+make offline                         # same suite with model caches forced offline
 
 Coding conventions
 

@@ -1,0 +1,5 @@
+SAMPLE — fictional prospect page for offline development only.
+Company: Cairn Slope Engineering
+Industry: Engineering consultancy
+
+The fictional consultancy provides engineering design services. The listed contact is a Sales Director. The site does not describe a production facility, equipment maintenance team, or a recent operational change.
